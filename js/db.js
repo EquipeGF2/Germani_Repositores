@@ -3,21 +3,21 @@
  * Suporta dois bancos: um para dados principais e outro para consultas
  */
 
-import { createClient } from 'https://esm.sh/@libsql/client@0.5.2/web';
+import { createClient } from 'https://esm.sh/@libsql/client@0.6.0/web';
 
 class TursoDatabase {
     constructor() {
         this.mainClient = null;  // Cliente principal (dados)
         this.comercialClient = null;  // Cliente comercial (consultas)
 
-        // Configurações fixas dos bancos
+        // Configurações fixas dos bancos (usando HTTPS para compatibilidade)
         this.mainConfig = {
-            url: 'libsql://germanirepositor-genaroforratig365-pixel.aws-us-east-1.turso.io',
+            url: 'https://germanirepositor-genaroforratig365-pixel.aws-us-east-1.turso.io',
             authToken: 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJKRFl4d2RCeEVmQ3ZRaTctU01UclRBIn0.MGT5wLqFv8Bt99AvUFpgeAP5eobvTh-13yYPswEIilT21QS6HSU_YmVl-m11Ft3T0c03OCsIe6boOH5uzpExAQ'
         };
 
         this.comercialConfig = {
-            url: 'libsql://comercial-angeloxiru.aws-us-east-1.turso.io',
+            url: 'https://comercial-angeloxiru.aws-us-east-1.turso.io',
             authToken: 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NjI4ODQ2ODMsImlkIjoiMmI3NTFkOTQtNGI1ZS00ZjZhLWExMDktNTY0OTg3MzgyOGZhIiwicmlkIjoiOGZiZGQ3ZmMtOThmOC00MmMxLWExNzYtZmJiOTZhYmEwN2I0In0.ZjNIt9GEI01v_Ot9GnzsbS_FJIHjTVjCL9X8TdUJmi0LUfoMXX6xMJlRqNCRZiS6U3iNwkP709K_H8ybU9e3DQ'
         };
     }
