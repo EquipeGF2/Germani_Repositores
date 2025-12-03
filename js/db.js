@@ -13,7 +13,7 @@ class TursoDatabase {
         // Configurações fixas dos bancos
         this.mainConfig = {
             url: 'libsql://germanirepositor-genaroforratig365-pixel.aws-us-east-1.turso.io',
-            authToken: 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJHc3ZDWmRCb0VmQ3ZRaTctU01UclRBIn0.RnkL3g7o1qcmFUVACYh8M_12S-qooXdruqdmjDd1dRCnBLWZoLP3oTjRcN7L_qJQ-xrEMmhWidgSSjJg9kryDw'
+            authToken: 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJKRFl4d2RCeEVmQ3ZRaTctU01UclRBIn0.MGT5wLqFv8Bt99AvUFpgeAP5eobvTh-13yYPswEIilT21QS6HSU_YmVl-m11Ft3T0c03OCsIe6boOH5uzpExAQ'
         };
 
         this.comercialConfig = {
