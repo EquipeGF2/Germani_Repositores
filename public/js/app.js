@@ -8,7 +8,9 @@ import { pages, pageTitles } from './pages.js';
 
 class App {
     constructor() {
-        this.currentPage = 'cadastro-supervisor';
+        this.currentPage = 'cadastro-repositor';
+        this.ultimaConsultaRepositores = [];
+        this.resultadosValidacao = [];
         this.init();
     }
 
@@ -33,7 +35,7 @@ class App {
         document.querySelectorAll('[data-page]').forEach(link => {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
-                const page = e.target.getAttribute('data-page');
+                const page = e.currentTarget.getAttribute('data-page');
                 this.navigateTo(page);
             });
         });
@@ -91,6 +93,10 @@ class App {
             const pageContent = await pages[pageName]();
             this.elements.contentBody.innerHTML = pageContent;
             this.currentPage = pageName;
+
+            if (pageName === 'consulta-repositores') {
+                this.aplicarFiltrosConsultaRepositores();
+            }
         } catch (error) {
             console.error('Erro ao carregar página:', error);
             this.elements.contentBody.innerHTML = `
@@ -103,79 +109,13 @@ class App {
         }
     }
 
-    // ==================== SUPERVISOR ====================
-
-    showModalSupervisor() {
-        document.getElementById('modalSupervisor').classList.add('active');
-        document.getElementById('formSupervisor').reset();
-        document.getElementById('sup_cod').value = '';
-        document.getElementById('modalSupervisorTitle').textContent = 'Novo Supervisor';
-    }
-
-    closeModalSupervisor() {
-        document.getElementById('modalSupervisor').classList.remove('active');
-    }
-
-    async saveSupervisor(event) {
-        event.preventDefault();
-
-        const cod = document.getElementById('sup_cod').value;
-        const nome = document.getElementById('sup_nome').value;
-        const dataInicio = document.getElementById('sup_data_inicio').value;
-        const dataFim = document.getElementById('sup_data_fim').value || null;
-
-        try {
-            if (cod) {
-                await db.updateSupervisor(cod, nome, dataInicio, dataFim);
-                this.showNotification('Supervisor atualizado com sucesso!', 'success');
-            } else {
-                await db.createSupervisor(nome, dataInicio, dataFim);
-                this.showNotification('Supervisor cadastrado com sucesso!', 'success');
-            }
-
-            this.closeModalSupervisor();
-            await this.navigateTo('cadastro-supervisor');
-        } catch (error) {
-            this.showNotification('Erro ao salvar: ' + error.message, 'error');
-        }
-    }
-
-    async editSupervisor(cod) {
-        try {
-            const supervisor = await db.getSupervisor(cod);
-
-            if (!supervisor) {
-                this.showNotification('Supervisor não encontrado!', 'error');
-                return;
-            }
-
-            document.getElementById('sup_cod').value = supervisor.sup_cod;
-            document.getElementById('sup_nome').value = supervisor.sup_nome;
-            document.getElementById('sup_data_inicio').value = supervisor.sup_data_inicio;
-            document.getElementById('sup_data_fim').value = supervisor.sup_data_fim || '';
-            document.getElementById('modalSupervisorTitle').textContent = 'Editar Supervisor';
-
-            this.showModalSupervisor();
-        } catch (error) {
-            this.showNotification('Erro ao carregar supervisor: ' + error.message, 'error');
-        }
-    }
-
-    async deleteSupervisor(cod) {
-        if (!confirm('Tem certeza que deseja deletar este supervisor?')) {
-            return;
-        }
-
-        try {
-            await db.deleteSupervisor(cod);
-            this.showNotification('Supervisor deletado com sucesso!', 'success');
-            await this.navigateTo('cadastro-supervisor');
-        } catch (error) {
-            this.showNotification('Erro ao deletar: ' + error.message, 'error');
-        }
-    }
-
     // ==================== REPOSITOR ====================
+
+    formatarDataSimples(dataString) {
+        if (!dataString) return '-';
+        const [ano, mes, dia] = dataString.split('T')[0].split('-');
+        return `${dia}/${mes}/${ano}`;
+    }
 
     showModalRepositor() {
         document.getElementById('modalRepositor').classList.add('active');
@@ -196,7 +136,8 @@ class App {
         const dataInicio = document.getElementById('repo_data_inicio').value;
         const dataFim = document.getElementById('repo_data_fim').value || null;
         const cidadeRef = document.getElementById('repo_cidade_ref').value;
-        const representante = document.getElementById('repo_representante').value;
+        const repCodigo = document.getElementById('repo_representante').value;
+        const repNome = document.getElementById('repo_representante').selectedOptions[0]?.dataset?.nome || '';
         const vinculo = document.getElementById('repo_vinculo_agencia').checked ? 'agencia' : 'repositor';
         const supervisor = document.getElementById('repo_supervisor').value || null;
 
@@ -209,10 +150,10 @@ class App {
 
         try {
             if (cod) {
-                await db.updateRepositor(cod, nome, dataInicio, dataFim, cidadeRef, representante, vinculo, supervisor, diasTrabalhados, jornada);
+                await db.updateRepositor(cod, nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo, supervisor, diasTrabalhados, jornada);
                 this.showNotification(`${vinculo === 'agencia' ? 'Agência' : 'Repositor'} atualizado com sucesso!`, 'success');
             } else {
-                await db.createRepositor(nome, dataInicio, dataFim, cidadeRef, representante, vinculo, supervisor, diasTrabalhados, jornada);
+                await db.createRepositor(nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo, supervisor, diasTrabalhados, jornada);
                 this.showNotification(`${vinculo === 'agencia' ? 'Agência' : 'Repositor'} cadastrado com sucesso!`, 'success');
             }
 
@@ -221,6 +162,197 @@ class App {
         } catch (error) {
             this.showNotification('Erro ao salvar: ' + error.message, 'error');
         }
+    }
+
+    async abrirCadastroRepositor(repoCod) {
+        await this.navigateTo('cadastro-repositor');
+        await this.editRepositor(repoCod);
+    }
+
+    // ==================== CONSULTA GERAL DE REPOSITORES ====================
+
+    async aplicarFiltrosConsultaRepositores() {
+        const supervisor = document.getElementById('filtro_supervisor_consulta')?.value || '';
+        const representante = document.getElementById('filtro_representante_consulta')?.value || '';
+        const repositor = document.getElementById('filtro_repositor_consulta')?.value || '';
+
+        try {
+            const repositores = await db.getRepositoresDetalhados({ supervisor, representante, repositor });
+            this.ultimaConsultaRepositores = repositores;
+            this.renderConsultaRepositores(repositores);
+        } catch (error) {
+            this.showNotification('Erro ao consultar repositores: ' + error.message, 'error');
+        }
+    }
+
+    renderConsultaRepositores(repositores) {
+        const container = document.getElementById('consultaRepositoresResultado');
+        if (!container) return;
+
+        if (!repositores || repositores.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">🔍</div>
+                    <p>Nenhum repositor encontrado com os filtros aplicados</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Código</th>
+                            <th>Repositor</th>
+                            <th>Supervisor</th>
+                            <th>Representante</th>
+                            <th>Vínculo</th>
+                            <th>Data Início</th>
+                            <th>Data Fim</th>
+                            <th>Cidade Ref.</th>
+                            <th>Contato Representante</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${repositores.map((repo, index) => {
+                            const representante = repo.representante;
+                            const contato = representante ? [representante.rep_fone, representante.rep_email].filter(Boolean).join(' / ') : '-';
+                            const repLabel = representante ? `${representante.representante} - ${representante.desc_representante}` : `${repo.rep_representante_codigo || '-'}${repo.rep_representante_nome ? ' - ' + repo.rep_representante_nome : ''}`;
+
+                            return `
+                                <tr>
+                                    <td>${repo.repo_cod}</td>
+                                    <td>${repo.repo_nome}</td>
+                                    <td>${repo.rep_supervisor || '-'}</td>
+                                    <td>${repLabel || '-'}</td>
+                                    <td><span class="badge ${repo.repo_vinculo === 'agencia' ? 'badge-warning' : 'badge-info'}">${repo.repo_vinculo === 'agencia' ? 'Agência' : 'Repositor'}</span></td>
+                                    <td>${this.formatarDataSimples(repo.repo_data_inicio)}</td>
+                                    <td>${this.formatarDataSimples(repo.repo_data_fim)}</td>
+                                    <td>${repo.repo_cidade_ref || '-'}</td>
+                                    <td>${contato || '-'}</td>
+                                    <td class="table-actions">
+                                        <button class="btn-icon" onclick="window.app.abrirDetalhesRepresentante(${index}, 'consulta')" title="Detalhes do Representante">👁️</button>
+                                        <button class="btn-icon" onclick="window.app.editRepositor(${repo.repo_cod})" title="Editar">✏️</button>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    abrirDetalhesRepresentante(index, origem = 'consulta') {
+        const baseDados = origem === 'validacao' ? this.resultadosValidacao : this.ultimaConsultaRepositores;
+        const registro = baseDados[index];
+        const representante = registro?.representante;
+        const modal = document.getElementById('modalRepresentanteDetalhes');
+
+        if (!modal || !representante) {
+            this.showNotification('Representante não localizado na base comercial.', 'warning');
+            return;
+        }
+
+        modal.querySelector('#repNomeLabel').textContent = `${representante.representante} - ${representante.desc_representante}`;
+        modal.querySelector('#repEndereco').textContent = representante.rep_endereco || '-';
+        modal.querySelector('#repBairro').textContent = representante.rep_bairro || '-';
+        modal.querySelector('#repCidade').textContent = representante.rep_cidade || '-';
+        modal.querySelector('#repEstado').textContent = representante.rep_estado || '-';
+        modal.querySelector('#repFone').textContent = representante.rep_fone || '-';
+        modal.querySelector('#repEmail').textContent = representante.rep_email || '-';
+        modal.querySelector('#repSupervisor').textContent = representante.rep_supervisor || '-';
+        modal.querySelector('#repDatas').textContent = `${this.formatarDataSimples(representante.rep_data_inicio)} até ${this.formatarDataSimples(representante.rep_data_fim)}`;
+
+        modal.classList.add('active');
+    }
+
+    fecharDetalhesRepresentante() {
+        const modal = document.getElementById('modalRepresentanteDetalhes');
+        if (modal) {
+            modal.classList.remove('active');
+        }
+    }
+
+    // ==================== VALIDAÇÃO DE DADOS ====================
+
+    async executarValidacaoDados() {
+        const supervisor = document.getElementById('filtro_supervisor_validacao')?.value || '';
+        const representante = document.getElementById('filtro_representante_validacao')?.value || '';
+        const repositor = document.getElementById('filtro_repositor_validacao')?.value || '';
+
+        try {
+            const resultados = await db.validarVinculosRepositores({ supervisor, representante, repositor });
+            this.resultadosValidacao = resultados;
+            this.renderValidacaoResultados(resultados);
+        } catch (error) {
+            this.showNotification('Erro ao executar validação: ' + error.message, 'error');
+        }
+    }
+
+    renderValidacaoResultados(resultados) {
+        const container = document.getElementById('resultadoValidacao');
+        if (!container) return;
+
+        if (!resultados || resultados.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">📋</div>
+                    <p>Nenhum registro para validar com os filtros escolhidos</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Repositor</th>
+                            <th>Supervisor</th>
+                            <th>Representante</th>
+                            <th>Datas Representante</th>
+                            <th>Status Rep.</th>
+                            <th>Resultado</th>
+                            <th>Motivo</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${resultados.map((item, index) => {
+                            const representante = item.representante;
+                            const repLabel = representante ? `${representante.representante} - ${representante.desc_representante}` : `${item.rep_representante_codigo || '-'}${item.rep_representante_nome ? ' - ' + item.rep_representante_nome : ''}`;
+                            const datas = representante ? `${this.formatarDataSimples(representante.rep_data_inicio)} até ${this.formatarDataSimples(representante.rep_data_fim)}` : '-';
+                            const statusBadge = item.status_representante.status === 'Ativo' ? 'badge-success' : 'badge-warning';
+                            const resultadoBadge = item.resultado_validacao === 'OK' ? 'badge-success' : 'badge-danger';
+
+                            return `
+                                <tr class="${item.resultado_validacao === 'OK' ? '' : 'row-warning'}">
+                                    <td>
+                                        <div><strong>${item.repo_cod}</strong> - ${item.repo_nome}</div>
+                                        <small class="text-muted">${item.repositor_ativo ? 'Repositor ativo' : 'Repositor inativo'}</small>
+                                    </td>
+                                    <td>${item.rep_supervisor || '-'}</td>
+                                    <td>${repLabel || '-'}</td>
+                                    <td>${datas}</td>
+                                    <td><span class="badge ${statusBadge}">${item.status_representante.status}</span></td>
+                                    <td><span class="badge ${resultadoBadge}">${item.resultado_validacao}</span></td>
+                                    <td>${item.motivo_inconsistencia || '-'}</td>
+                                    <td class="table-actions">
+                                        <button class="btn-icon" onclick="window.app.abrirDetalhesRepresentante(${index}, 'validacao')" title="Detalhes do Representante">👁️</button>
+                                        <button class="btn-icon" onclick="window.app.abrirCadastroRepositor(${item.repo_cod})" title="Abrir Cadastro">📄</button>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
     }
 
     async editRepositor(cod) {
@@ -237,9 +369,9 @@ class App {
             document.getElementById('repo_data_inicio').value = repositor.repo_data_inicio;
             document.getElementById('repo_data_fim').value = repositor.repo_data_fim || '';
             document.getElementById('repo_cidade_ref').value = repositor.repo_cidade_ref || '';
-            document.getElementById('repo_representante').value = repositor.repo_representante || '';
+            document.getElementById('repo_representante').value = repositor.rep_representante_codigo || '';
             document.getElementById('repo_vinculo_agencia').checked = repositor.repo_vinculo === 'agencia';
-            document.getElementById('repo_supervisor').value = repositor.repo_supervisor || '';
+            document.getElementById('repo_supervisor').value = repositor.rep_supervisor || '';
 
             // Marcar dias trabalhados
             const dias = (repositor.dias_trabalhados || 'seg,ter,qua,qui,sex').split(',');

@@ -9,98 +9,19 @@ import { formatarData } from './utils.js';
 export const pages = {
     // ==================== CADASTROS ====================
 
-    'cadastro-supervisor': async () => {
-        const supervisores = await db.getAllSupervisors();
-
-        return `
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Cadastro de Supervisores</h3>
-                    <button class="btn btn-primary btn-sm" onclick="window.app.showModalSupervisor()">
-                        + Novo Supervisor
-                    </button>
-                </div>
-                <div class="card-body">
-                    ${supervisores.length === 0 ? `
-                        <div class="empty-state">
-                            <div class="empty-state-icon">👥</div>
-                            <p>Nenhum supervisor cadastrado</p>
-                            <small>Clique em "Novo Supervisor" para começar</small>
-                        </div>
-                    ` : `
-                        <div class="table-container">
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Código</th>
-                                        <th>Nome</th>
-                                        <th>Data Início</th>
-                                        <th>Data Fim</th>
-                                        <th>Ações</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${supervisores.map(sup => `
-                                        <tr>
-                                            <td>${sup.sup_cod}</td>
-                                            <td>${sup.sup_nome}</td>
-                                            <td>${formatarData(sup.sup_data_inicio)}</td>
-                                            <td>${formatarData(sup.sup_data_fim)}</td>
-                                            <td class="table-actions">
-                                                <button class="btn-icon" onclick="window.app.editSupervisor(${sup.sup_cod})" title="Editar">✏️</button>
-                                                <button class="btn-icon" onclick="window.app.deleteSupervisor(${sup.sup_cod})" title="Deletar">🗑️</button>
-                                            </td>
-                                        </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
-                        </div>
-                    `}
-                </div>
-            </div>
-
-            <!-- Modal Supervisor -->
-            <div class="modal" id="modalSupervisor">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h3 id="modalSupervisorTitle">Novo Supervisor</h3>
-                        <button class="modal-close" onclick="window.app.closeModalSupervisor()">&times;</button>
-                    </div>
-                    <div class="modal-body">
-                        <form id="formSupervisor" onsubmit="window.app.saveSupervisor(event)">
-                            <input type="hidden" id="sup_cod" value="">
-
-                            <div class="form-group">
-                                <label for="sup_nome">Nome do Supervisor:</label>
-                                <input type="text" id="sup_nome" required>
-                            </div>
-
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="sup_data_inicio">Data Início:</label>
-                                    <input type="date" id="sup_data_inicio" required>
-                                </div>
-
-                                <div class="form-group">
-                                    <label for="sup_data_fim">Data Fim:</label>
-                                    <input type="date" id="sup_data_fim">
-                                    <small>Deixe em branco se ainda estiver ativo</small>
-                                </div>
-                            </div>
-
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" onclick="window.app.closeModalSupervisor()">Cancelar</button>
-                                <button type="submit" class="btn btn-primary">Salvar</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
-        `;
-    },
-
     'cadastro-repositor': async () => {
-        const repositores = await db.getAllRepositors();
+        const [repositores, supervisores, representantes] = await Promise.all([
+            db.getAllRepositors(),
+            db.getSupervisoresComercial(),
+            db.getRepresentantesComercial()
+        ]);
+
+        const supervisorOptions = supervisores.map(sup => `<option value="${sup}">${sup}</option>`).join('');
+        const representanteOptions = representantes.map(rep => `
+            <option value="${rep.representante}" data-nome="${rep.desc_representante}" data-supervisor="${rep.rep_supervisor}">
+                ${rep.representante} - ${rep.desc_representante}
+            </option>
+        `).join('');
 
         return `
             <div class="card">
@@ -124,11 +45,12 @@ export const pages = {
                                     <tr>
                                         <th>Código</th>
                                         <th>Nome</th>
+                                        <th>Supervisor</th>
+                                        <th>Representante</th>
                                         <th>Vínculo</th>
                                         <th>Data Início</th>
                                         <th>Data Fim</th>
                                         <th>Cidade Ref.</th>
-                                        <th>Representante</th>
                                         <th>Ações</th>
                                     </tr>
                                 </thead>
@@ -137,11 +59,12 @@ export const pages = {
                                         <tr>
                                             <td>${repo.repo_cod}</td>
                                             <td>${repo.repo_nome}</td>
+                                            <td>${repo.rep_supervisor || '-'}</td>
+                                            <td>${repo.rep_representante_codigo ? repo.rep_representante_codigo + ' - ' + (repo.rep_representante_nome || '') : '-'}</td>
                                             <td><span class="badge ${repo.repo_vinculo === 'agencia' ? 'badge-warning' : 'badge-info'}">${repo.repo_vinculo === 'agencia' ? 'Agência' : 'Repositor'}</span></td>
                                             <td>${formatarData(repo.repo_data_inicio)}</td>
                                             <td>${formatarData(repo.repo_data_fim)}</td>
                                             <td>${repo.repo_cidade_ref || '-'}</td>
-                                            <td>${repo.repo_representante || '-'}</td>
                                             <td class="table-actions">
                                                 <button class="btn-icon" onclick="window.app.editRepositor(${repo.repo_cod})" title="Editar">✏️</button>
                                                 <button class="btn-icon" onclick="window.app.deleteRepositor(${repo.repo_cod})" title="Deletar">🗑️</button>
@@ -193,23 +116,24 @@ export const pages = {
 
                             <div class="form-row">
                                 <div class="form-group">
-                                    <label for="repo_cidade_ref">Cidade Referência: *</label>
+                                    <label for="repo_cidade_ref">Cidade Referência:</label>
                                     <input type="text" id="repo_cidade_ref" placeholder="Ex: São Paulo" required>
                                 </div>
 
                                 <div class="form-group">
-                                    <label for="repo_representante">Representante: *</label>
-                                    <input type="text" id="repo_representante" placeholder="Ex: João Silva" required>
+                                    <label for="repo_representante">Representante:</label>
+                                    <select id="repo_representante" required>
+                                        <option value="">Selecione</option>
+                                        ${representanteOptions}
+                                    </select>
                                 </div>
                             </div>
 
                             <div class="form-group">
-                                <label for="repo_supervisor">Supervisor: *</label>
-                                <select id="repo_supervisor" required>
-                                    <option value="">Sem supervisor</option>
-                                    ${(await db.getAllSupervisors()).map(sup => `
-                                        <option value="${sup.sup_cod}">${sup.sup_nome}</option>
-                                    `).join('')}
+                                <label for="repo_supervisor">Supervisor:</label>
+                                <select id="repo_supervisor">
+                                    <option value="">Selecione</option>
+                                    ${supervisorOptions}
                                 </select>
                             </div>
 
@@ -258,6 +182,204 @@ export const pages = {
                                 <button type="submit" class="btn btn-primary">Salvar</button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    'consulta-repositores': async () => {
+        const [supervisores, representantes] = await Promise.all([
+            db.getSupervisoresComercial(),
+            db.getRepresentantesComercial()
+        ]);
+
+        const supervisorOptions = supervisores.map(sup => `<option value="${sup}">${sup}</option>`).join('');
+        const representanteOptions = representantes.map(rep => `
+            <option value="${rep.representante}">${rep.representante} - ${rep.desc_representante}</option>
+        `).join('');
+
+        return `
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Consulta Geral de Repositores</h3>
+                </div>
+                <div class="card-body">
+                    <div class="filter-bar">
+                        <div class="filter-group">
+                            <label for="filtro_supervisor_consulta">Supervisor</label>
+                            <select id="filtro_supervisor_consulta">
+                                <option value="">Todos</option>
+                                ${supervisorOptions}
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="filtro_representante_consulta">Representante</label>
+                            <select id="filtro_representante_consulta">
+                                <option value="">Todos</option>
+                                ${representanteOptions}
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="filtro_repositor_consulta">Repositor</label>
+                            <input type="text" id="filtro_repositor_consulta" placeholder="Nome ou código">
+                        </div>
+                        <div class="filter-group">
+                            <label>&nbsp;</label>
+                            <button class="btn btn-primary" onclick="window.app.aplicarFiltrosConsultaRepositores()">🔍 Buscar</button>
+                        </div>
+                    </div>
+
+                    <div id="consultaRepositoresResultado">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📑</div>
+                            <p>Use os filtros para consultar os repositores</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal" id="modalRepresentanteDetalhes">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Detalhes do Representante</h3>
+                        <button class="modal-close" onclick="window.app.fecharDetalhesRepresentante()">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <p><strong id="repNomeLabel">-</strong></p>
+                        <div class="info-grid">
+                            <div>
+                                <small>Supervisor</small>
+                                <div id="repSupervisor">-</div>
+                            </div>
+                            <div>
+                                <small>Período</small>
+                                <div id="repDatas">-</div>
+                            </div>
+                            <div>
+                                <small>Endereço</small>
+                                <div id="repEndereco">-</div>
+                            </div>
+                            <div>
+                                <small>Bairro</small>
+                                <div id="repBairro">-</div>
+                            </div>
+                            <div>
+                                <small>Cidade</small>
+                                <div id="repCidade">-</div>
+                            </div>
+                            <div>
+                                <small>Estado</small>
+                                <div id="repEstado">-</div>
+                            </div>
+                            <div>
+                                <small>Telefone</small>
+                                <div id="repFone">-</div>
+                            </div>
+                            <div>
+                                <small>E-mail</small>
+                                <div id="repEmail">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    'validacao-dados': async () => {
+        const [supervisores, representantes] = await Promise.all([
+            db.getSupervisoresComercial(),
+            db.getRepresentantesComercial()
+        ]);
+
+        const supervisorOptions = supervisores.map(sup => `<option value="${sup}">${sup}</option>`).join('');
+        const representanteOptions = representantes.map(rep => `
+            <option value="${rep.representante}">${rep.representante} - ${rep.desc_representante}</option>
+        `).join('');
+
+        return `
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Validação de Dados</h3>
+                </div>
+                <div class="card-body">
+                    <div class="filter-bar">
+                        <div class="filter-group">
+                            <label for="filtro_supervisor_validacao">Supervisor</label>
+                            <select id="filtro_supervisor_validacao">
+                                <option value="">Todos</option>
+                                ${supervisorOptions}
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="filtro_representante_validacao">Representante</label>
+                            <select id="filtro_representante_validacao">
+                                <option value="">Todos</option>
+                                ${representanteOptions}
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="filtro_repositor_validacao">Repositor</label>
+                            <input type="text" id="filtro_repositor_validacao" placeholder="Nome ou código">
+                        </div>
+                        <div class="filter-group">
+                            <label>&nbsp;</label>
+                            <button class="btn btn-primary" onclick="window.app.executarValidacaoDados()">✅ Executar Validação</button>
+                        </div>
+                    </div>
+
+                    <div id="resultadoValidacao">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">🛡️</div>
+                            <p>Selecione os filtros e clique em "Executar Validação"</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal" id="modalRepresentanteDetalhes">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Detalhes do Representante</h3>
+                        <button class="modal-close" onclick="window.app.fecharDetalhesRepresentante()">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <p><strong id="repNomeLabel">-</strong></p>
+                        <div class="info-grid">
+                            <div>
+                                <small>Supervisor</small>
+                                <div id="repSupervisor">-</div>
+                            </div>
+                            <div>
+                                <small>Período</small>
+                                <div id="repDatas">-</div>
+                            </div>
+                            <div>
+                                <small>Endereço</small>
+                                <div id="repEndereco">-</div>
+                            </div>
+                            <div>
+                                <small>Bairro</small>
+                                <div id="repBairro">-</div>
+                            </div>
+                            <div>
+                                <small>Cidade</small>
+                                <div id="repCidade">-</div>
+                            </div>
+                            <div>
+                                <small>Estado</small>
+                                <div id="repEstado">-</div>
+                            </div>
+                            <div>
+                                <small>Telefone</small>
+                                <div id="repFone">-</div>
+                            </div>
+                            <div>
+                                <small>E-mail</small>
+                                <div id="repEmail">-</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -496,8 +618,9 @@ export const pages = {
 
 // Mapeamento de títulos das páginas
 export const pageTitles = {
-    'cadastro-supervisor': 'Cadastro de Supervisores',
     'cadastro-repositor': 'Cadastro de Repositores',
+    'consulta-repositores': 'Consulta de Repositores',
+    'validacao-dados': 'Validação de Dados',
     'resumo-periodo': 'Resumo do Período',
     'resumo-mensal': 'Resumo Mensal',
     'relatorio-detalhado-repo': 'Relatório Detalhado',

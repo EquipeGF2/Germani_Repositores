@@ -41,18 +41,6 @@ class TursoDatabase {
         if (this.schemaInitialized) return true;
 
         try {
-            // Criar tabela de supervisores
-            await this.mainClient.execute(`
-                CREATE TABLE IF NOT EXISTS cad_supervisor (
-                    sup_cod INTEGER PRIMARY KEY AUTOINCREMENT,
-                    sup_nome TEXT NOT NULL,
-                    sup_data_inicio DATE NOT NULL,
-                    sup_data_fim DATE,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            `);
-
             // Criar tabela de repositores
             await this.mainClient.execute(`
                 CREATE TABLE IF NOT EXISTS cad_repositor (
@@ -63,6 +51,12 @@ class TursoDatabase {
                     repo_cidade_ref TEXT,
                     repo_representante TEXT,
                     repo_vinculo TEXT DEFAULT 'repositor',
+                    repo_supervisor INTEGER,
+                    dias_trabalhados TEXT DEFAULT 'seg,ter,qua,qui,sex',
+                    jornada TEXT DEFAULT 'integral',
+                    rep_supervisor TEXT,
+                    rep_representante_codigo TEXT,
+                    rep_representante_nome TEXT,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
@@ -98,6 +92,36 @@ class TursoDatabase {
                     ALTER TABLE cad_repositor ADD COLUMN repo_supervisor INTEGER
                 `);
                 console.log('✅ Coluna repo_supervisor adicionada');
+            } catch (e) {
+                // Coluna já existe, ignorar
+            }
+
+            // Adicionar coluna rep_supervisor se não existir
+            try {
+                await this.mainClient.execute(`
+                    ALTER TABLE cad_repositor ADD COLUMN rep_supervisor TEXT
+                `);
+                console.log('✅ Coluna rep_supervisor adicionada');
+            } catch (e) {
+                // Coluna já existe, ignorar
+            }
+
+            // Adicionar coluna rep_representante_codigo se não existir
+            try {
+                await this.mainClient.execute(`
+                    ALTER TABLE cad_repositor ADD COLUMN rep_representante_codigo TEXT
+                `);
+                console.log('✅ Coluna rep_representante_codigo adicionada');
+            } catch (e) {
+                // Coluna já existe, ignorar
+            }
+
+            // Adicionar coluna rep_representante_nome se não existir
+            try {
+                await this.mainClient.execute(`
+                    ALTER TABLE cad_repositor ADD COLUMN rep_representante_nome TEXT
+                `);
+                console.log('✅ Coluna rep_representante_nome adicionada');
             } catch (e) {
                 // Coluna já existe, ignorar
             }
@@ -223,6 +247,52 @@ class TursoDatabase {
         }
     }
 
+    // ==================== UTILITÁRIOS DE DATA ====================
+    normalizarData(dataString) {
+        if (!dataString) return null;
+        const [ano, mes, dia] = dataString.split('T')[0].split('-').map(Number);
+        return new Date(ano, mes - 1, dia);
+    }
+
+    isRepositorAtivo(repositor, dataReferencia = new Date()) {
+        const hoje = this.normalizarData(dataReferencia.toISOString().split('T')[0]);
+        const dataInicio = this.normalizarData(repositor.repo_data_inicio);
+        const dataFim = this.normalizarData(repositor.repo_data_fim);
+
+        if (!dataInicio) return false;
+        const iniciou = dataInicio <= hoje;
+        const finalizou = dataFim ? dataFim < hoje : false;
+
+        return iniciou && !finalizou;
+    }
+
+    avaliarStatusRepresentante(rep, dataReferencia = new Date()) {
+        if (!rep) {
+            return {
+                status: 'Inativo',
+                motivo: 'Representante não encontrado'
+            };
+        }
+
+        const hoje = this.normalizarData(dataReferencia.toISOString().split('T')[0]);
+        const dataInicio = this.normalizarData(rep.rep_data_inicio);
+        const dataFim = this.normalizarData(rep.rep_data_fim);
+
+        if (!dataInicio) {
+            return {
+                status: 'Inativo',
+                motivo: 'Representante sem data de início'
+            };
+        }
+
+        const ativo = dataInicio <= hoje && (!dataFim || dataFim >= hoje);
+
+        return {
+            status: ativo ? 'Ativo' : 'Inativo',
+            motivo: ativo ? '' : 'Representante com data fim anterior à data atual'
+        };
+    }
+
     // Registrar mudança no histórico
     async registrarHistorico(repoCod, campo, valorAnterior, valorNovo) {
         try {
@@ -301,91 +371,23 @@ class TursoDatabase {
         }
     }
 
-    // ==================== SUPERVISOR ====================
-    async createSupervisor(nome, dataInicio, dataFim = null) {
-        try {
-            const result = await this.mainClient.execute({
-                sql: 'INSERT INTO cad_supervisor (sup_nome, sup_data_inicio, sup_data_fim) VALUES (?, ?, ?)',
-                args: [nome, dataInicio, dataFim]
-            });
-
-            return {
-                success: true,
-                id: Number(result.lastInsertRowid),
-                message: 'Supervisor cadastrado com sucesso!'
-            };
-        } catch (error) {
-            console.error('Erro ao criar supervisor:', error);
-            throw new Error(error.message || 'Erro ao cadastrar supervisor');
-        }
-    }
-
-    async getAllSupervisors() {
-        try {
-            const result = await this.mainClient.execute('SELECT * FROM cad_supervisor ORDER BY sup_nome');
-            return result.rows;
-        } catch (error) {
-            console.error('Erro ao buscar supervisores:', error);
-            throw new Error(error.message || 'Erro ao buscar supervisores');
-        }
-    }
-
-    async getSupervisor(cod) {
-        try {
-            const result = await this.mainClient.execute({
-                sql: 'SELECT * FROM cad_supervisor WHERE sup_cod = ?',
-                args: [cod]
-            });
-            return result.rows[0] || null;
-        } catch (error) {
-            console.error('Erro ao buscar supervisor:', error);
-            throw new Error(error.message || 'Erro ao buscar supervisor');
-        }
-    }
-
-    async updateSupervisor(cod, nome, dataInicio, dataFim) {
-        try {
-            await this.mainClient.execute({
-                sql: `UPDATE cad_supervisor
-                      SET sup_nome = ?, sup_data_inicio = ?, sup_data_fim = ?,
-                          updated_at = CURRENT_TIMESTAMP
-                      WHERE sup_cod = ?`,
-                args: [nome, dataInicio, dataFim, cod]
-            });
-
-            return {
-                success: true,
-                message: 'Supervisor atualizado com sucesso!'
-            };
-        } catch (error) {
-            console.error('Erro ao atualizar supervisor:', error);
-            throw new Error(error.message || 'Erro ao atualizar supervisor');
-        }
-    }
-
-    async deleteSupervisor(cod) {
-        try {
-            await this.mainClient.execute({
-                sql: 'DELETE FROM cad_supervisor WHERE sup_cod = ?',
-                args: [cod]
-            });
-
-            return {
-                success: true,
-                message: 'Supervisor deletado com sucesso!'
-            };
-        } catch (error) {
-            console.error('Erro ao deletar supervisor:', error);
-            throw new Error(error.message || 'Erro ao deletar supervisor');
-        }
-    }
-
     // ==================== REPOSITOR ====================
-    async createRepositor(nome, dataInicio, dataFim, cidadeRef, representante, vinculo = 'repositor', supervisor = null, diasTrabalhados = 'seg,ter,qua,qui,sex', jornada = 'integral') {
+    async createRepositor(nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo = 'repositor', repSupervisor = null, diasTrabalhados = 'seg,ter,qua,qui,sex', jornada = 'integral') {
         try {
             const result = await this.mainClient.execute({
-                sql: 'INSERT INTO cad_repositor (repo_nome, repo_data_inicio, repo_data_fim, repo_cidade_ref, repo_representante, repo_vinculo, repo_supervisor, dias_trabalhados, jornada) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                args: [nome, dataInicio, dataFim, cidadeRef, representante, vinculo, supervisor, diasTrabalhados, jornada]
+                sql: `INSERT INTO cad_repositor (
+                        repo_nome, repo_data_inicio, repo_data_fim,
+                        repo_cidade_ref, repo_representante, repo_vinculo,
+                        repo_supervisor, dias_trabalhados, jornada,
+                        rep_supervisor, rep_representante_codigo, rep_representante_nome
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
+                args: [
+                    nome, dataInicio, dataFim,
+                    cidadeRef, `${repCodigo || ''}${repNome ? ' - ' + repNome : ''}`.trim(), vinculo,
+                    null,
+                    diasTrabalhados, jornada,
+                    repSupervisor, repCodigo, repNome
+                ]
             });
 
             return {
@@ -422,7 +424,7 @@ class TursoDatabase {
         }
     }
 
-    async updateRepositor(cod, nome, dataInicio, dataFim, cidadeRef, representante, vinculo = 'repositor', supervisor = null, diasTrabalhados = 'seg,ter,qua,qui,sex', jornada = 'integral') {
+    async updateRepositor(cod, nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo = 'repositor', repSupervisor = null, diasTrabalhados = 'seg,ter,qua,qui,sex', jornada = 'integral') {
         try {
             // Buscar dados antigos para comparação
             const dadosAntigos = await this.getRepositor(cod);
@@ -433,18 +435,23 @@ class TursoDatabase {
                       SET repo_nome = ?, repo_data_inicio = ?, repo_data_fim = ?,
                           repo_cidade_ref = ?, repo_representante = ?, repo_vinculo = ?,
                           repo_supervisor = ?, dias_trabalhados = ?, jornada = ?,
+                          rep_supervisor = ?, rep_representante_codigo = ?, rep_representante_nome = ?,
                           updated_at = CURRENT_TIMESTAMP
                       WHERE repo_cod = ?`,
-                args: [nome, dataInicio, dataFim, cidadeRef, representante, vinculo, supervisor, diasTrabalhados, jornada, cod]
+                args: [
+                    nome, dataInicio, dataFim,
+                    cidadeRef,
+                    `${repCodigo || ''}${repNome ? ' - ' + repNome : ''}`.trim(),
+                    vinculo,
+                    null,
+                    diasTrabalhados, jornada,
+                    repSupervisor, repCodigo, repNome,
+                    cod
+                ]
             });
 
             // Registrar mudanças no histórico
             if (dadosAntigos) {
-                if (dadosAntigos.repo_supervisor != supervisor) {
-                    await this.registrarHistorico(cod, 'supervisor',
-                        dadosAntigos.repo_supervisor?.toString() || 'Nenhum',
-                        supervisor?.toString() || 'Nenhum');
-                }
                 if (dadosAntigos.dias_trabalhados !== diasTrabalhados) {
                     await this.registrarHistorico(cod, 'dias_trabalhados',
                         dadosAntigos.dias_trabalhados, diasTrabalhados);
@@ -460,6 +467,16 @@ class TursoDatabase {
                 if (dadosAntigos.repo_nome !== nome) {
                     await this.registrarHistorico(cod, 'nome',
                         dadosAntigos.repo_nome, nome);
+                }
+                if (dadosAntigos.rep_supervisor !== repSupervisor) {
+                    await this.registrarHistorico(cod, 'rep_supervisor',
+                        dadosAntigos.rep_supervisor || 'Nenhum',
+                        repSupervisor || 'Nenhum');
+                }
+                if (dadosAntigos.rep_representante_codigo !== repCodigo || dadosAntigos.rep_representante_nome !== repNome) {
+                    await this.registrarHistorico(cod, 'representante',
+                        `${dadosAntigos.rep_representante_codigo || ''} - ${dadosAntigos.rep_representante_nome || ''}`.trim(),
+                        `${repCodigo || ''} - ${repNome || ''}`.trim());
                 }
             }
 
@@ -488,6 +505,161 @@ class TursoDatabase {
             console.error('Erro ao deletar repositor:', error);
             throw new Error(error.message || 'Erro ao deletar repositor');
         }
+    }
+
+    // ==================== DADOS DO BANCO COMERCIAL ====================
+    async getSupervisoresComercial() {
+        try {
+            await this.connectComercial();
+
+            if (!this.comercialClient) {
+                return [];
+            }
+
+            const result = await this.comercialClient.execute(`
+                SELECT DISTINCT rep_supervisor
+                FROM tab_representante
+                WHERE rep_supervisor IS NOT NULL AND rep_supervisor <> ''
+                ORDER BY rep_supervisor
+            `);
+
+            return result.rows.map(row => row.rep_supervisor);
+        } catch (error) {
+            console.error('Erro ao buscar supervisores comerciais:', error);
+            return [];
+        }
+    }
+
+    async getRepresentantesComercial() {
+        try {
+            await this.connectComercial();
+
+            if (!this.comercialClient) {
+                return [];
+            }
+
+            const result = await this.comercialClient.execute(`
+                SELECT representante, desc_representante, rep_supervisor,
+                       rep_endereco, rep_bairro, rep_cidade, rep_estado,
+                       rep_fone, rep_email, rep_data_inicio, rep_data_fim
+                FROM tab_representante
+                WHERE representante IS NOT NULL
+                ORDER BY representante
+            `);
+
+            return result.rows;
+        } catch (error) {
+            console.error('Erro ao buscar representantes:', error);
+            return [];
+        }
+    }
+
+    async getRepresentantesPorCodigo(codigos = []) {
+        try {
+            await this.connectComercial();
+            if (!this.comercialClient || codigos.length === 0) return {};
+
+            const placeholders = codigos.map(() => '?').join(',');
+            const result = await this.comercialClient.execute({
+                sql: `
+                    SELECT representante, desc_representante, rep_supervisor,
+                           rep_endereco, rep_bairro, rep_cidade, rep_estado,
+                           rep_fone, rep_email, rep_data_inicio, rep_data_fim
+                    FROM tab_representante
+                    WHERE representante IN (${placeholders})
+                `,
+                args: codigos
+            });
+
+            const mapa = {};
+            result.rows.forEach(row => {
+                mapa[row.representante] = row;
+            });
+
+            return mapa;
+        } catch (error) {
+            console.error('Erro ao buscar representantes por código:', error);
+            return {};
+        }
+    }
+
+    async getRepositoresDetalhados({ supervisor = '', representante = '', repositor = '' } = {}) {
+        const args = [];
+        let sql = `SELECT * FROM cad_repositor WHERE 1=1`;
+
+        if (supervisor) {
+            sql += ' AND rep_supervisor = ?';
+            args.push(supervisor);
+        }
+
+        if (representante) {
+            sql += ' AND rep_representante_codigo = ?';
+            args.push(representante);
+        }
+
+        if (repositor) {
+            sql += ' AND (repo_nome LIKE ? OR CAST(repo_cod AS TEXT) LIKE ?)';
+            args.push(`%${repositor}%`, `%${repositor}%`);
+        }
+
+        sql += ' ORDER BY repo_nome';
+
+        try {
+            const result = await this.mainClient.execute({ sql, args });
+            const repositores = result.rows;
+            const codigos = [...new Set(repositores.map(r => r.rep_representante_codigo).filter(Boolean))];
+            const mapaRepresentantes = await this.getRepresentantesPorCodigo(codigos);
+
+            return repositores.map(repo => {
+                const representante = repo.rep_representante_codigo ? mapaRepresentantes[repo.rep_representante_codigo] : null;
+                return {
+                    ...repo,
+                    representante,
+                    status_representante: this.avaliarStatusRepresentante(representante)
+                };
+            });
+        } catch (error) {
+            console.error('Erro ao consultar repositores detalhados:', error);
+            return [];
+        }
+    }
+
+    async validarVinculosRepositores(filtros = {}) {
+        const dataReferencia = new Date();
+        const repositores = await this.getRepositoresDetalhados(filtros);
+
+        return repositores.map(repo => {
+            const repositorAtivo = this.isRepositorAtivo(repo, dataReferencia);
+            const representante = repo.representante;
+            const statusRepresentante = this.avaliarStatusRepresentante(representante, dataReferencia);
+
+            let resultado_validacao = 'OK';
+            let motivo_inconsistencia = '';
+
+            if (repositorAtivo) {
+                if (statusRepresentante.status !== 'Ativo') {
+                    resultado_validacao = 'Inconsistência';
+                    motivo_inconsistencia = statusRepresentante.motivo || 'Representante inativo';
+                }
+            } else {
+                resultado_validacao = 'OK';
+                motivo_inconsistencia = 'Repositor inativo';
+            }
+
+            if (!representante) {
+                resultado_validacao = 'Inconsistência';
+                motivo_inconsistencia = 'Representante não localizado na tab_representante';
+            }
+
+            return {
+                ...repo,
+                representante,
+                status_representante: statusRepresentante,
+                repositor_ativo: repositorAtivo,
+                resultado_validacao,
+                motivo_inconsistencia
+            };
+        });
     }
 
     // ==================== ESTRUTURA DO BANCO COMERCIAL ====================
