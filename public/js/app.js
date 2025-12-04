@@ -273,6 +273,114 @@ class App {
         }
     }
 
+    // ==================== CONSULTA DE ALTERAÇÕES ====================
+
+    async aplicarFiltrosHistorico() {
+        const motivo = document.getElementById('filtro_motivo').value || null;
+        const dataInicio = document.getElementById('filtro_data_inicio').value || null;
+        const dataFim = document.getElementById('filtro_data_fim').value || null;
+
+        try {
+            const historico = await db.getHistoricoComFiltros(motivo, dataInicio, dataFim);
+            const resultadosDiv = document.getElementById('resultadosHistorico');
+
+            if (historico.length === 0) {
+                resultadosDiv.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🔍</div>
+                        <p>Nenhuma alteração encontrada com os filtros selecionados</p>
+                    </div>
+                `;
+            } else {
+                resultadosDiv.innerHTML = `
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Data/Hora</th>
+                                    <th>Repositor</th>
+                                    <th>Campo Alterado</th>
+                                    <th>Valor Anterior</th>
+                                    <th>Valor Novo</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${historico.map(h => {
+                                    const dataAlteracao = new Date(h.hist_data_alteracao);
+                                    const dataFormatada = dataAlteracao.toLocaleString('pt-BR');
+
+                                    return `
+                                        <tr>
+                                            <td>${dataFormatada}</td>
+                                            <td>${h.repo_nome || 'Repositor não encontrado'}</td>
+                                            <td><span class="badge badge-info">${h.hist_campo_alterado}</span></td>
+                                            <td>${h.hist_valor_anterior || '-'}</td>
+                                            <td>${h.hist_valor_novo || '-'}</td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                        <p style="margin-top: 1rem; color: var(--gray-600); font-size: 0.9rem;">
+                            Total de alterações: ${historico.length}
+                        </p>
+                    </div>
+                `;
+            }
+        } catch (error) {
+            this.showNotification('Erro ao buscar histórico: ' + error.message, 'error');
+        }
+    }
+
+    // ==================== ESTRUTURA DO BANCO ====================
+
+    async verDadosAmostra(nomeTabela) {
+        const amostraDiv = document.getElementById(`amostra-${nomeTabela}`);
+
+        if (amostraDiv.innerHTML) {
+            // Se já está exibindo, esconder
+            amostraDiv.innerHTML = '';
+            return;
+        }
+
+        try {
+            amostraDiv.innerHTML = '<p style="color: var(--gray-600);">Carregando...</p>';
+
+            const dados = await db.getSampleDataComercial(nomeTabela, 5);
+
+            if (dados.length === 0) {
+                amostraDiv.innerHTML = '<p style="color: var(--gray-600);">Nenhum dado encontrado</p>';
+                return;
+            }
+
+            const colunas = Object.keys(dados[0]);
+
+            amostraDiv.innerHTML = `
+                <div class="table-container" style="margin-top: 1rem;">
+                    <p style="margin-bottom: 0.5rem; color: var(--gray-600); font-size: 0.875rem;">
+                        <strong>Primeiros 5 registros:</strong>
+                    </p>
+                    <table style="font-size: 0.75rem;">
+                        <thead>
+                            <tr>
+                                ${colunas.map(col => `<th>${col}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${dados.map(row => `
+                                <tr>
+                                    ${colunas.map(col => `<td>${row[col] !== null && row[col] !== undefined ? row[col] : '-'}</td>`).join('')}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        } catch (error) {
+            amostraDiv.innerHTML = `<p style="color: var(--danger);">Erro ao carregar dados: ${error.message}</p>`;
+        }
+    }
+
     // ==================== NOTIFICAÇÕES ====================
 
     showNotification(message, type = 'info') {
