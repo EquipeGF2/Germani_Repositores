@@ -662,6 +662,35 @@ tbody td {
     color: #1e40af;
 }
 
+.row-warning {
+    background: #fff7ed;
+}
+
+.text-muted {
+    color: var(--gray-600);
+    font-size: 0.85rem;
+}
+
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: var(--spacing-sm);
+}
+
+.info-grid > div {
+    background: var(--gray-100);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius);
+    padding: var(--spacing-sm);
+}
+
+.info-grid small {
+    display: block;
+    color: var(--gray-600);
+    margin-bottom: 4px;
+    font-size: 0.8rem;
+}
+
 /* ==================== ESTADOS VAZIOS ==================== */
 
 .empty-state {
