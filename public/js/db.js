@@ -144,6 +144,27 @@ class TursoDatabase {
                 // Coluna já existe, ignorar
             }
 
+            try {
+                const faltantes = await this.mainClient.execute(`
+                    SELECT repo_cod, repo_representante
+                    FROM cad_repositor
+                    WHERE (rep_representante_codigo IS NULL OR rep_representante_codigo = '')
+                      AND repo_representante IS NOT NULL AND repo_representante <> ''
+                `);
+
+                for (const row of faltantes.rows) {
+                    const codigo = this.extrairCodigoRepresentante(row.repo_representante);
+                    if (codigo) {
+                        await this.mainClient.execute({
+                            sql: 'UPDATE cad_repositor SET rep_representante_codigo = ? WHERE repo_cod = ?',
+                            args: [codigo, row.repo_cod]
+                        });
+                    }
+                }
+            } catch (e) {
+                console.warn('Aviso ao normalizar códigos de representante:', e?.message || e);
+            }
+
             // Remover tabela cad_supervisor descontinuada
             try {
                 await this.mainClient.execute('DROP TABLE IF EXISTS cad_supervisor');
@@ -400,6 +421,12 @@ class TursoDatabase {
         return new Date(ano, mes - 1, dia);
     }
 
+    extrairCodigoRepresentante(valor = '') {
+        if (!valor) return null;
+        const codigo = String(valor).split('-')[0]?.trim();
+        return codigo || null;
+    }
+
     isRepositorAtivo(repositor, dataReferencia = new Date()) {
         const hoje = this.normalizarData(dataReferencia.toISOString().split('T')[0]);
         const dataInicio = this.normalizarData(repositor.repo_data_inicio);
@@ -527,6 +554,9 @@ class TursoDatabase {
             `;
             const args = [];
 
+            const dataInicioLimpa = dataInicio ? dataInicio.split('T')[0] : null;
+            const dataFimLimpa = dataFim ? dataFim.split('T')[0] : null;
+
             if (repositorId) {
                 sql += ' AND a.rot_aud_repositor_id = ?';
                 args.push(repositorId);
@@ -542,14 +572,14 @@ class TursoDatabase {
                 args.push(`%${cidade}%`);
             }
 
-            if (dataInicio) {
-                sql += ' AND datetime(a.rot_aud_data_hora) >= datetime(?)';
-                args.push(dataInicio);
+            if (dataInicioLimpa) {
+                sql += ' AND DATE(a.rot_aud_data_hora) >= DATE(?)';
+                args.push(dataInicioLimpa);
             }
 
-            if (dataFim) {
-                sql += ' AND datetime(a.rot_aud_data_hora) <= datetime(?)';
-                args.push(dataFim);
+            if (dataFimLimpa) {
+                sql += ' AND DATE(a.rot_aud_data_hora) <= DATE(?)';
+                args.push(dataFimLimpa);
             }
 
             sql += ' ORDER BY a.rot_aud_data_hora DESC';
@@ -666,6 +696,23 @@ class TursoDatabase {
         }
     }
 
+    async atualizarCodigoRepresentanteSeFaltante(repoCod, codigo) {
+        if (!repoCod || !codigo) return;
+
+        try {
+            await this.mainClient.execute({
+                sql: `
+                    UPDATE cad_repositor
+                    SET rep_representante_codigo = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE repo_cod = ? AND (rep_representante_codigo IS NULL OR rep_representante_codigo = '')
+                `,
+                args: [codigo, repoCod]
+            });
+        } catch (error) {
+            console.warn('Não foi possível atualizar o código do representante:', error?.message || error);
+        }
+    }
+
     async updateRepositor(cod, nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo = 'repositor', repSupervisor = null, diasTrabalhados = 'seg,ter,qua,qui,sex', repJornadaTipo = 'INTEGRAL') {
         try {
             // Buscar dados antigos para comparação
@@ -773,9 +820,16 @@ class TursoDatabase {
         const repositor = await this.getRepositor(repoId);
         if (!repositor) return null;
 
-        if (repositor.rep_representante_codigo) {
-            const representantes = await this.getRepresentantesPorCodigo([repositor.rep_representante_codigo]);
-            repositor.representante = representantes[repositor.rep_representante_codigo] || null;
+        const codigoRep = repositor.rep_representante_codigo || this.extrairCodigoRepresentante(repositor.repo_representante);
+
+        if (codigoRep && !repositor.rep_representante_codigo) {
+            await this.atualizarCodigoRepresentanteSeFaltante(repoId, codigoRep);
+            repositor.rep_representante_codigo = codigoRep;
+        }
+
+        if (codigoRep) {
+            const representantes = await this.getRepresentantesPorCodigo([codigoRep]);
+            repositor.representante = representantes[codigoRep] || null;
         }
 
         return repositor;
@@ -1199,8 +1253,20 @@ class TursoDatabase {
         try {
             const result = await this.mainClient.execute({ sql, args });
             const repositores = result.rows;
-            const codigos = [...new Set(repositores.map(r => r.rep_representante_codigo).filter(Boolean))];
-            const mapaRepresentantes = await this.getRepresentantesPorCodigo(codigos);
+            const codigoSet = new Set();
+
+            for (const repo of repositores) {
+                const codigo = repo.rep_representante_codigo || this.extrairCodigoRepresentante(repo.repo_representante);
+                if (codigo) {
+                    codigoSet.add(codigo);
+                    if (!repo.rep_representante_codigo) {
+                        await this.atualizarCodigoRepresentanteSeFaltante(repo.repo_cod, codigo);
+                        repo.rep_representante_codigo = codigo;
+                    }
+                }
+            }
+
+            const mapaRepresentantes = await this.getRepresentantesPorCodigo([...codigoSet]);
 
             return repositores.map(repo => {
                 const representante = repo.rep_representante_codigo ? mapaRepresentantes[repo.rep_representante_codigo] : null;

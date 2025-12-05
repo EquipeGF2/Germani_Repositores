@@ -1029,8 +1029,8 @@ tbody td {
 }
 
 .roteiro-layout {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
+    flex-direction: column;
     gap: 1rem;
 }
 
@@ -1078,6 +1078,71 @@ tbody td {
     font-weight: 600;
 }
 
+.roteiro-clientes-table th,
+.roteiro-clientes-table td {
+    white-space: normal;
+    word-break: break-word;
+}
+
+.roteiro-clientes-table td:nth-child(6),
+.roteiro-clientes-table td:nth-child(7) {
+    max-width: 260px;
+}
+
+.roteiro-clientes-table td:nth-child(3),
+.roteiro-clientes-table td:nth-child(4) {
+    max-width: 220px;
+}
+
+.tabela-roteiro-selecao td {
+    vertical-align: middle;
+}
+
+.cidade-busca-row {
+    align-items: flex-end;
+    gap: 1rem;
+}
+
+.autocomplete-input {
+    position: relative;
+}
+
+.autocomplete-input input {
+    width: 100%;
+}
+
+.autocomplete-list {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background: var(--white);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    max-height: 240px;
+    overflow-y: auto;
+    z-index: 5;
+}
+
+.autocomplete-item {
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+}
+
+.autocomplete-item:hover {
+    background: var(--gray-100);
+}
+
+.autocomplete-item.disabled {
+    color: var(--gray-500);
+    cursor: default;
+}
+
+.busca-clientes-card input {
+    width: 100%;
+}
+
 .col-contato {
     min-width: 160px;
     white-space: nowrap;
@@ -1123,6 +1188,6 @@ tbody td {
 
 @media (max-width: 1200px) {
     .roteiro-layout {
-        grid-template-columns: 1fr;
+        flex-direction: column;
     }
 }
