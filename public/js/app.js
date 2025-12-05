@@ -5,12 +5,30 @@
 
 import { db } from './db.js';
 import { pages, pageTitles } from './pages.js';
+import { ACL_RECURSOS } from './acl-resources.js';
 
 class App {
     constructor() {
         this.currentPage = 'cadastro-repositor';
         this.ultimaConsultaRepositores = [];
         this.resultadosValidacao = [];
+        this.usuarioLogado = null;
+        this.permissoes = {};
+        this.permissoesEdicaoUsuario = {};
+        this.usuarioSelecionadoAcl = null;
+        this.recursosPorPagina = {
+            'cadastro-repositor': 'mod_repositores',
+            'consulta-repositores': 'mod_repositores',
+            'validacao-dados': 'mod_repositores',
+            'resumo-periodo': 'mod_repositores',
+            'resumo-mensal': 'mod_repositores',
+            'relatorio-detalhado-repo': 'mod_repositores',
+            'analise-grafica-repo': 'mod_repositores',
+            'alteracoes-rota': 'mod_repositores',
+            'consulta-alteracoes': 'mod_repositores',
+            'estrutura-banco-comercial': 'mod_repositores',
+            'controle-acessos': 'mod_configuracoes'
+        };
         this.init();
     }
 
@@ -28,6 +46,21 @@ class App {
 
         // Inicializa banco de dados
         await this.initializeDatabase();
+
+        const temSessao = await this.ensureUsuarioLogado();
+        if (!temSessao) return;
+
+        await this.carregarPermissoesUsuario();
+        this.aplicarInformacoesUsuario();
+        this.configurarVisibilidadeConfiguracoes();
+
+        if (!this.usuarioTemPermissao('mod_repositores')) {
+            this.renderAcessoNegado('mod_repositores');
+            return;
+        }
+
+        // Carrega a página inicial
+        await this.navigateTo(this.currentPage);
     }
 
     setupEventListeners() {
@@ -51,9 +84,6 @@ class App {
             await db.connectComercial();
 
             console.log('✅ Sistema inicializado com sucesso');
-
-            // Carrega a página inicial
-            await this.navigateTo(this.currentPage);
         } catch (error) {
             console.error('❌ Erro ao inicializar:', error);
             this.showNotification('Erro ao conectar ao banco de dados: ' + error.message, 'error');
@@ -68,7 +98,267 @@ class App {
         }
     }
 
+    // ==================== AUTENTICAÇÃO E PERMISSÕES ====================
+
+    async ensureUsuarioLogado() {
+        try {
+            const armazenado = localStorage.getItem('ga_usuario');
+            if (armazenado) {
+                this.usuarioLogado = JSON.parse(armazenado);
+                return true;
+            }
+
+            this.renderLoginScreen();
+            return false;
+        } catch (error) {
+            console.error('Erro ao recuperar sessão do usuário:', error);
+            this.renderLoginScreen();
+            return false;
+        }
+    }
+
+    renderLoginScreen() {
+        this.elements.pageTitle.textContent = 'Login';
+        this.elements.contentBody.innerHTML = `
+            <div class="login-wrapper">
+                <div class="login-card">
+                    <div class="login-header">
+                        <h3>Acessar Dashboard</h3>
+                        <p>Informe seu usuário do banco comercial para continuar.</p>
+                    </div>
+                    <form id="formLogin">
+                        <div class="form-group full-width">
+                            <label for="loginUsername">Usuário</label>
+                            <input type="text" id="loginUsername" placeholder="username" required />
+                        </div>
+                        <div class="login-actions">
+                            <button type="submit" class="btn btn-primary" id="btnLogin">Entrar</button>
+                        </div>
+                    </form>
+                    <small class="text-muted">A autenticação é realizada apenas pelo username cadastrado no sistema comercial.</small>
+                </div>
+            </div>
+        `;
+
+        const formLogin = document.getElementById('formLogin');
+        if (formLogin) {
+            formLogin.addEventListener('submit', (e) => this.autenticarUsuario(e));
+        }
+    }
+
+    async autenticarUsuario(event) {
+        event.preventDefault();
+
+        const username = document.getElementById('loginUsername')?.value?.trim();
+        if (!username) {
+            this.showNotification('Informe o usuário para continuar.', 'warning');
+            return;
+        }
+
+        try {
+            const usuario = await db.getUsuarioComercialPorUsername(username);
+
+            if (!usuario) {
+                this.showNotification('Usuário não cadastrado no sistema comercial.', 'error');
+                return;
+            }
+
+            this.usuarioLogado = { user_id: usuario.id, username: usuario.username };
+            localStorage.setItem('ga_usuario', JSON.stringify(this.usuarioLogado));
+
+            await this.carregarPermissoesUsuario();
+            this.aplicarInformacoesUsuario();
+            this.configurarVisibilidadeConfiguracoes();
+
+            if (!this.usuarioTemPermissao('mod_repositores')) {
+                this.renderAcessoNegado('mod_repositores');
+                return;
+            }
+
+            await this.navigateTo(this.currentPage);
+        } catch (error) {
+            console.error('Erro ao autenticar usuário:', error);
+            this.showNotification('Erro ao autenticar usuário. Verifique a conexão com o banco comercial.', 'error');
+        }
+    }
+
+    aplicarInformacoesUsuario() {
+        const userStatus = document.getElementById('userStatus');
+        if (!userStatus) return;
+
+        if (this.usuarioLogado?.username) {
+            userStatus.textContent = `Usuário: ${this.usuarioLogado.username}`;
+        } else {
+            userStatus.textContent = 'Usuário não autenticado';
+        }
+    }
+
+    async carregarPermissoesUsuario() {
+        const mapa = {};
+        ACL_RECURSOS.forEach(recurso => {
+            mapa[recurso.codigo] = false;
+        });
+
+        if (this.usuarioLogado?.user_id) {
+            const permissoes = await db.getPermissoesUsuario(this.usuarioLogado.user_id);
+            permissoes.forEach(permissao => {
+                mapa[permissao.recurso] = !!permissao.pode_acessar;
+            });
+        }
+
+        this.permissoes = mapa;
+    }
+
+    usuarioTemPermissao(recurso) {
+        if (!recurso) return true;
+        return !!this.permissoes[recurso];
+    }
+
+    configurarVisibilidadeConfiguracoes() {
+        const linkControle = document.querySelector('[data-page="controle-acessos"]');
+        if (!linkControle) return;
+
+        if (this.usuarioTemPermissao('mod_configuracoes')) {
+            linkControle.classList.remove('hidden');
+            linkControle.parentElement?.classList.remove('hidden');
+        } else {
+            linkControle.classList.add('hidden');
+            linkControle.parentElement?.classList.add('hidden');
+        }
+    }
+
+    renderAcessoNegado(recurso) {
+        const recursoLabel = ACL_RECURSOS.find(r => r.codigo === recurso)?.titulo || 'módulo';
+        this.elements.pageTitle.textContent = 'Acesso negado';
+        this.elements.contentBody.innerHTML = `
+            <div class="acesso-negado">
+                <div class="acesso-negado__icon">🔒</div>
+                <h3>Acesso negado</h3>
+                <p>Você não tem permissão para acessar ${recursoLabel}. Solicite liberação ao administrador.</p>
+            </div>
+        `;
+    }
+
+    async inicializarControleAcessos() {
+        const seletorUsuario = document.getElementById('controleAcessoUsuario');
+        const matrizPermissoes = document.getElementById('controleAcessoMatriz');
+        const botaoSalvar = document.getElementById('btnSalvarPermissoes');
+
+        if (!seletorUsuario || !matrizPermissoes) return;
+
+        matrizPermissoes.innerHTML = '<p class="text-muted">Selecione um usuário para exibir as permissões.</p>';
+
+        const usuarios = await db.listarUsuariosComercial();
+        seletorUsuario.innerHTML = '<option value="">Selecione um usuário</option>' +
+            usuarios.map(user => `<option value="${user.id}" data-username="${user.username}">${user.username}</option>`).join('');
+
+        seletorUsuario.addEventListener('change', (e) => {
+            const opcao = e.target.selectedOptions[0];
+            if (!opcao?.value) {
+                matrizPermissoes.innerHTML = '<p class="text-muted">Selecione um usuário para configurar.</p>';
+                this.usuarioSelecionadoAcl = null;
+                this.permissoesEdicaoUsuario = {};
+                return;
+            }
+
+            this.usuarioSelecionadoAcl = {
+                user_id: Number(opcao.value),
+                username: opcao.dataset.username
+            };
+            this.carregarPermissoesParaUsuarioSelecionado();
+        });
+
+        if (botaoSalvar) {
+            botaoSalvar.addEventListener('click', () => this.salvarPermissoesControleAcesso());
+        }
+    }
+
+    async carregarPermissoesParaUsuarioSelecionado() {
+        const matrizPermissoes = document.getElementById('controleAcessoMatriz');
+        if (!this.usuarioSelecionadoAcl) {
+            matrizPermissoes.innerHTML = '<p class="text-muted">Selecione um usuário para configurar.</p>';
+            return;
+        }
+
+        matrizPermissoes.innerHTML = '<p class="text-muted">Carregando permissões...</p>';
+
+        const permissoes = await db.getPermissoesUsuario(this.usuarioSelecionadoAcl.user_id);
+        const mapa = {};
+        ACL_RECURSOS.forEach(recurso => {
+            mapa[recurso.codigo] = false;
+        });
+        permissoes.forEach(permissao => {
+            mapa[permissao.recurso] = !!permissao.pode_acessar;
+        });
+
+        this.permissoesEdicaoUsuario = mapa;
+        this.renderMatrizPermissoes();
+    }
+
+    renderMatrizPermissoes() {
+        const matrizPermissoes = document.getElementById('controleAcessoMatriz');
+        if (!matrizPermissoes) return;
+
+        matrizPermissoes.innerHTML = `
+            <div class="acl-grid">
+                ${ACL_RECURSOS.map(recurso => `
+                    <label class="acl-card">
+                        <div class="acl-card__title">${recurso.titulo}</div>
+                        <div class="acl-card__checkbox">
+                            <input type="checkbox" data-recurso="${recurso.codigo}" ${this.permissoesEdicaoUsuario[recurso.codigo] ? 'checked' : ''} />
+                            <span>${this.permissoesEdicaoUsuario[recurso.codigo] ? 'Liberado' : 'Bloqueado'}</span>
+                        </div>
+                    </label>
+                `).join('')}
+            </div>
+        `;
+
+        matrizPermissoes.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+            checkbox.addEventListener('change', (e) => {
+                const recurso = e.target.dataset.recurso;
+                this.permissoesEdicaoUsuario[recurso] = e.target.checked;
+                e.target.nextElementSibling.textContent = e.target.checked ? 'Liberado' : 'Bloqueado';
+            });
+        });
+    }
+
+    async salvarPermissoesControleAcesso() {
+        if (!this.usuarioSelecionadoAcl) {
+            this.showNotification('Selecione um usuário para salvar as permissões.', 'warning');
+            return;
+        }
+
+        const permissoesLista = Object.entries(this.permissoesEdicaoUsuario).map(([recurso, pode_acessar]) => ({
+            recurso,
+            pode_acessar
+        }));
+
+        await db.salvarPermissoesUsuario(
+            this.usuarioSelecionadoAcl.user_id,
+            this.usuarioSelecionadoAcl.username,
+            permissoesLista
+        );
+
+        this.showNotification('Permissões atualizadas com sucesso!', 'success');
+
+        if (this.usuarioLogado?.user_id === this.usuarioSelecionadoAcl.user_id) {
+            await this.carregarPermissoesUsuario();
+            this.configurarVisibilidadeConfiguracoes();
+        }
+    }
+
     async navigateTo(pageName) {
+        if (!this.usuarioLogado) {
+            const temSessao = await this.ensureUsuarioLogado();
+            if (!temSessao) return;
+        }
+
+        const recursoNecessario = this.recursosPorPagina[pageName] || 'mod_repositores';
+        if (!this.usuarioTemPermissao(recursoNecessario)) {
+            this.renderAcessoNegado(recursoNecessario);
+            return;
+        }
+
         // Atualiza navegação ativa
         document.querySelectorAll('[data-page]').forEach(link => {
             link.classList.remove('active');
@@ -96,6 +386,8 @@ class App {
 
             if (pageName === 'consulta-repositores') {
                 this.aplicarFiltrosConsultaRepositores();
+            } else if (pageName === 'controle-acessos') {
+                await this.inicializarControleAcessos();
             }
         } catch (error) {
             console.error('Erro ao carregar página:', error);
@@ -117,11 +409,36 @@ class App {
         return `${dia}/${mes}/${ano}`;
     }
 
-    showModalRepositor() {
-        document.getElementById('modalRepositor').classList.add('active');
-        document.getElementById('formRepositor').reset();
-        document.getElementById('repo_cod').value = '';
-        document.getElementById('modalRepositorTitle').textContent = 'Novo Repositor';
+    showModalRepositor(modo = 'create', repositor = null) {
+        const modal = document.getElementById('modalRepositor');
+        const form = document.getElementById('formRepositor');
+        const titulo = document.getElementById('modalRepositorTitle');
+        const botao = document.getElementById('btnSubmitRepositor');
+
+        if (!modal || !form) return;
+
+        if (modo === 'create') {
+            form.reset();
+            const diasPadrao = ['seg', 'ter', 'qua', 'qui', 'sex'];
+
+            document.getElementById('repo_cod').value = '';
+            document.getElementById('repo_vinculo_agencia').checked = false;
+
+            document.querySelectorAll('.dia-trabalho').forEach(checkbox => {
+                checkbox.checked = diasPadrao.includes(checkbox.value);
+            });
+
+            const jornadaPadrao = document.querySelector('input[name="jornada"][value="integral"]');
+            if (jornadaPadrao) jornadaPadrao.checked = true;
+
+            if (titulo) titulo.textContent = 'Novo Repositor';
+            if (botao) botao.textContent = 'Cadastrar';
+        } else {
+            if (titulo) titulo.textContent = repositor?.repo_vinculo === 'agencia' ? 'Editar Agência' : 'Editar Repositor';
+            if (botao) botao.textContent = 'Salvar alterações';
+        }
+
+        modal.classList.add('active');
     }
 
     closeModalRepositor() {
@@ -235,7 +552,7 @@ class App {
                                     <td>${repo.rep_contato_telefone || '-'}</td>
                                     <td class="table-actions">
                                         <button class="btn-icon" onclick="window.app.abrirDetalhesRepresentante(${index}, 'consulta')" title="Detalhes do Representante">👁️</button>
-                                        <button class="btn-icon" onclick="window.app.editRepositor(${repo.repo_cod})" title="Editar">✏️</button>
+                                        <button class="btn-icon" onclick="window.app.abrirCadastroRepositor(${repo.repo_cod})" title="Editar">✏️</button>
                                     </td>
                                 </tr>
                             `;
@@ -265,7 +582,6 @@ class App {
         modal.querySelector('#repFone').textContent = representante.rep_fone || '-';
         modal.querySelector('#repEmail').textContent = representante.rep_email || '-';
         modal.querySelector('#repSupervisor').textContent = representante.rep_supervisor || '-';
-        modal.querySelector('#repDatas').textContent = `${this.formatarDataSimples(representante.rep_data_inicio)} até ${this.formatarDataSimples(representante.rep_data_fim)}`;
 
         modal.classList.add('active');
     }
@@ -357,6 +673,10 @@ class App {
 
     async editRepositor(cod) {
         try {
+            if (this.currentPage !== 'cadastro-repositor') {
+                await this.navigateTo('cadastro-repositor');
+            }
+
             const repositor = await db.getRepositor(cod);
 
             if (!repositor) {
@@ -364,15 +684,29 @@ class App {
                 return;
             }
 
-            document.getElementById('repo_cod').value = repositor.repo_cod;
-            document.getElementById('repo_nome').value = repositor.repo_nome;
-            document.getElementById('repo_data_inicio').value = repositor.repo_data_inicio;
-            document.getElementById('repo_data_fim').value = repositor.repo_data_fim || '';
-            document.getElementById('repo_cidade_ref').value = repositor.repo_cidade_ref || '';
-            document.getElementById('repo_representante').value = repositor.rep_representante_codigo || '';
-            document.getElementById('repo_contato_telefone').value = repositor.rep_contato_telefone || '';
-            document.getElementById('repo_vinculo_agencia').checked = repositor.repo_vinculo === 'agencia';
-            document.getElementById('repo_supervisor').value = repositor.rep_supervisor || '';
+            const formulario = document.getElementById('formRepositor');
+            if (!formulario) {
+                throw new Error('Formulário de repositor não encontrado na tela.');
+            }
+
+            const setValor = (id, valor = '') => {
+                const elemento = document.getElementById(id);
+                if (elemento) elemento.value = valor ?? '';
+            };
+
+            setValor('repo_cod', repositor.repo_cod);
+            setValor('repo_nome', repositor.repo_nome);
+            setValor('repo_data_inicio', repositor.repo_data_inicio);
+            setValor('repo_data_fim', repositor.repo_data_fim || '');
+            setValor('repo_cidade_ref', repositor.repo_cidade_ref || '');
+            setValor('repo_representante', repositor.rep_representante_codigo || '');
+            setValor('repo_contato_telefone', repositor.rep_contato_telefone || '');
+            setValor('repo_supervisor', repositor.rep_supervisor || '');
+
+            const campoVinculo = document.getElementById('repo_vinculo_agencia');
+            if (campoVinculo) {
+                campoVinculo.checked = repositor.repo_vinculo === 'agencia';
+            }
 
             // Marcar dias trabalhados
             const dias = (repositor.dias_trabalhados || 'seg,ter,qua,qui,sex').split(',');
@@ -382,11 +716,10 @@ class App {
 
             // Marcar jornada
             const jornada = repositor.jornada || 'integral';
-            document.querySelector(`input[name="jornada"][value="${jornada}"]`).checked = true;
+            const campoJornada = document.querySelector(`input[name="jornada"][value="${jornada}"]`) || document.querySelector('input[name="jornada"][value="integral"]');
+            if (campoJornada) campoJornada.checked = true;
 
-            document.getElementById('modalRepositorTitle').textContent = repositor.repo_vinculo === 'agencia' ? 'Editar Agência' : 'Editar Repositor';
-
-            this.showModalRepositor();
+            this.showModalRepositor('edit', repositor);
         } catch (error) {
             this.showNotification('Erro ao carregar repositor: ' + error.message, 'error');
         }

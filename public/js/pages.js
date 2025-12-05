@@ -27,7 +27,7 @@ export const pages = {
             <div class="card">
                 <div class="card-header">
                     <h3 class="card-title">Cadastro de Repositores</h3>
-                    <button class="btn btn-primary btn-sm" onclick="window.app.showModalRepositor()">
+                    <button class="btn btn-primary btn-sm" onclick="window.app.showModalRepositor('create')">
                         + Novo Repositor
                     </button>
                 </div>
@@ -81,7 +81,7 @@ export const pages = {
             </div>
 
             <!-- Modal Repositor -->
-            <div class="modal" id="modalRepositor">
+            <div class="modal modal-repositor" id="modalRepositor">
                 <div class="modal-content">
                     <div class="modal-header">
                         <h3 id="modalRepositorTitle">Novo Repositor</h3>
@@ -91,7 +91,7 @@ export const pages = {
                         <form id="formRepositor" onsubmit="window.app.saveRepositor(event)">
                             <input type="hidden" id="repo_cod" value="">
 
-                            <div class="form-group">
+                            <div class="form-group full-width">
                                 <label for="repo_nome">Nome do Repositor:</label>
                                 <input type="text" id="repo_nome" required>
                             </div>
@@ -103,7 +103,7 @@ export const pages = {
                                 </label>
                             </div>
 
-                            <div class="form-row">
+                            <div class="form-row full-width">
                                 <div class="form-group">
                                     <label for="repo_data_inicio">Data Início:</label>
                                     <input type="date" id="repo_data_inicio" required>
@@ -116,7 +116,7 @@ export const pages = {
                                 </div>
                             </div>
 
-                            <div class="form-row">
+                            <div class="form-row full-width">
                                 <div class="form-group">
                                     <label for="repo_cidade_ref">Cidade Referência:</label>
                                     <input type="text" id="repo_cidade_ref" placeholder="Ex: São Paulo" required>
@@ -145,7 +145,7 @@ export const pages = {
                                 <small>Opcional</small>
                             </div>
 
-                            <div class="form-group">
+                            <div class="form-group full-width">
                                 <label>Dias Trabalhados:</label>
                                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                                     <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
@@ -173,7 +173,7 @@ export const pages = {
                                 <small>Marque os dias que o repositor trabalha (padrão: Seg a Sex)</small>
                             </div>
 
-                            <div class="form-group">
+                            <div class="form-group full-width">
                                 <label>Jornada de Trabalho:</label>
                                 <div style="display: flex; gap: 20px;">
                                     <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
@@ -187,7 +187,7 @@ export const pages = {
 
                             <div class="modal-footer">
                                 <button type="button" class="btn btn-secondary" onclick="window.app.closeModalRepositor()">Cancelar</button>
-                                <button type="submit" class="btn btn-primary">Salvar</button>
+                                <button type="submit" class="btn btn-primary" id="btnSubmitRepositor">Cadastrar</button>
                             </div>
                         </form>
                     </div>
@@ -247,7 +247,7 @@ export const pages = {
                 </div>
             </div>
 
-            <div class="modal" id="modalRepresentanteDetalhes">
+            <div class="modal modal-representante" id="modalRepresentanteDetalhes">
                 <div class="modal-content">
                     <div class="modal-header">
                         <h3>Detalhes do Representante</h3>
@@ -259,10 +259,6 @@ export const pages = {
                             <div>
                                 <small>Supervisor</small>
                                 <div id="repSupervisor">-</div>
-                            </div>
-                            <div>
-                                <small>Período</small>
-                                <div id="repDatas">-</div>
                             </div>
                             <div>
                                 <small>Endereço</small>
@@ -346,7 +342,7 @@ export const pages = {
                 </div>
             </div>
 
-            <div class="modal" id="modalRepresentanteDetalhes">
+            <div class="modal modal-representante" id="modalRepresentanteDetalhes">
                 <div class="modal-content">
                     <div class="modal-header">
                         <h3>Detalhes do Representante</h3>
@@ -358,10 +354,6 @@ export const pages = {
                             <div>
                                 <small>Supervisor</small>
                                 <div id="repSupervisor">-</div>
-                            </div>
-                            <div>
-                                <small>Período</small>
-                                <div id="repDatas">-</div>
                             </div>
                             <div>
                                 <small>Endereço</small>
@@ -621,6 +613,29 @@ export const pages = {
                 </div>
             </div>
         `;
+    },
+
+    'controle-acessos': async () => {
+        return `
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h3 class="card-title" style="white-space: nowrap;">Controle de Acessos</h3>
+                        <p class="text-muted" style="margin: 4px 0 0;">Defina quais módulos cada usuário pode visualizar.</p>
+                    </div>
+                </div>
+                <div class="card-body controle-acessos">
+                    <div class="form-group full-width">
+                        <label for="controleAcessoUsuario">Usuário</label>
+                        <select id="controleAcessoUsuario" class="full-width"></select>
+                    </div>
+                    <div id="controleAcessoMatriz" class="acl-matriz"></div>
+                    <div class="modal-footer" style="justify-content: flex-end;">
+                        <button type="button" class="btn btn-primary" id="btnSalvarPermissoes">Salvar</button>
+                    </div>
+                </div>
+            </div>
+        `;
     }
 };
 
@@ -635,5 +650,6 @@ export const pageTitles = {
     'analise-grafica-repo': 'Análise Gráfica',
     'alteracoes-rota': 'Alterações de Rota',
     'consulta-alteracoes': 'Consulta de Alterações',
-    'estrutura-banco-comercial': 'Estrutura do Banco Comercial'
+    'estrutura-banco-comercial': 'Estrutura do Banco Comercial',
+    'controle-acessos': 'Controle de Acessos'
 };
