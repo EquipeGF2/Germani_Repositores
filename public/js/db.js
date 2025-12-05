@@ -66,6 +66,9 @@ class TursoDatabase {
             // Adicionar colunas novas se não existirem (migração)
             await this.migrateDatabase();
 
+            // Configurar tabelas de controle de acesso
+            await this.ensureAclTables();
+
             this.schemaInitialized = true;
             console.log('✅ Schema inicializado com sucesso');
             return true;
@@ -255,6 +258,31 @@ class TursoDatabase {
         } catch (error) {
             console.error('❌ Erro na migração:', error);
             // Não lançar erro, apenas logar
+        }
+    }
+
+    async ensureAclTables() {
+        try {
+            await this.mainClient.execute(`
+                CREATE TABLE IF NOT EXISTS acl_usuario_tela (
+                    acl_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    acl_user_id INTEGER NOT NULL,
+                    acl_username TEXT,
+                    acl_recurso TEXT NOT NULL,
+                    acl_pode_acessar INTEGER DEFAULT 0,
+                    acl_criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    acl_atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (acl_user_id, acl_recurso)
+                )
+            `);
+
+            await this.mainClient.execute(`
+                CREATE INDEX IF NOT EXISTS idx_acl_usuario_tela_recurso
+                ON acl_usuario_tela (acl_recurso)
+            `);
+        } catch (error) {
+            console.error('Erro ao criar tabela de ACL:', error);
+            throw error;
         }
     }
 
@@ -765,6 +793,82 @@ class TursoDatabase {
             console.error(`Erro ao buscar dados de ${nomeTabela}:`, error);
             return [];
         }
+    }
+
+    // ==================== CONTROLE DE ACESSO ====================
+
+    async listarUsuariosComercial() {
+        await this.connectComercial();
+
+        if (!this.comercialClient) {
+            return [];
+        }
+
+        const result = await this.comercialClient.execute({
+            sql: 'SELECT id, username FROM users ORDER BY username',
+            args: []
+        });
+
+        return result.rows;
+    }
+
+    async getUsuarioComercialPorUsername(username) {
+        await this.connectComercial();
+
+        if (!this.comercialClient) {
+            throw new Error('Banco comercial não configurado para autenticação.');
+        }
+
+        const result = await this.comercialClient.execute({
+            sql: 'SELECT id, username FROM users WHERE username = ? LIMIT 1',
+            args: [username]
+        });
+
+        return result.rows[0] || null;
+    }
+
+    async getPermissoesUsuario(userId) {
+        await this.connect();
+
+        const result = await this.mainClient.execute({
+            sql: 'SELECT acl_recurso, COALESCE(acl_pode_acessar, 0) as acl_pode_acessar FROM acl_usuario_tela WHERE acl_user_id = ?',
+            args: [userId]
+        });
+
+        return result.rows.map(row => ({
+            recurso: row.acl_recurso,
+            pode_acessar: !!row.acl_pode_acessar
+        }));
+    }
+
+    async getPermissaoRecurso(userId, recurso) {
+        const permissoes = await this.getPermissoesUsuario(userId);
+        return permissoes.find(p => p.recurso === recurso)?.pode_acessar || false;
+    }
+
+    async salvarPermissoesUsuario(userId, username, permissoes = []) {
+        await this.connect();
+
+        const permissoesLista = Array.isArray(permissoes)
+            ? permissoes
+            : Object.entries(permissoes).map(([recurso, pode_acessar]) => ({ recurso, pode_acessar }));
+
+        for (const permissao of permissoesLista) {
+            await this.mainClient.execute({
+                sql: `
+                    INSERT INTO acl_usuario_tela (
+                        acl_user_id, acl_username, acl_recurso, acl_pode_acessar, acl_atualizado_em
+                    ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(acl_user_id, acl_recurso) DO UPDATE SET
+                        acl_pode_acessar = excluded.acl_pode_acessar,
+                        acl_username = excluded.acl_username,
+                        acl_atualizado_em = CURRENT_TIMESTAMP
+                `,
+                args: [userId, username, permissao.recurso, permissao.pode_acessar ? 1 : 0]
+            });
+        }
+
+        return true;
     }
 }
 

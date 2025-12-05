@@ -613,6 +613,29 @@ export const pages = {
                 </div>
             </div>
         `;
+    },
+
+    'controle-acessos': async () => {
+        return `
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h3 class="card-title" style="white-space: nowrap;">Controle de Acessos</h3>
+                        <p class="text-muted" style="margin: 4px 0 0;">Defina quais módulos cada usuário pode visualizar.</p>
+                    </div>
+                </div>
+                <div class="card-body controle-acessos">
+                    <div class="form-group full-width">
+                        <label for="controleAcessoUsuario">Usuário</label>
+                        <select id="controleAcessoUsuario" class="full-width"></select>
+                    </div>
+                    <div id="controleAcessoMatriz" class="acl-matriz"></div>
+                    <div class="modal-footer" style="justify-content: flex-end;">
+                        <button type="button" class="btn btn-primary" id="btnSalvarPermissoes">Salvar</button>
+                    </div>
+                </div>
+            </div>
+        `;
     }
 };
 
@@ -627,5 +650,6 @@ export const pageTitles = {
     'analise-grafica-repo': 'Análise Gráfica',
     'alteracoes-rota': 'Alterações de Rota',
     'consulta-alteracoes': 'Consulta de Alterações',
-    'estrutura-banco-comercial': 'Estrutura do Banco Comercial'
+    'estrutura-banco-comercial': 'Estrutura do Banco Comercial',
+    'controle-acessos': 'Controle de Acessos'
 };
