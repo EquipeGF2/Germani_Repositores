@@ -1225,8 +1225,18 @@ tbody td {
 }
 
 .roteiro-clientes-table .col-grupo {
-    width: 100px;
-    max-width: 120px;
+    min-width: 140px;
+    max-width: 200px;
+}
+
+.roteiro-clientes-table .col-acao {
+    width: 90px;
+    text-align: center;
+}
+
+.roteiro-clientes-table .col-acao .btn-danger {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
 }
 
 .roteiro-clientes-table .col-nome {
