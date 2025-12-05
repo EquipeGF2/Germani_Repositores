@@ -1172,9 +1172,18 @@ class App {
         });
 
         tabela.querySelectorAll('.input-ordem-cidade').forEach(input => {
-            input.addEventListener('change', () => {
+            const handler = async () => {
                 const valor = input.value ? Number(input.value) : null;
-                this.atualizarOrdemCidade(Number(input.dataset.id), valor);
+                await this.atualizarOrdemCidade(Number(input.dataset.id), valor);
+                await this.carregarCidadesRoteiro();
+            };
+
+            input.addEventListener('blur', handler);
+            input.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    input.blur();
+                }
             });
         });
 
@@ -1252,7 +1261,21 @@ class App {
             })
             : selecionados;
 
-        if (!clientes || clientes.length === 0) {
+        const clientesOrdenados = [...clientes].sort((a, b) => {
+            const ordemA = a.rot_ordem_visita ?? Number.MAX_SAFE_INTEGER;
+            const ordemB = b.rot_ordem_visita ?? Number.MAX_SAFE_INTEGER;
+
+            if (ordemA !== ordemB) return ordemA - ordemB;
+
+            const dadosA = a.cliente_dados || {};
+            const dadosB = b.cliente_dados || {};
+            const nomeA = (dadosA.nome || dadosA.fantasia || '').toUpperCase();
+            const nomeB = (dadosB.nome || dadosB.fantasia || '').toUpperCase();
+
+            return nomeA.localeCompare(nomeB);
+        });
+
+        if (!clientesOrdenados || clientesOrdenados.length === 0) {
             tabela.innerHTML = '';
             if (mensagem) mensagem.textContent = termoBusca
                 ? 'Nenhum cliente atende ao filtro digitado nesta cidade.'
@@ -1276,7 +1299,7 @@ class App {
                     </tr>
                 </thead>
                 <tbody>
-                    ${clientes.map(cliente => {
+                    ${clientesOrdenados.map(cliente => {
                         const dados = cliente.cliente_dados || {};
                         const enderecoCompleto = `${dados.endereco || ''} ${dados.num_endereco || ''}`.trim();
                         return `
@@ -1323,8 +1346,13 @@ class App {
                 await this.carregarClientesRoteiro();
             };
 
-            input.addEventListener('change', handler);
             input.addEventListener('blur', handler);
+            input.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    input.blur();
+                }
+            });
         });
 
         if (mensagem) mensagem.textContent = '';
