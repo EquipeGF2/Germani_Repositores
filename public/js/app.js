@@ -32,6 +32,10 @@ class App {
         this.buscaClientesModal = '';
         this.resultadosConsultaRoteiro = [];
         this.roteiroBuscaTimeout = null;
+        this.rateioClienteSelecionado = null;
+        this.rateioLinhas = [];
+        this.rateioRepositores = [];
+        this.rateioBuscaTimeout = null;
         this.recursosPorPagina = {
             'cadastro-repositor': 'mod_repositores',
             'validacao-dados': 'mod_repositores',
@@ -42,6 +46,7 @@ class App {
             'alteracoes-rota': 'mod_repositores',
             'consulta-alteracoes': 'mod_repositores',
             'consulta-roteiro': 'mod_repositores',
+            'cadastro-rateio': 'mod_repositores',
             'estrutura-banco-comercial': 'mod_repositores',
             'controle-acessos': 'mod_configuracoes',
             'roteiro-repositor': 'mod_repositores'
@@ -411,6 +416,8 @@ class App {
                 await this.inicializarConsultaAlteracoes();
             } else if (pageName === 'consulta-roteiro') {
                 await this.inicializarConsultaRoteiro();
+            } else if (pageName === 'cadastro-rateio') {
+                await this.inicializarCadastroRateio();
             }
         } catch (error) {
             console.error('Erro ao carregar página:', error);
@@ -1202,6 +1209,11 @@ class App {
         await db.atualizarOrdemCidade(rotCidId, ordem, usuario);
     }
 
+    async atualizarOrdemVisita(rotCliId, ordem) {
+        const usuario = this.usuarioLogado?.username || 'desconhecido';
+        await db.atualizarOrdemVisita(rotCliId, ordem, usuario);
+    }
+
     async carregarClientesRoteiro() {
         const mensagem = document.getElementById('roteiroClientesMensagem');
         const tabela = document.getElementById('roteiroClientesTabela');
@@ -1272,7 +1284,17 @@ class App {
                             <td class="table-actions">
                                 <button class="btn btn-danger btn-sm" data-acao="remover-cliente" data-id="${cliente.rot_cliente_codigo}">Remover</button>
                             </td>
-                            <td>${cliente.rot_ordem_visita || '-'}</td>
+                            <td>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    class="input-ordem-visita"
+                                    data-cli-id="${cliente.rot_cli_id}"
+                                    value="${cliente.rot_ordem_visita ?? ''}"
+                                    aria-label="Ordem de visita"
+                                >
+                            </td>
                             <td>${cliente.rot_cliente_codigo}</td>
                             <td>${dados.nome || '-'}</td>
                             <td>${dados.fantasia || '-'}</td>
@@ -1292,6 +1314,17 @@ class App {
                 const codigo = btn.dataset.id;
                 this.alternarClienteRoteiro(cidadeAtiva.rot_cid_id, codigo, false);
             });
+        });
+
+        tabela.querySelectorAll('.input-ordem-visita').forEach(input => {
+            const handler = async () => {
+                const valor = input.value ? Number(input.value) : null;
+                await this.atualizarOrdemVisita(Number(input.dataset.cliId), valor);
+                await this.carregarClientesRoteiro();
+            };
+
+            input.addEventListener('change', handler);
+            input.addEventListener('blur', handler);
         });
 
         if (mensagem) mensagem.textContent = '';
@@ -1431,6 +1464,304 @@ class App {
                 this.incluirClienteNaCidade(codigo);
             });
         });
+    }
+
+    // ==================== CADASTRO DE RATEIO ====================
+    async inicializarCadastroRateio() {
+        this.rateioClienteSelecionado = null;
+        this.rateioLinhas = [];
+
+        this.rateioRepositores = await db.getRepositoresDetalhados({ status: 'ativos' });
+
+        const btnAdicionar = document.getElementById('btnAdicionarLinhaRateio');
+        if (btnAdicionar) {
+            btnAdicionar.addEventListener('click', () => this.adicionarLinhaRateio());
+        }
+
+        const btnSalvar = document.getElementById('btnSalvarRateio');
+        if (btnSalvar) {
+            btnSalvar.addEventListener('click', () => this.salvarRateioCadastro());
+        }
+
+        this.configurarBuscaRateioCliente();
+        this.renderRateioInfo();
+        this.renderRateioGrid();
+    }
+
+    configurarBuscaRateioCliente() {
+        const input = document.getElementById('rateioBuscaCliente');
+        const sugestoes = document.getElementById('rateioClienteSugestoes');
+
+        if (!input || !sugestoes) return;
+
+        input.addEventListener('input', async () => {
+            const termo = input.value.trim();
+            if (this.rateioBuscaTimeout) clearTimeout(this.rateioBuscaTimeout);
+
+            if (termo.length < 2) {
+                sugestoes.innerHTML = '';
+                return;
+            }
+
+            this.rateioBuscaTimeout = setTimeout(async () => {
+                const resultados = await db.buscarClientesComercial(termo, 15);
+                this.renderSugestoesRateio(resultados);
+            }, 300);
+        });
+
+        document.addEventListener('click', (evento) => {
+            if (!sugestoes.contains(evento.target) && evento.target !== input) {
+                sugestoes.innerHTML = '';
+            }
+        });
+    }
+
+    renderSugestoesRateio(clientes = []) {
+        const sugestoes = document.getElementById('rateioClienteSugestoes');
+        if (!sugestoes) return;
+
+        if (!clientes || clientes.length === 0) {
+            sugestoes.innerHTML = '';
+            return;
+        }
+
+        sugestoes.innerHTML = clientes.map(cliente => `
+            <button class="autocomplete-item" data-codigo="${cliente.cliente}">
+                <div class="autocomplete-item-main">${cliente.cliente} - ${cliente.nome || '-'}</div>
+                <small>${cliente.fantasia || ''} ${cliente.cidade ? ' • ' + cliente.cidade : ''}</small>
+            </button>
+        `).join('');
+
+        sugestoes.querySelectorAll('.autocomplete-item').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const codigo = btn.dataset.codigo;
+                const cliente = clientes.find(cli => String(cli.cliente) === String(codigo));
+                if (cliente) {
+                    this.selecionarClienteRateio(cliente);
+                }
+                sugestoes.innerHTML = '';
+            });
+        });
+    }
+
+    async selecionarClienteRateio(cliente) {
+        this.rateioClienteSelecionado = cliente;
+        this.rateioLinhas = [];
+
+        const input = document.getElementById('rateioBuscaCliente');
+        if (input) {
+            input.value = `${cliente.cliente} - ${cliente.nome || ''}`;
+        }
+
+        await this.carregarRateioCliente(cliente.cliente);
+        this.renderRateioInfo();
+        this.renderRateioGrid();
+    }
+
+    async carregarRateioCliente(clienteCodigo) {
+        const linhas = await db.listarRateioPorCliente(clienteCodigo);
+        this.rateioLinhas = linhas.length > 0
+            ? linhas.map(l => ({ ...l }))
+            : [{ rat_repositor_id: '', rat_percentual: '' }];
+
+        this.renderRateioGrid();
+    }
+
+    renderRateioInfo() {
+        const info = document.getElementById('rateioClienteSelecionadoInfo');
+        if (!info) return;
+
+        if (!this.rateioClienteSelecionado) {
+            info.textContent = 'Busque um cliente para montar o rateio.';
+            return;
+        }
+
+        const cliente = this.rateioClienteSelecionado;
+        const cidadeLabel = cliente.cidade ? `${cliente.cidade}${cliente.estado ? ' - ' + cliente.estado : ''}` : '';
+        info.textContent = `Cliente selecionado: ${cliente.cliente} - ${cliente.nome || ''}${cidadeLabel ? ` (${cidadeLabel})` : ''}`;
+    }
+
+    renderRateioGrid() {
+        const container = document.getElementById('rateioGridContainer');
+        if (!container) return;
+
+        if (!this.rateioClienteSelecionado) {
+            container.innerHTML = `
+                <div class="empty-state" style="box-shadow: none; margin-top: 0;">
+                    <div class="empty-state-icon">🧭</div>
+                    <p>Selecione um cliente para definir o rateio.</p>
+                </div>
+            `;
+            this.atualizarTotalRateio();
+            return;
+        }
+
+        if (!this.rateioLinhas || this.rateioLinhas.length === 0) {
+            this.rateioLinhas = [{ rat_repositor_id: '', rat_percentual: '' }];
+        }
+
+        const opcoesRepositor = [`<option value="">Selecione</option>`, ...this.rateioRepositores.map(repo => `
+            <option value="${repo.repo_cod}">${repo.repo_cod} - ${repo.repo_nome}</option>
+        `)];
+
+        container.innerHTML = `
+            <div class="table-container rateio-table-container">
+                <table class="rateio-table">
+                    <thead>
+                        <tr>
+                            <th>Repositor</th>
+                            <th>Percentual</th>
+                            <th>Vigência início</th>
+                            <th>Vigência fim</th>
+                            <th class="col-acao">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${this.rateioLinhas.map((linha, index) => `
+                            <tr>
+                                <td>
+                                    <select class="rateio-repositor" data-index="${index}">
+                                        ${opcoesRepositor.join('')}
+                                    </select>
+                                </td>
+                                <td>
+                                    <div class="input-percentual">
+                                        <input type="number" class="rateio-percentual" data-index="${index}" min="0" max="100" step="0.01" value="${linha.rat_percentual ?? ''}" />
+                                        <span class="input-sufixo">%</span>
+                                    </div>
+                                </td>
+                                <td><input type="date" class="rateio-vigencia-inicio" data-index="${index}" value="${linha.rat_vigencia_inicio || ''}"></td>
+                                <td><input type="date" class="rateio-vigencia-fim" data-index="${index}" value="${linha.rat_vigencia_fim || ''}"></td>
+                                <td class="table-actions">
+                                    <button class="btn btn-danger btn-sm" data-acao="remover-linha-rateio" data-index="${index}">Remover</button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        container.querySelectorAll('.rateio-repositor').forEach(select => {
+            const idx = Number(select.dataset.index);
+            select.value = this.rateioLinhas[idx].rat_repositor_id || '';
+            select.addEventListener('change', () => {
+                this.atualizarLinhaRateio(idx, 'rat_repositor_id', select.value ? Number(select.value) : '');
+            });
+        });
+
+        container.querySelectorAll('.rateio-percentual').forEach(input => {
+            const idx = Number(input.dataset.index);
+            input.addEventListener('input', () => {
+                this.atualizarLinhaRateio(idx, 'rat_percentual', input.value);
+            });
+        });
+
+        container.querySelectorAll('.rateio-vigencia-inicio').forEach(input => {
+            const idx = Number(input.dataset.index);
+            input.addEventListener('change', () => {
+                this.atualizarLinhaRateio(idx, 'rat_vigencia_inicio', input.value);
+            });
+        });
+
+        container.querySelectorAll('.rateio-vigencia-fim').forEach(input => {
+            const idx = Number(input.dataset.index);
+            input.addEventListener('change', () => {
+                this.atualizarLinhaRateio(idx, 'rat_vigencia_fim', input.value);
+            });
+        });
+
+        container.querySelectorAll('[data-acao="remover-linha-rateio"]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = Number(btn.dataset.index);
+                this.removerLinhaRateio(idx);
+            });
+        });
+
+        this.atualizarTotalRateio();
+    }
+
+    atualizarTotalRateio() {
+        const totalEl = document.getElementById('rateioTotalPercentual');
+        if (!totalEl) return;
+
+        const total = this.rateioLinhas.reduce((acc, linha) => acc + Number(linha.rat_percentual || 0), 0);
+        const arredondado = Math.round(total * 100) / 100;
+        const ok = Math.abs(arredondado - 100) <= 0.01;
+
+        totalEl.textContent = `Total: ${arredondado.toFixed(2)}%`;
+        totalEl.classList.toggle('ok', ok);
+        totalEl.classList.toggle('alerta', !ok);
+    }
+
+    adicionarLinhaRateio() {
+        this.rateioLinhas.push({ rat_repositor_id: '', rat_percentual: '' });
+        this.renderRateioGrid();
+    }
+
+    removerLinhaRateio(index) {
+        this.rateioLinhas.splice(index, 1);
+        if (this.rateioLinhas.length === 0) {
+            this.rateioLinhas.push({ rat_repositor_id: '', rat_percentual: '' });
+        }
+        this.renderRateioGrid();
+    }
+
+    atualizarLinhaRateio(index, campo, valor) {
+        if (!this.rateioLinhas[index]) return;
+
+        if (campo === 'rat_percentual') {
+            this.rateioLinhas[index][campo] = valor === '' ? '' : Number(valor);
+        } else if (campo === 'rat_repositor_id') {
+            this.rateioLinhas[index][campo] = valor === '' ? '' : Number(valor);
+        } else {
+            this.rateioLinhas[index][campo] = valor || '';
+        }
+
+        this.atualizarTotalRateio();
+    }
+
+    validarRateioLocal(linhas) {
+        const preenchidas = linhas.filter(linha => linha.rat_repositor_id && linha.rat_percentual !== '' && linha.rat_percentual !== null);
+        if (preenchidas.length === 0) {
+            throw new Error('Inclua ao menos um repositor com percentual para salvar o rateio.');
+        }
+
+        const total = preenchidas.reduce((acc, linha) => acc + Number(linha.rat_percentual || 0), 0);
+        const arredondado = Math.round(total * 100) / 100;
+        if (Math.abs(arredondado - 100) > 0.01) {
+            throw new Error(`O rateio deve totalizar 100%. Soma atual: ${arredondado.toFixed(2)}%.`);
+        }
+
+        const reposSet = new Set();
+        for (const linha of preenchidas) {
+            if (reposSet.has(linha.rat_repositor_id)) {
+                throw new Error('Há repositores repetidos no rateio.');
+            }
+            reposSet.add(linha.rat_repositor_id);
+        }
+
+        return preenchidas.map(linha => ({
+            ...linha,
+            rat_percentual: Number(linha.rat_percentual)
+        }));
+    }
+
+    async salvarRateioCadastro() {
+        if (!this.rateioClienteSelecionado) {
+            this.showNotification('Selecione um cliente antes de salvar o rateio.', 'warning');
+            return;
+        }
+
+        try {
+            const linhasValidadas = this.validarRateioLocal(this.rateioLinhas);
+            const usuario = this.usuarioLogado?.username || 'desconhecido';
+            await db.salvarRateioCliente(this.rateioClienteSelecionado.cliente, linhasValidadas, usuario);
+            this.showNotification('Rateio salvo com sucesso!', 'success');
+            await this.carregarRateioCliente(this.rateioClienteSelecionado.cliente);
+        } catch (error) {
+            this.showNotification(error.message || 'Erro ao salvar rateio.', 'error');
+        }
     }
 
     // ==================== VALIDAÇÃO DE DADOS ====================
