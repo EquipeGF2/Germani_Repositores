@@ -1084,6 +1084,7 @@ tbody td {
     font-weight: 600;
 }
 
+
 .roteiro-clientes-table th {
     white-space: nowrap;
 }
@@ -1093,6 +1094,11 @@ tbody td {
     word-break: break-word;
 }
 
+.roteiro-clientes-table th,
+.roteiro-clientes-table td {
+    font-size: 0.95rem;
+}
+
 .roteiro-clientes-table .col-acao,
 .roteiro-clientes-table .col-ordem-visita,
 .roteiro-clientes-table .col-grupo,
@@ -1100,13 +1106,14 @@ tbody td {
     white-space: nowrap;
 }
 
+
 .roteiro-clientes-table .col-ordem-visita {
-    width: 80px;
+    width: 64px;
 }
 
 .roteiro-clientes-table .input-ordem-visita {
-    width: 70px;
-    padding: 6px 8px;
+    width: 64px;
+    padding: 5px 8px;
     text-align: center;
     border: 1px solid #d1d5db;
     border-radius: 6px;
@@ -1203,12 +1210,16 @@ tbody td {
 }
 
 .roteiro-clientes-table .col-nome {
-    min-width: 180px;
+    min-width: 200px;
 }
 
 .roteiro-clientes-table .col-fantasia,
 .roteiro-clientes-table .col-endereco {
-    min-width: 160px;
+    min-width: 180px;
+}
+
+.roteiro-clientes-table .col-grupo {
+    width: 90px;
 }
 
 .roteiro-clientes-table td:nth-child(6),
@@ -1231,8 +1242,17 @@ tbody td {
 }
 
 .input-ordem-cidade {
-    width: 80px;
+    width: 64px;
     text-align: center;
+    padding: 5px 8px;
+}
+
+.roteiro-cidades-table tr {
+    background: transparent;
+}
+
+.roteiro-cidades-table tbody tr:last-child td {
+    border-bottom: 1px solid var(--gray-200);
 }
 
 .cidade-busca-row {
