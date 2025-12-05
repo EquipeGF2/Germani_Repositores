@@ -18,6 +18,13 @@ class App {
         this.permissoes = {};
         this.permissoesEdicaoUsuario = {};
         this.usuarioSelecionadoAcl = null;
+        this.contextoRoteiro = null;
+        this.estadoRoteiro = {
+            diaSelecionado: null,
+            cidadeSelecionada: null,
+            buscaClientes: ''
+        };
+        this.roteiroBuscaTimeout = null;
         this.recursosPorPagina = {
             'cadastro-repositor': 'mod_repositores',
             'consulta-repositores': 'mod_repositores',
@@ -29,7 +36,8 @@ class App {
             'alteracoes-rota': 'mod_repositores',
             'consulta-alteracoes': 'mod_repositores',
             'estrutura-banco-comercial': 'mod_repositores',
-            'controle-acessos': 'mod_configuracoes'
+            'controle-acessos': 'mod_configuracoes',
+            'roteiro-repositor': 'mod_repositores'
         };
         this.init();
     }
@@ -384,6 +392,8 @@ class App {
                 this.aplicarFiltrosConsultaRepositores();
             } else if (pageName === 'controle-acessos') {
                 await this.inicializarControleAcessos();
+            } else if (pageName === 'roteiro-repositor') {
+                await this.inicializarRoteiroRepositor();
             }
         } catch (error) {
             console.error('Erro ao carregar página:', error);
@@ -535,6 +545,28 @@ class App {
         await this.editRepositor(repoCod);
     }
 
+    async abrirRoteiroRepositor(repoCod) {
+        try {
+            const repositor = await db.getRepositorDetalhadoPorId(repoCod);
+            if (!repositor) {
+                this.showNotification('Repositor não encontrado.', 'error');
+                return;
+            }
+
+            this.contextoRoteiro = repositor;
+            this.estadoRoteiro = {
+                diaSelecionado: null,
+                cidadeSelecionada: null,
+                buscaClientes: ''
+            };
+
+            await this.navigateTo('roteiro-repositor');
+        } catch (error) {
+            console.error('Erro ao abrir roteiro:', error);
+            this.showNotification('Não foi possível abrir o roteiro do repositor.', 'error');
+        }
+    }
+
     // ==================== CONSULTA GERAL DE REPOSITORES ====================
 
     async aplicarFiltrosConsultaRepositores() {
@@ -600,6 +632,7 @@ class App {
                                     <td>${repo.rep_contato_telefone || '-'}</td>
                                     <td class="table-actions">
                                         <button class="btn-icon" onclick="window.app.abrirDetalhesRepresentante(${index}, 'consulta')" title="Detalhes do Representante">👁️</button>
+                                        <button class="btn-icon" onclick="window.app.abrirRoteiroRepositor(${repo.repo_cod})" title="Roteiro">🗺️</button>
                                         <button class="btn-icon" onclick="window.app.abrirCadastroRepositor(${repo.repo_cod})" title="Editar">✏️</button>
                                     </td>
                                 </tr>
@@ -639,6 +672,307 @@ class App {
         const modal = document.getElementById('modalRepresentanteDetalhes');
         if (modal) {
             modal.classList.remove('active');
+        }
+    }
+
+    // ==================== ROTEIRO DO REPOSITOR ====================
+
+    async inicializarRoteiroRepositor() {
+        const repositor = this.contextoRoteiro;
+
+        if (!repositor) {
+            this.showNotification('Selecione um repositor pela consulta para abrir o roteiro.', 'warning');
+            return;
+        }
+
+        this.diasRoteiroDisponiveis = db.obterDiasTrabalho(repositor);
+        if (!this.estadoRoteiro.diaSelecionado && this.diasRoteiroDisponiveis.length > 0) {
+            this.estadoRoteiro.diaSelecionado = this.diasRoteiroDisponiveis[0];
+        }
+
+        await this.preencherSelectCidadesRoteiro();
+        this.renderDiasRoteiro();
+        await this.carregarCidadesRoteiro();
+
+        const buscaInput = document.getElementById('roteiroBuscaCliente');
+        if (buscaInput) {
+            buscaInput.value = this.estadoRoteiro.buscaClientes || '';
+            buscaInput.addEventListener('input', (e) => {
+                clearTimeout(this.roteiroBuscaTimeout);
+                this.roteiroBuscaTimeout = setTimeout(() => {
+                    this.estadoRoteiro.buscaClientes = e.target.value;
+                    this.carregarClientesRoteiro();
+                }, 300);
+            });
+        }
+
+        const btnAddCidade = document.getElementById('btnAdicionarCidade');
+        if (btnAddCidade) {
+            btnAddCidade.onclick = () => this.adicionarCidadeRoteiro();
+        }
+    }
+
+    renderDiasRoteiro() {
+        const container = document.getElementById('roteiroDiasContainer');
+        const mensagem = document.getElementById('roteiroDiaMensagem');
+
+        if (!container) return;
+
+        if (!this.diasRoteiroDisponiveis || this.diasRoteiroDisponiveis.length === 0) {
+            container.innerHTML = '';
+            if (mensagem) mensagem.textContent = 'Selecione um dia de trabalho para configurar o roteiro.';
+            return;
+        }
+
+        const nomes = {
+            seg: 'Segunda',
+            ter: 'Terça',
+            qua: 'Quarta',
+            qui: 'Quinta',
+            sex: 'Sexta',
+            sab: 'Sábado',
+            dom: 'Domingo'
+        };
+
+        container.innerHTML = this.diasRoteiroDisponiveis.map(dia => `
+            <button class="chip-dia ${this.estadoRoteiro.diaSelecionado === dia ? 'active' : ''}" data-dia="${dia}">
+                ${nomes[dia] || dia}
+            </button>
+        `).join('');
+
+        container.querySelectorAll('.chip-dia').forEach(btn => {
+            btn.addEventListener('click', () => this.selecionarDiaRoteiro(btn.dataset.dia));
+        });
+
+        if (mensagem) mensagem.textContent = '';
+    }
+
+    async selecionarDiaRoteiro(dia) {
+        this.estadoRoteiro.diaSelecionado = dia;
+        this.estadoRoteiro.cidadeSelecionada = null;
+        this.renderDiasRoteiro();
+        await this.carregarCidadesRoteiro();
+    }
+
+    async preencherSelectCidadesRoteiro() {
+        const select = document.getElementById('roteiroCidadeSelect');
+        if (!select) return;
+
+        const cidades = await db.getCidadesPotenciais();
+        select.innerHTML = `
+            <option value="">Selecione</option>
+            ${cidades.map(c => `<option value="${c}">${c}</option>`).join('')}
+        `;
+    }
+
+    async adicionarCidadeRoteiro() {
+        const select = document.getElementById('roteiroCidadeSelect');
+        const mensagem = document.getElementById('roteiroCidadesMensagem');
+        const dia = this.estadoRoteiro.diaSelecionado;
+        const cidade = select?.value;
+
+        if (!dia) {
+            if (mensagem) mensagem.textContent = 'Selecione um dia trabalhado para adicionar cidades.';
+            return;
+        }
+
+        if (!cidade) {
+            if (mensagem) mensagem.textContent = 'Escolha uma cidade antes de adicionar.';
+            return;
+        }
+
+        try {
+            const novoId = await db.adicionarCidadeRoteiro(this.contextoRoteiro.repo_cod, dia, cidade);
+            this.estadoRoteiro.cidadeSelecionada = novoId;
+            if (mensagem) mensagem.textContent = '';
+            await this.carregarCidadesRoteiro();
+            this.showNotification('Cidade adicionada ao roteiro.', 'success');
+        } catch (error) {
+            if (mensagem) mensagem.textContent = error.message;
+        }
+    }
+
+    async carregarCidadesRoteiro() {
+        const mensagem = document.getElementById('roteiroCidadesMensagem');
+        const tabela = document.getElementById('roteiroCidadesTabela');
+        const dia = this.estadoRoteiro.diaSelecionado;
+
+        if (!tabela) return;
+
+        if (!dia) {
+            tabela.innerHTML = '';
+            if (mensagem) mensagem.textContent = 'Selecione um dia de trabalho para configurar o roteiro.';
+            await this.carregarClientesRoteiro();
+            return;
+        }
+
+        const cidades = await db.getRoteiroCidades(this.contextoRoteiro.repo_cod, dia);
+        this.cidadesRoteiroCache = cidades;
+
+        if (!this.estadoRoteiro.cidadeSelecionada && cidades.length > 0) {
+            this.estadoRoteiro.cidadeSelecionada = cidades[0].rot_cid_id;
+        }
+
+        if (cidades.length === 0) {
+            tabela.innerHTML = '';
+            if (mensagem) mensagem.textContent = 'Cadastre uma cidade para este dia para visualizar os clientes.';
+            await this.carregarClientesRoteiro();
+            return;
+        }
+
+        tabela.innerHTML = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>Cidade</th>
+                        <th>Ordem</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${cidades.map(cidade => `
+                        <tr class="${this.estadoRoteiro.cidadeSelecionada === cidade.rot_cid_id ? 'cidade-ativa' : ''}">
+                            <td>${cidade.rot_cidade}</td>
+                            <td><input type="number" class="input-ordem-cidade" data-id="${cidade.rot_cid_id}" value="${cidade.rot_ordem_cidade || ''}" placeholder="-" min="1" style="width: 80px;"></td>
+                            <td class="table-actions">
+                                <button class="btn-text" data-acao="selecionar-cidade" data-id="${cidade.rot_cid_id}">Selecionar</button>
+                                <button class="btn-icon" data-acao="remover-cidade" data-id="${cidade.rot_cid_id}" title="Remover">🗑️</button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+
+        tabela.querySelectorAll('[data-acao="selecionar-cidade"]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.estadoRoteiro.cidadeSelecionada = Number(btn.dataset.id);
+                this.carregarCidadesRoteiro();
+                this.carregarClientesRoteiro();
+            });
+        });
+
+        tabela.querySelectorAll('[data-acao="remover-cidade"]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const id = Number(btn.dataset.id);
+                await this.removerCidadeRoteiro(id);
+            });
+        });
+
+        tabela.querySelectorAll('.input-ordem-cidade').forEach(input => {
+            input.addEventListener('change', () => {
+                const valor = input.value ? Number(input.value) : null;
+                this.atualizarOrdemCidade(Number(input.dataset.id), valor);
+            });
+        });
+
+        if (mensagem) mensagem.textContent = '';
+        await this.carregarClientesRoteiro();
+    }
+
+    async removerCidadeRoteiro(rotCidId) {
+        const cidadeAtual = this.cidadesRoteiroCache?.find(c => c.rot_cid_id === rotCidId);
+        if (cidadeAtual && !confirm(`Remover ${cidadeAtual.rot_cidade} e todos os clientes vinculados?`)) {
+            return;
+        }
+
+        try {
+            await db.removerCidadeRoteiro(rotCidId);
+            if (this.estadoRoteiro.cidadeSelecionada === rotCidId) {
+                this.estadoRoteiro.cidadeSelecionada = null;
+            }
+            await this.carregarCidadesRoteiro();
+            this.showNotification('Cidade removida do roteiro.', 'success');
+        } catch (error) {
+            this.showNotification(error.message || 'Erro ao remover cidade.', 'error');
+        }
+    }
+
+    async atualizarOrdemCidade(rotCidId, ordem) {
+        await db.atualizarOrdemCidade(rotCidId, ordem);
+    }
+
+    async carregarClientesRoteiro() {
+        const mensagem = document.getElementById('roteiroClientesMensagem');
+        const tabela = document.getElementById('roteiroClientesTabela');
+
+        if (!tabela) return;
+
+        const dia = this.estadoRoteiro.diaSelecionado;
+        if (!dia) {
+            tabela.innerHTML = '';
+            if (mensagem) mensagem.textContent = 'Selecione um dia de trabalho para configurar o roteiro.';
+            return;
+        }
+
+        const cidadeAtiva = this.cidadesRoteiroCache?.find(c => c.rot_cid_id === this.estadoRoteiro.cidadeSelecionada);
+        if (!cidadeAtiva) {
+            tabela.innerHTML = '';
+            if (mensagem) mensagem.textContent = 'Cadastre uma cidade para este dia para visualizar os clientes.';
+            return;
+        }
+
+        const clientes = await db.getClientesPorCidade(cidadeAtiva.rot_cidade, this.estadoRoteiro.buscaClientes);
+        const selecionados = await db.getRoteiroClientes(cidadeAtiva.rot_cid_id);
+        const selecionadosSet = new Set(selecionados.map(c => String(c.rot_cliente_codigo)));
+
+        if (!clientes || clientes.length === 0) {
+            tabela.innerHTML = '';
+            if (mensagem) mensagem.textContent = 'Nenhum cliente encontrado para esta cidade.';
+            return;
+        }
+
+        tabela.innerHTML = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>Selecionar</th>
+                        <th>Código</th>
+                        <th>Nome</th>
+                        <th>Fantasia</th>
+                        <th>CNPJ/CPF</th>
+                        <th>Endereço</th>
+                        <th>Bairro</th>
+                        <th>Grupo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${clientes.map(cliente => `
+                        <tr>
+                            <td><input type="checkbox" class="roteiro-cliente-checkbox" data-id="${cliente.cliente}" ${selecionadosSet.has(String(cliente.cliente)) ? 'checked' : ''}></td>
+                            <td>${cliente.cliente}</td>
+                            <td>${cliente.nome}</td>
+                            <td>${cliente.fantasia || '-'}</td>
+                            <td>${cliente.cnpj_cpf || '-'}</td>
+                            <td>${cliente.endereco || ''} ${cliente.num_endereco || ''}</td>
+                            <td>${cliente.bairro || '-'}</td>
+                            <td>${cliente.grupo_desc || '-'}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+
+        tabela.querySelectorAll('.roteiro-cliente-checkbox').forEach(chk => {
+            chk.addEventListener('change', () => {
+                const codigo = chk.dataset.id;
+                this.alternarClienteRoteiro(cidadeAtiva.rot_cid_id, codigo, chk.checked);
+            });
+        });
+
+        if (mensagem) mensagem.textContent = '';
+    }
+
+    async alternarClienteRoteiro(rotCidId, clienteCodigo, selecionado) {
+        try {
+            if (selecionado) {
+                await db.adicionarClienteRoteiro(rotCidId, clienteCodigo);
+            } else {
+                await db.removerClienteRoteiro(rotCidId, clienteCodigo);
+            }
+        } catch (error) {
+            this.showNotification(error.message || 'Erro ao atualizar cliente no roteiro.', 'error');
+            await this.carregarClientesRoteiro();
         }
     }
 
