@@ -243,13 +243,56 @@ export const pages = {
         const contexto = window.app?.contextoRoteiro;
 
         if (!contexto) {
+            const [supervisores, representantes] = await Promise.all([
+                db.getSupervisoresComercial(),
+                db.getRepresentantesComercial()
+            ]);
+
+            const supervisorOptions = supervisores.map(sup => `<option value="${sup}">${sup}</option>`).join('');
+            const representanteOptions = representantes.map(rep => `
+                <option value="${rep.representante}">${rep.representante} - ${rep.desc_representante}</option>
+            `).join('');
+
             return `
                 <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <p class="form-card-eyebrow">Roteiro do Repositor</p>
+                            <h3>Selecione o repositor</h3>
+                            <p class="text-muted">Escolha um repositor para configurar cidades e clientes do roteiro.</p>
+                        </div>
+                    </div>
                     <div class="card-body">
-                        <div class="empty-state">
-                            <div class="empty-state-icon">ℹ️</div>
-                            <p>Nenhum repositor selecionado.</p>
-                            <small>Volte à consulta de repositores e escolha um repositor para configurar o roteiro.</small>
+                        <div class="filter-bar filter-bar-wide">
+                            <div class="filter-group">
+                                <label for="filtro_supervisor_roteiro_menu">Supervisor</label>
+                                <select id="filtro_supervisor_roteiro_menu">
+                                    <option value="">Todos</option>
+                                    ${supervisorOptions}
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label for="filtro_representante_roteiro_menu">Representante</label>
+                                <select id="filtro_representante_roteiro_menu">
+                                    <option value="">Todos</option>
+                                    ${representanteOptions}
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label for="filtro_nome_repositor_roteiro">Repositor</label>
+                                <input type="text" id="filtro_nome_repositor_roteiro" placeholder="Nome ou código">
+                            </div>
+                            <div class="filter-group">
+                                <label>&nbsp;</label>
+                                <button class="btn btn-primary" onclick="window.app.aplicarFiltrosSelecaoRoteiro()">🔍 Buscar</button>
+                            </div>
+                        </div>
+
+                        <div id="listaRoteiroRepositores" class="table-container">
+                            <div class="empty-state">
+                                <div class="empty-state-icon">🗺️</div>
+                                <p>Use os filtros para encontrar o repositor e configurar o roteiro.</p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -275,6 +318,10 @@ export const pages = {
             `;
         }
 
+        const representanteLabel = repositor.rep_representante_codigo
+            ? `${repositor.rep_representante_codigo}${repositor.rep_representante_nome ? ' - ' + repositor.rep_representante_nome : ''}`
+            : (repositor.rep_representante_nome || '-');
+
         return `
             <div class="roteiro-header">
                 <div>
@@ -295,7 +342,7 @@ export const pages = {
                 </div>
                 <div class="roteiro-detalhe">
                     <small>Representante</small>
-                    <strong id="roteiroRepresentante">${repositor.rep_representante_nome || repositor.rep_representante_codigo || '-'}</strong>
+                    <strong id="roteiroRepresentante">${representanteLabel}</strong>
                 </div>
                 <div class="roteiro-detalhe">
                     <small>Cidade referência</small>
@@ -308,172 +355,65 @@ export const pages = {
             </div>
 
             <div class="roteiro-layout">
-                <div class="roteiro-coluna">
-                    <section class="card">
-                        <div class="card-header">
-                            <div>
-                                <p class="form-card-eyebrow">Dia de Trabalho</p>
-                                <h4>Selecione um dia</h4>
-                            </div>
-                        </div>
-                        <div class="card-body">
-                            <div id="roteiroDiasContainer" class="dia-trabalho-chips"></div>
-                            <div id="roteiroDiaMensagem" class="roteiro-hint"></div>
-                        </div>
-                    </section>
-
-                    <section class="card">
-                        <div class="card-header">
-                            <div>
-                                <p class="form-card-eyebrow">Cidades atendidas</p>
-                                <h4>Cidades no dia selecionado</h4>
-                            </div>
-                        </div>
-                        <div class="card-body">
-                            <div class="form-row">
-                                <div class="form-group" style="flex:1">
-                                    <label for="roteiroCidadeSelect">Cidade</label>
-                                    <select id="roteiroCidadeSelect"></select>
-                                </div>
-                                <div class="form-group compact-checkbox" style="align-self: flex-end;">
-                                    <button class="btn btn-primary" id="btnAdicionarCidade">+ Adicionar cidade</button>
-                                </div>
-                            </div>
-
-                            <div id="roteiroCidadesMensagem" class="roteiro-hint"></div>
-                            <div class="table-container" id="roteiroCidadesTabela"></div>
-                        </div>
-                    </section>
-                </div>
-
-                <div class="roteiro-coluna">
-                    <section class="card">
-                        <div class="card-header">
-                            <div>
-                                <p class="form-card-eyebrow">Clientes</p>
-                                <h4>Clientes da cidade selecionada</h4>
-                            </div>
-                            <div class="form-group" style="margin:0;">
-                                <input type="text" id="roteiroBuscaCliente" placeholder="Buscar por nome, fantasia ou código" />
-                            </div>
-                        </div>
-                        <div class="card-body">
-                            <div id="roteiroClientesMensagem" class="roteiro-hint"></div>
-                            <div class="table-container" id="roteiroClientesTabela"></div>
-                        </div>
-                    </section>
-                </div>
-            </div>
-        `;
-    },
-
-    'roteiro-repositor': async () => {
-        const contexto = window.app?.contextoRoteiro;
-
-        if (!contexto) {
-            return `
-                <div class="card">
-                    <div class="card-body">
-                        <div class="empty-state">
-                            <div class="empty-state-icon">ℹ️</div>
-                            <p>Nenhum repositor selecionado.</p>
-                            <small>Volte à consulta de repositores e escolha um repositor para configurar o roteiro.</small>
+                <section class="card">
+                    <div class="card-header">
+                        <div>
+                            <p class="form-card-eyebrow">Dia de Trabalho</p>
+                            <h4>Selecione um dia</h4>
                         </div>
                     </div>
-                </div>
-            `;
-        }
+                    <div class="card-body">
+                        <div id="roteiroDiasContainer" class="dia-trabalho-chips"></div>
+                        <div id="roteiroDiaMensagem" class="roteiro-hint"></div>
+                    </div>
+                </section>
 
-        const repositor = contexto;
-
-        return `
-            <div class="roteiro-header">
-                <div>
-                    <p class="form-card-eyebrow">Roteiro do Repositor</p>
-                    <h3>${repositor.repo_nome}</h3>
-                    <p class="text-muted">Configure os dias, cidades e clientes atendidos.</p>
-                </div>
-                <div class="roteiro-badges">
-                    <span class="badge badge-info">Código ${repositor.repo_cod}</span>
-                    <span class="badge">${repositor.repo_vinculo === 'agencia' ? 'Agência' : 'Repositor'}</span>
-                </div>
-            </div>
-
-            <div class="roteiro-detalhes-grid">
-                <div class="roteiro-detalhe">
-                    <small>Supervisor</small>
-                    <strong id="roteiroSupervisor">${repositor.rep_supervisor || '-'}</strong>
-                </div>
-                <div class="roteiro-detalhe">
-                    <small>Representante</small>
-                    <strong id="roteiroRepresentante">${repositor.rep_representante_nome || repositor.rep_representante_codigo || '-'}</strong>
-                </div>
-                <div class="roteiro-detalhe">
-                    <small>Cidade referência</small>
-                    <strong id="roteiroCidadeRef">${repositor.repo_cidade_ref || '-'}</strong>
-                </div>
-                <div class="roteiro-detalhe">
-                    <small>Jornada</small>
-                    <strong>${(repositor.rep_jornada_tipo || 'INTEGRAL').replace('_', ' ')}</strong>
-                </div>
-            </div>
-
-            <div class="roteiro-layout">
-                <div class="roteiro-coluna">
-                    <section class="card">
-                        <div class="card-header">
-                            <div>
-                                <p class="form-card-eyebrow">Dia de Trabalho</p>
-                                <h4>Selecione um dia</h4>
-                            </div>
+                <section class="card">
+                    <div class="card-header">
+                        <div>
+                            <p class="form-card-eyebrow">Cidades atendidas</p>
+                            <h4>Cidades no dia selecionado</h4>
                         </div>
-                        <div class="card-body">
-                            <div id="roteiroDiasContainer" class="dia-trabalho-chips"></div>
-                            <div id="roteiroDiaMensagem" class="roteiro-hint"></div>
-                        </div>
-                    </section>
-
-                    <section class="card">
-                        <div class="card-header">
-                            <div>
-                                <p class="form-card-eyebrow">Cidades atendidas</p>
-                                <h4>Cidades no dia selecionado</h4>
-                            </div>
-                        </div>
-                        <div class="card-body">
-                            <div class="form-row">
-                                <div class="form-group" style="flex:1">
-                                    <label for="roteiroCidadeSelect">Cidade</label>
-                                    <select id="roteiroCidadeSelect"></select>
-                                </div>
-                                <div class="form-group compact-checkbox" style="align-self: flex-end;">
-                                    <button class="btn btn-primary" id="btnAdicionarCidade">+ Adicionar cidade</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-row cidade-busca-row">
+                            <div class="form-group" style="flex: 1;">
+                                <label for="roteiroCidadeBusca">Cidade</label>
+                                <div class="autocomplete-input">
+                                    <input type="text" id="roteiroCidadeBusca" placeholder="Digite parte do nome da cidade">
+                                    <div id="roteiroCidadeSugestoes" class="autocomplete-list"></div>
                                 </div>
                             </div>
-
-                            <div id="roteiroCidadesMensagem" class="roteiro-hint"></div>
-                            <div class="table-container" id="roteiroCidadesTabela"></div>
-                        </div>
-                    </section>
-                </div>
-
-                <div class="roteiro-coluna">
-                    <section class="card">
-                        <div class="card-header">
-                            <div>
-                                <p class="form-card-eyebrow">Clientes</p>
-                                <h4>Clientes da cidade selecionada</h4>
-                            </div>
-                            <div class="form-group" style="margin:0;">
-                                <input type="text" id="roteiroBuscaCliente" placeholder="Buscar por nome, fantasia ou código" />
+                            <div class="form-group compact-checkbox" style="align-self: flex-end;">
+                                <button class="btn btn-primary" id="btnAdicionarCidade">+ Adicionar cidade</button>
                             </div>
                         </div>
-                        <div class="card-body">
-                            <div id="roteiroClientesMensagem" class="roteiro-hint"></div>
-                            <div class="table-container" id="roteiroClientesTabela"></div>
+
+                        <div id="roteiroCidadesMensagem" class="roteiro-hint"></div>
+                        <div class="table-container" id="roteiroCidadesTabela"></div>
+                    </div>
+                </section>
+
+                <section class="card busca-clientes-card">
+                    <div class="card-body">
+                        <label for="roteiroBuscaCliente">Buscar clientes na cidade selecionada</label>
+                        <input type="text" id="roteiroBuscaCliente" placeholder="Digite nome, fantasia, bairro, grupo ou código">
+                        <small class="text-muted">A busca refina apenas os clientes da cidade ativa.</small>
+                    </div>
+                </section>
+
+                <section class="card">
+                    <div class="card-header">
+                        <div>
+                            <p class="form-card-eyebrow">Clientes</p>
+                            <h4>Clientes da cidade selecionada</h4>
                         </div>
-                    </section>
-                </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="roteiroClientesMensagem" class="roteiro-hint"></div>
+                        <div class="table-container" id="roteiroClientesTabela"></div>
+                    </div>
+                </section>
             </div>
         `;
     },
@@ -767,12 +707,12 @@ export const pages = {
                                 <datalist id="lista_cidades_roteiro">${cidadesRoteiroOptions}</datalist>
                             </div>
                             <div class="filter-group">
-                                <label for="filtro_data_inicio_roteiro">Data/Hora Início</label>
-                                <input type="datetime-local" id="filtro_data_inicio_roteiro">
+                                <label for="filtro_data_inicio_roteiro">Data Início</label>
+                                <input type="date" id="filtro_data_inicio_roteiro">
                             </div>
                             <div class="filter-group">
-                                <label for="filtro_data_fim_roteiro">Data/Hora Fim</label>
-                                <input type="datetime-local" id="filtro_data_fim_roteiro">
+                                <label for="filtro_data_fim_roteiro">Data Fim</label>
+                                <input type="date" id="filtro_data_fim_roteiro">
                             </div>
                             <div class="filter-group">
                                 <label>&nbsp;</label>
