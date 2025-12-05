@@ -67,6 +67,9 @@ class TursoDatabase {
             // Configurar tabelas de roteiro
             await this.ensureRoteiroTables();
 
+            // Configurar tabela de rateio
+            await this.ensureRateioTables();
+
             // Adicionar colunas novas se não existirem (migração)
             await this.migrateDatabase();
 
@@ -409,6 +412,36 @@ class TursoDatabase {
             `);
         } catch (error) {
             console.error('Erro ao garantir tabelas de roteiro:', error);
+            throw error;
+        }
+    }
+
+    async ensureRateioTables() {
+        try {
+            await this.mainClient.execute(`
+                CREATE TABLE IF NOT EXISTS rat_cliente_repositor (
+                    rat_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    rat_cliente_codigo TEXT NOT NULL,
+                    rat_repositor_id INTEGER NOT NULL,
+                    rat_percentual NUMERIC(5,2) NOT NULL,
+                    rat_vigencia_inicio DATE,
+                    rat_vigencia_fim DATE,
+                    rat_criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    rat_atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+
+            await this.mainClient.execute(`
+                CREATE INDEX IF NOT EXISTS idx_rat_cliente
+                ON rat_cliente_repositor (rat_cliente_codigo)
+            `);
+
+            await this.mainClient.execute(`
+                CREATE UNIQUE INDEX IF NOT EXISTS uniq_rat_cliente_repositor
+                ON rat_cliente_repositor (rat_cliente_codigo, rat_repositor_id, IFNULL(rat_vigencia_inicio, ''), IFNULL(rat_vigencia_fim, ''))
+            `);
+        } catch (error) {
+            console.error('Erro ao garantir tabela de rateio:', error);
             throw error;
         }
     }
@@ -944,6 +977,34 @@ class TursoDatabase {
         }
     }
 
+    async buscarClientesComercial(termo = '', limite = 20) {
+        await this.connectComercial();
+        if (!this.comercialClient || !termo) return [];
+
+        const termoLike = `%${termo}%`;
+
+        try {
+            const resultado = await this.comercialClient.execute({
+                sql: `
+                    SELECT cliente, nome, fantasia, cnpj_cpf, cidade, estado
+                    FROM tab_cliente
+                    WHERE nome LIKE ?
+                        OR fantasia LIKE ?
+                        OR CAST(cliente AS TEXT) LIKE ?
+                        OR cnpj_cpf LIKE ?
+                    ORDER BY nome
+                    LIMIT ?
+                `,
+                args: [termoLike, termoLike, termoLike, termoLike, limite]
+            });
+
+            return resultado.rows;
+        } catch (error) {
+            console.error('Erro ao buscar clientes no comercial:', error);
+            return [];
+        }
+    }
+
     async getClientesPorCodigo(codigos = []) {
         await this.connectComercial();
         if (!this.comercialClient || codigos.length === 0) return {};
@@ -1077,6 +1138,46 @@ class TursoDatabase {
             }
         } catch (error) {
             console.error('Erro ao atualizar ordem da cidade:', error);
+        }
+    }
+
+    async atualizarOrdemVisita(rotCliId, ordem, usuario = '') {
+        try {
+            const detalhes = await this.mainClient.execute({
+                sql: `
+                    SELECT cli.rot_cliente_codigo, cid.rot_repositor_id, cid.rot_dia_semana, cid.rot_cidade, cli.rot_ordem_visita
+                    FROM rot_roteiro_cliente cli
+                    JOIN rot_roteiro_cidade cid ON cid.rot_cid_id = cli.rot_cid_id
+                    WHERE cli.rot_cli_id = ?
+                `,
+                args: [rotCliId]
+            });
+
+            const registro = detalhes.rows?.[0];
+
+            await this.mainClient.execute({
+                sql: `
+                    UPDATE rot_roteiro_cliente
+                    SET rot_ordem_visita = ?, rot_atualizado_em = CURRENT_TIMESTAMP
+                    WHERE rot_cli_id = ?
+                `,
+                args: [ordem || null, rotCliId]
+            });
+
+            if (registro) {
+                await this.registrarAuditoriaRoteiro({
+                    usuario,
+                    repositorId: registro.rot_repositor_id,
+                    diaSemana: registro.rot_dia_semana,
+                    cidade: registro.rot_cidade,
+                    clienteCodigo: registro.rot_cliente_codigo,
+                    acao: 'ALTERAR_ORDEM_VISITA',
+                    detalhes: `Ordem ${registro.rot_ordem_visita ?? '-'} -> ${ordem ?? '-'}`
+                });
+            }
+        } catch (error) {
+            console.error('Erro ao atualizar ordem de visita:', error);
+            throw error;
         }
     }
 
@@ -1268,6 +1369,105 @@ class TursoDatabase {
         } catch (error) {
             console.error('Erro ao remover cliente do roteiro:', error);
             throw new Error('Não foi possível remover o cliente do roteiro.');
+        }
+    }
+
+    // ==================== RATEIO ====================
+    async listarRateioPorCliente(clienteCodigo) {
+        if (!clienteCodigo) return [];
+
+        try {
+            const resultado = await this.mainClient.execute({
+                sql: `
+                    SELECT *
+                    FROM rat_cliente_repositor
+                    WHERE rat_cliente_codigo = ?
+                    ORDER BY rat_id
+                `,
+                args: [clienteCodigo]
+            });
+
+            return resultado.rows;
+        } catch (error) {
+            console.error('Erro ao buscar rateio do cliente:', error);
+            return [];
+        }
+    }
+
+    validarRateioLinhas(linhas = []) {
+        const total = linhas.reduce((acc, linha) => acc + Number(linha.rat_percentual || 0), 0);
+        const repositorIds = linhas.map(l => l.rat_repositor_id).filter(Boolean);
+        const duplicados = repositorIds.filter((id, index) => repositorIds.indexOf(id) !== index);
+
+        const arredondado = Math.round(total * 100) / 100;
+
+        if (Math.abs(arredondado - 100) > 0.01) {
+            throw new Error(`O rateio deve totalizar 100%. Soma atual: ${arredondado.toFixed(2)}%.`);
+        }
+
+        if (duplicados.length > 0) {
+            throw new Error('Há repositores repetidos no rateio. Ajuste antes de salvar.');
+        }
+    }
+
+    async salvarRateioCliente(clienteCodigo, linhas = [], usuario = '') {
+        if (!clienteCodigo) throw new Error('Cliente não informado para salvar o rateio.');
+        if (!linhas || linhas.length === 0) throw new Error('Inclua pelo menos um repositor no rateio.');
+
+        this.validarRateioLinhas(linhas);
+
+        const agora = new Date().toISOString();
+
+        const tx = await this.mainClient.transaction();
+
+        try {
+            await tx.execute({
+                sql: 'DELETE FROM rat_cliente_repositor WHERE rat_cliente_codigo = ?',
+                args: [clienteCodigo]
+            });
+
+            for (const linha of linhas) {
+                await tx.execute({
+                    sql: `
+                        INSERT INTO rat_cliente_repositor (
+                            rat_cliente_codigo,
+                            rat_repositor_id,
+                            rat_percentual,
+                            rat_vigencia_inicio,
+                            rat_vigencia_fim,
+                            rat_criado_em,
+                            rat_atualizado_em
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    `,
+                    args: [
+                        clienteCodigo,
+                        linha.rat_repositor_id,
+                        Number(linha.rat_percentual),
+                        linha.rat_vigencia_inicio || null,
+                        linha.rat_vigencia_fim || null,
+                        linha.rat_criado_em || agora,
+                        agora
+                    ]
+                });
+            }
+
+            await tx.commit();
+        } catch (error) {
+            console.error('Erro ao salvar rateio do cliente:', error);
+            await tx.rollback();
+            throw new Error(error?.message || 'Não foi possível salvar o rateio.');
+        }
+
+        try {
+            await this.registrarAuditoriaRoteiro({
+                usuario,
+                repositorId: null,
+                acao: 'RATEIO_CLIENTE',
+                clienteCodigo,
+                detalhes: 'Rateio atualizado pelo cadastro dedicado'
+            });
+        } catch (e) {
+            console.warn('Aviso ao registrar auditoria de rateio:', e?.message || e);
         }
     }
 

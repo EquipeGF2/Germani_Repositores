@@ -239,6 +239,39 @@ export const pages = {
         `;
     },
 
+    'cadastro-rateio': async () => {
+        return `
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <p class="text-muted" style="margin: 0;">Distribua o percentual de atendimento de clientes entre os repositores.</p>
+                        <h3 class="card-title">Cadastro de Rateio</h3>
+                    </div>
+                    <div class="card-actions">
+                        <button class="btn btn-primary" id="btnSalvarRateio">Salvar rateio</button>
+                    </div>
+                </div>
+                <div class="card-body rateio-layout">
+                    <div class="form-row">
+                        <div class="form-group full-width" style="position: relative;">
+                            <label for="rateioBuscaCliente">Cliente</label>
+                            <input type="text" id="rateioBuscaCliente" placeholder="Digite código, nome, fantasia ou CNPJ/CPF" autocomplete="off">
+                            <div id="rateioClienteSugestoes" class="autocomplete-list"></div>
+                            <small id="rateioClienteSelecionadoInfo" class="text-muted"></small>
+                        </div>
+                    </div>
+
+                    <div id="rateioGridContainer" class="rateio-grid"></div>
+
+                    <div class="rateio-footer">
+                        <button class="btn btn-secondary" type="button" id="btnAdicionarLinhaRateio">+ Adicionar repositor</button>
+                        <div id="rateioTotalPercentual" class="rateio-total">Total: 0%</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
     'roteiro-repositor': async () => {
         const contexto = window.app?.contextoRoteiro;
 
@@ -934,6 +967,7 @@ export const pages = {
 // Mapeamento de títulos das páginas
 export const pageTitles = {
     'cadastro-repositor': 'Cadastro de Repositores',
+    'cadastro-rateio': 'Cadastro de Rateio',
     'validacao-dados': 'Validação de Dados',
     'resumo-periodo': 'Resumo do Período',
     'resumo-mensal': 'Resumo Mensal',
