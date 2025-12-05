@@ -6,7 +6,7 @@
 import { db } from './db.js';
 import { pages, pageTitles } from './pages.js';
 import { ACL_RECURSOS } from './acl-resources.js';
-import { normalizarTextoCadastro } from './utils.js';
+import { formatarDataISO, normalizarSupervisor, normalizarTextoCadastro } from './utils.js';
 
 const AUTH_STORAGE_KEY = 'GERMANI_AUTH_USER';
 
@@ -28,6 +28,9 @@ class App {
         this.ultimaConsultaRepositoresRoteiro = [];
         this.cidadesPotenciaisCache = [];
         this.clientesCachePorCidade = {};
+        this.clientesSelecionadosCidadeAtual = [];
+        this.buscaClientesModal = '';
+        this.resultadosConsultaRoteiro = [];
         this.roteiroBuscaTimeout = null;
         this.recursosPorPagina = {
             'cadastro-repositor': 'mod_repositores',
@@ -406,6 +409,8 @@ class App {
                 await this.inicializarRoteiroRepositor();
             } else if (pageName === 'consulta-alteracoes') {
                 await this.inicializarConsultaAlteracoes();
+            } else if (pageName === 'consulta-roteiro') {
+                await this.inicializarConsultaRoteiro();
             }
         } catch (error) {
             console.error('Erro ao carregar página:', error);
@@ -422,9 +427,7 @@ class App {
     // ==================== REPOSITOR ====================
 
     formatarDataSimples(dataString) {
-        if (!dataString) return '-';
-        const [ano, mes, dia] = dataString.split('T')[0].split('-');
-        return `${dia}/${mes}/${ano}`;
+        return formatarDataISO(dataString);
     }
 
     async aguardarElemento(selector, tentativas = 15, intervalo = 100) {
@@ -645,6 +648,8 @@ class App {
                 buscaClientes: ''
             };
             this.clientesCachePorCidade = {};
+            this.clientesSelecionadosCidadeAtual = [];
+            this.buscaClientesModal = '';
 
             await this.navigateTo('roteiro-repositor');
         } catch (error) {
@@ -728,6 +733,7 @@ class App {
                             const repLabel = representante ? `${representante.representante} - ${representante.desc_representante}` : `${repo.rep_representante_codigo || '-'}${repo.rep_representante_nome ? ' - ' + repo.rep_representante_nome : ''}`;
                             const repositorAtivo = db.isRepositorAtivo(repo, hoje);
                             const badgeStatus = repositorAtivo ? '<span class="badge badge-success">Ativo</span>' : '<span class="badge badge-gray">Inativo</span>';
+                            const supervisorLabel = normalizarSupervisor(repo.rep_supervisor) || '-';
 
                             const classeLinha = repositorAtivo ? '' : 'row-inativo';
 
@@ -735,7 +741,7 @@ class App {
                                 <tr class="${classeLinha}">
                                     <td>${repo.repo_cod}</td>
                                     <td>${repo.repo_nome}</td>
-                                    <td>${repo.rep_supervisor || '-'}</td>
+                                    <td>${supervisorLabel}</td>
                                     <td>${repLabel || '-'}</td>
                                     <td class="col-contato">${repo.rep_contato_telefone || '-'}</td>
                                     <td><span class="badge ${repo.repo_vinculo === 'agencia' ? 'badge-warning' : 'badge-info'}">${repo.repo_vinculo === 'agencia' ? 'Agência' : 'Repositor'}</span></td>
@@ -793,7 +799,7 @@ class App {
         modal.querySelector('#repEstado').textContent = representante.rep_estado || '-';
         modal.querySelector('#repFone').textContent = representante.rep_fone || '-';
         modal.querySelector('#repEmail').textContent = representante.rep_email || '-';
-        const supervisorModal = registro?.rep_supervisor || representante.rep_supervisor || '-';
+        const supervisorModal = normalizarSupervisor(registro?.rep_supervisor || representante.rep_supervisor) || '-';
         modal.querySelector('#repSupervisor').textContent = supervisorModal;
 
         modal.classList.add('active');
@@ -844,6 +850,20 @@ class App {
         const btnAddCidade = document.getElementById('btnAdicionarCidade');
         if (btnAddCidade) {
             btnAddCidade.onclick = () => this.adicionarCidadeRoteiro();
+        }
+
+        const btnAddCliente = document.getElementById('btnAdicionarClienteRoteiro');
+        if (btnAddCliente) {
+            btnAddCliente.onclick = () => this.abrirModalAdicionarCliente();
+        }
+
+        const buscaModal = document.getElementById('modalBuscaClientesCidade');
+        if (buscaModal) {
+            buscaModal.value = this.buscaClientesModal || '';
+            buscaModal.addEventListener('input', (e) => {
+                this.buscaClientesModal = e.target.value;
+                this.renderModalClientesCidade();
+            });
         }
     }
 
@@ -911,12 +931,13 @@ class App {
                         const repLabel = representante
                             ? `${representante.representante} - ${representante.desc_representante}`
                             : `${repo.rep_representante_codigo || '-'}${repo.rep_representante_nome ? ' - ' + repo.rep_representante_nome : ''}`;
+                        const supervisorLabel = normalizarSupervisor(repo.rep_supervisor) || '-';
 
                         return `
                             <tr>
                                 <td>${repo.repo_cod}</td>
                                 <td>${repo.repo_nome}</td>
-                                <td>${repo.rep_supervisor || '-'}</td>
+                                <td>${supervisorLabel}</td>
                                 <td>${repLabel || '-'}</td>
                                 <td>${repo.repo_cidade_ref || '-'}</td>
                                 <td class="table-actions">
@@ -1051,7 +1072,7 @@ class App {
         const inputCidade = document.getElementById('roteiroCidadeBusca');
         const mensagem = document.getElementById('roteiroCidadesMensagem');
         const dia = this.estadoRoteiro.diaSelecionado;
-        const cidade = inputCidade?.value?.trim();
+        const cidade = (inputCidade?.value || '').trim().toUpperCase();
 
         if (!dia) {
             if (mensagem) mensagem.textContent = 'Selecione um dia trabalhado para adicionar cidades.';
@@ -1105,7 +1126,7 @@ class App {
         }
 
         tabela.innerHTML = `
-            <table>
+            <table class="roteiro-cidades-table">
                 <thead>
                     <tr>
                         <th>Cidade</th>
@@ -1117,9 +1138,9 @@ class App {
                     ${cidades.map(cidade => `
                         <tr class="${this.estadoRoteiro.cidadeSelecionada === cidade.rot_cid_id ? 'cidade-ativa' : ''}">
                             <td>${cidade.rot_cidade}</td>
-                            <td><input type="number" class="input-ordem-cidade" data-id="${cidade.rot_cid_id}" value="${cidade.rot_ordem_cidade || ''}" placeholder="-" min="1" style="width: 80px;"></td>
+                            <td><input type="number" class="input-ordem-cidade" data-id="${cidade.rot_cid_id}" value="${cidade.rot_ordem_cidade || ''}" placeholder="-" min="1"></td>
                             <td class="table-actions">
-                                <button class="btn-text" data-acao="selecionar-cidade" data-id="${cidade.rot_cid_id}">Selecionar</button>
+                                <button class="btn btn-secondary btn-sm" data-acao="selecionar-cidade" data-id="${cidade.rot_cid_id}">Selecionar</button>
                                 <button class="btn-icon" data-acao="remover-cidade" data-id="${cidade.rot_cid_id}" title="Remover">🗑️</button>
                             </td>
                         </tr>
@@ -1201,35 +1222,29 @@ class App {
             return;
         }
 
-        if (!this.clientesCachePorCidade[cidadeAtiva.rot_cidade]) {
-            const clientesCidade = await db.getClientesPorCidade(cidadeAtiva.rot_cidade);
-            this.clientesCachePorCidade[cidadeAtiva.rot_cidade] = clientesCidade;
-        }
-
-        const clientesBase = this.clientesCachePorCidade[cidadeAtiva.rot_cidade] || [];
+        const selecionados = await db.getClientesRoteiroDetalhados(cidadeAtiva.rot_cid_id);
+        this.clientesSelecionadosCidadeAtual = selecionados;
         const termoBusca = (this.estadoRoteiro.buscaClientes || '').trim().toLowerCase();
         const clientes = termoBusca
-            ? clientesBase.filter(cliente => {
+            ? selecionados.filter(item => {
+                const dados = item.cliente_dados || {};
                 const campos = [
-                    cliente.nome,
-                    cliente.fantasia,
-                    cliente.bairro,
-                    cliente.grupo_desc,
-                    cliente.cnpj_cpf
-                ].map(c => (c || '').toLowerCase());
-                const codigoTexto = String(cliente.cliente || '').toLowerCase();
+                    dados.nome,
+                    dados.fantasia,
+                    dados.bairro,
+                    dados.grupo_desc,
+                    dados.cnpj_cpf
+                ].map(c => (c || '').toString().toLowerCase());
+                const codigoTexto = String(item.rot_cliente_codigo || '').toLowerCase();
                 return campos.some(c => c.includes(termoBusca)) || codigoTexto.includes(termoBusca);
             })
-            : clientesBase;
-
-        const selecionados = await db.getRoteiroClientes(cidadeAtiva.rot_cid_id);
-        const selecionadosSet = new Set(selecionados.map(c => String(c.rot_cliente_codigo)));
+            : selecionados;
 
         if (!clientes || clientes.length === 0) {
             tabela.innerHTML = '';
             if (mensagem) mensagem.textContent = termoBusca
                 ? 'Nenhum cliente atende ao filtro digitado nesta cidade.'
-                : 'Nenhum cliente encontrado para esta cidade.';
+                : 'Nenhum cliente vinculado a esta cidade no roteiro.';
             return;
         }
 
@@ -1237,37 +1252,45 @@ class App {
             <table class="roteiro-clientes-table">
                 <thead>
                     <tr>
-                        <th>Selecionar</th>
-                        <th>Código</th>
-                        <th>Nome</th>
-                        <th>Fantasia</th>
+                        <th class="col-acao">Remover</th>
+                        <th class="col-ordem-visita">Ordem</th>
+                        <th class="col-codigo">Código</th>
+                        <th class="col-nome">Nome</th>
+                        <th class="col-fantasia">Fantasia</th>
                         <th>CNPJ/CPF</th>
-                        <th>Endereço</th>
+                        <th class="col-endereco">Endereço</th>
                         <th>Bairro</th>
-                        <th>Grupo</th>
+                        <th class="col-grupo">Grupo</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${clientes.map(cliente => `
+                    ${clientes.map(cliente => {
+                        const dados = cliente.cliente_dados || {};
+                        const enderecoCompleto = `${dados.endereco || ''} ${dados.num_endereco || ''}`.trim();
+                        return `
                         <tr>
-                            <td><input type="checkbox" class="roteiro-cliente-checkbox" data-id="${cliente.cliente}" ${selecionadosSet.has(String(cliente.cliente)) ? 'checked' : ''}></td>
-                            <td>${cliente.cliente}</td>
-                            <td>${cliente.nome}</td>
-                            <td>${cliente.fantasia || '-'}</td>
-                            <td>${cliente.cnpj_cpf || '-'}</td>
-                            <td>${cliente.endereco || ''} ${cliente.num_endereco || ''}</td>
-                            <td>${cliente.bairro || '-'}</td>
-                            <td>${cliente.grupo_desc || '-'}</td>
+                            <td class="table-actions">
+                                <button class="btn btn-danger btn-sm" data-acao="remover-cliente" data-id="${cliente.rot_cliente_codigo}">Remover</button>
+                            </td>
+                            <td>${cliente.rot_ordem_visita || '-'}</td>
+                            <td>${cliente.rot_cliente_codigo}</td>
+                            <td>${dados.nome || '-'}</td>
+                            <td>${dados.fantasia || '-'}</td>
+                            <td>${dados.cnpj_cpf || '-'}</td>
+                            <td>${enderecoCompleto || '-'}</td>
+                            <td>${dados.bairro || '-'}</td>
+                            <td>${dados.grupo_desc || '-'}</td>
                         </tr>
-                    `).join('')}
+                        `;
+                    }).join('')}
                 </tbody>
             </table>
         `;
 
-        tabela.querySelectorAll('.roteiro-cliente-checkbox').forEach(chk => {
-            chk.addEventListener('change', () => {
-                const codigo = chk.dataset.id;
-                this.alternarClienteRoteiro(cidadeAtiva.rot_cid_id, codigo, chk.checked);
+        tabela.querySelectorAll('[data-acao="remover-cliente"]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const codigo = btn.dataset.id;
+                this.alternarClienteRoteiro(cidadeAtiva.rot_cid_id, codigo, false);
             });
         });
 
@@ -1282,10 +1305,132 @@ class App {
             } else {
                 await db.removerClienteRoteiro(rotCidId, clienteCodigo, usuario);
             }
+
+            await this.carregarClientesRoteiro();
         } catch (error) {
             this.showNotification(error.message || 'Erro ao atualizar cliente no roteiro.', 'error');
             await this.carregarClientesRoteiro();
         }
+    }
+
+    async abrirModalAdicionarCliente() {
+        const cidadeAtiva = this.cidadesRoteiroCache?.find(c => c.rot_cid_id === this.estadoRoteiro.cidadeSelecionada);
+        if (!cidadeAtiva) {
+            this.showNotification('Selecione uma cidade do roteiro para adicionar clientes.', 'warning');
+            return;
+        }
+
+        if (!this.clientesCachePorCidade[cidadeAtiva.rot_cidade]) {
+            const clientesCidade = await db.getClientesPorCidade(cidadeAtiva.rot_cidade);
+            this.clientesCachePorCidade[cidadeAtiva.rot_cidade] = clientesCidade;
+        }
+
+        const modal = document.getElementById('modalAdicionarCliente');
+        this.buscaClientesModal = '';
+        if (modal) {
+            modal.classList.add('active');
+        }
+
+        const inputBusca = document.getElementById('modalBuscaClientesCidade');
+        if (inputBusca) {
+            inputBusca.value = '';
+        }
+
+        this.renderModalClientesCidade();
+    }
+
+    fecharModalAdicionarCliente() {
+        const modal = document.getElementById('modalAdicionarCliente');
+        if (modal) modal.classList.remove('active');
+    }
+
+    async incluirClienteNaCidade(clienteCodigo) {
+        const cidadeAtiva = this.cidadesRoteiroCache?.find(c => c.rot_cid_id === this.estadoRoteiro.cidadeSelecionada);
+        if (!cidadeAtiva) return;
+
+        try {
+            await this.alternarClienteRoteiro(cidadeAtiva.rot_cid_id, clienteCodigo, true);
+            this.renderModalClientesCidade();
+            this.showNotification('Cliente adicionado ao roteiro.', 'success');
+        } catch (error) {
+            this.showNotification(error.message || 'Não foi possível adicionar o cliente.', 'error');
+        }
+    }
+
+    renderModalClientesCidade() {
+        const tabela = document.getElementById('modalTabelaClientesCidade');
+        const cidadeAtiva = this.cidadesRoteiroCache?.find(c => c.rot_cid_id === this.estadoRoteiro.cidadeSelecionada);
+
+        if (!tabela || !cidadeAtiva) return;
+
+        const clientesBase = this.clientesCachePorCidade[cidadeAtiva.rot_cidade] || [];
+        const selecionadosSet = new Set((this.clientesSelecionadosCidadeAtual || []).map(c => String(c.rot_cliente_codigo)));
+        const termo = (this.buscaClientesModal || '').trim().toLowerCase();
+
+        const clientes = termo
+            ? clientesBase.filter(cliente => {
+                const campos = [
+                    cliente.nome,
+                    cliente.fantasia,
+                    cliente.bairro,
+                    cliente.grupo_desc,
+                    cliente.cnpj_cpf
+                ].map(c => (c || '').toString().toLowerCase());
+                const codigoTexto = String(cliente.cliente || '').toLowerCase();
+                return campos.some(c => c.includes(termo)) || codigoTexto.includes(termo);
+            })
+            : clientesBase;
+
+        if (!clientes || clientes.length === 0) {
+            tabela.innerHTML = `
+                <div class="empty-state" style="box-shadow: none;">
+                    <div class="empty-state-icon">🔍</div>
+                    <p>Nenhum cliente encontrado para esta cidade.</p>
+                </div>
+            `;
+            return;
+        }
+
+        tabela.innerHTML = `
+            <table class="roteiro-clientes-table">
+                <thead>
+                    <tr>
+                        <th class="col-acao">Selecionar</th>
+                        <th class="col-codigo">Código</th>
+                        <th class="col-nome">Nome</th>
+                        <th class="col-fantasia">Fantasia</th>
+                        <th>Bairro</th>
+                        <th class="col-grupo">Grupo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${clientes.map(cliente => {
+                        const jaIncluido = selecionadosSet.has(String(cliente.cliente));
+                        return `
+                            <tr>
+                                <td class="table-actions">
+                                    ${jaIncluido
+                                        ? '<span class="badge badge-success">Incluído</span>'
+                                        : `<button class="btn btn-primary btn-sm" data-acao="adicionar-cliente" data-id="${cliente.cliente}">Adicionar</button>`}
+                                </td>
+                                <td>${cliente.cliente}</td>
+                                <td>${cliente.nome || '-'}</td>
+                                <td>${cliente.fantasia || '-'}</td>
+                                <td>${cliente.bairro || '-'}</td>
+                                <td>${cliente.grupo_desc || '-'}</td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+        `;
+
+        tabela.querySelectorAll('[data-acao="adicionar-cliente"]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const codigo = btn.dataset.id;
+                this.incluirClienteNaCidade(codigo);
+            });
+        });
     }
 
     // ==================== VALIDAÇÃO DE DADOS ====================
@@ -1340,6 +1485,7 @@ class App {
                             const datas = representante ? `${this.formatarDataSimples(representante.rep_data_inicio)} até ${this.formatarDataSimples(representante.rep_data_fim)}` : '-';
                             const statusBadge = item.status_representante.status === 'Ativo' ? 'badge-success' : 'badge-warning';
                             const resultadoBadge = item.resultado_validacao === 'OK' ? 'badge-success' : 'badge-danger';
+                            const supervisorLabel = normalizarSupervisor(item.rep_supervisor) || '-';
 
                             return `
                                 <tr class="${item.resultado_validacao === 'OK' ? '' : 'row-warning'}">
@@ -1347,7 +1493,7 @@ class App {
                                         <div><strong>${item.repo_cod}</strong> - ${item.repo_nome}</div>
                                         <small class="text-muted">${item.repositor_ativo ? 'Repositor ativo' : 'Repositor inativo'}</small>
                                     </td>
-                                    <td>${item.rep_supervisor || '-'}</td>
+                                    <td>${supervisorLabel}</td>
                                     <td>${repLabel || '-'}</td>
                                     <td>${datas}</td>
                                     <td><span class="badge ${statusBadge}">${item.status_representante.status}</span></td>
@@ -1587,6 +1733,181 @@ class App {
 
         this.aplicarFiltrosHistorico();
         this.aplicarFiltrosAuditoriaRoteiro();
+    }
+
+    // ==================== CONSULTA ROTEIRO ====================
+
+    formatarDiaSemanaLabel(codigo) {
+        const nomes = {
+            seg: 'Segunda',
+            ter: 'Terça',
+            qua: 'Quarta',
+            qui: 'Quinta',
+            sex: 'Sexta',
+            sab: 'Sábado',
+            dom: 'Domingo'
+        };
+
+        return nomes[codigo] || codigo || '-';
+    }
+
+    coletarFiltrosConsultaRoteiro() {
+        const repositorId = document.getElementById('filtro_repositor_consulta_roteiro')?.value || '';
+        const diaSemana = document.getElementById('filtro_dia_consulta_roteiro')?.value || '';
+        const cidade = document.getElementById('filtro_cidade_consulta_roteiro')?.value || '';
+
+        return {
+            repositorId: repositorId ? Number(repositorId) : null,
+            diaSemana: diaSemana || '',
+            cidade: cidade ? cidade.toUpperCase() : ''
+        };
+    }
+
+    atualizarEstadoBotoesConsultaRoteiro() {
+        const btnExportar = document.getElementById('btnExportarConsultaRoteiro');
+        const { repositorId } = this.coletarFiltrosConsultaRoteiro();
+
+        if (btnExportar) {
+            btnExportar.disabled = !repositorId;
+            btnExportar.title = repositorId ? '' : 'Selecione um repositor para exportar';
+        }
+    }
+
+    async inicializarConsultaRoteiro() {
+        const btnBuscar = document.getElementById('btnBuscarConsultaRoteiro');
+        const btnExportar = document.getElementById('btnExportarConsultaRoteiro');
+
+        if (btnBuscar) btnBuscar.onclick = () => this.buscarConsultaRoteiro();
+        if (btnExportar) btnExportar.onclick = () => this.exportarConsultaRoteiro();
+
+        ['filtro_repositor_consulta_roteiro', 'filtro_dia_consulta_roteiro', 'filtro_cidade_consulta_roteiro'].forEach(id => {
+            const elemento = document.getElementById(id);
+            if (!elemento) return;
+
+            elemento.addEventListener('change', () => this.atualizarEstadoBotoesConsultaRoteiro());
+            if (elemento.tagName === 'INPUT') {
+                elemento.addEventListener('input', () => this.atualizarEstadoBotoesConsultaRoteiro());
+            }
+        });
+
+        this.atualizarEstadoBotoesConsultaRoteiro();
+        await this.buscarConsultaRoteiro();
+    }
+
+    async buscarConsultaRoteiro() {
+        const filtros = this.coletarFiltrosConsultaRoteiro();
+        this.atualizarEstadoBotoesConsultaRoteiro();
+
+        try {
+            const registros = await db.consultarRoteiro(filtros);
+            this.resultadosConsultaRoteiro = registros;
+            this.renderConsultaRoteiro(registros);
+        } catch (error) {
+            this.showNotification('Erro ao consultar roteiro: ' + error.message, 'error');
+        }
+    }
+
+    renderConsultaRoteiro(registros) {
+        const container = document.getElementById('resumoConsultaRoteiro');
+        if (!container) return;
+
+        if (!registros || registros.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">🧭</div>
+                    <p>Nenhum roteiro encontrado com os filtros selecionados.</p>
+                    <small>Selecione um repositor ou ajuste os filtros para visualizar os dados.</small>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Repositor</th>
+                            <th>Dia</th>
+                            <th>Cidade</th>
+                            <th>Ordem Cidade</th>
+                            <th>Código</th>
+                            <th>Nome</th>
+                            <th>Fantasia</th>
+                            <th>Endereço</th>
+                            <th>Bairro</th>
+                            <th>Grupo</th>
+                            <th>Ordem Visita</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${registros.map(item => {
+                            const cliente = item.cliente_dados || {};
+                            const endereco = `${cliente.endereco || ''} ${cliente.num_endereco || ''}`.trim();
+                            return `
+                                <tr>
+                                    <td>${item.repo_cod} - ${item.repo_nome}</td>
+                                    <td>${this.formatarDiaSemanaLabel(item.rot_dia_semana)}</td>
+                                    <td>${item.rot_cidade}</td>
+                                    <td>${item.rot_ordem_cidade || '-'}</td>
+                                    <td>${item.rot_cliente_codigo}</td>
+                                    <td>${cliente.nome || '-'}</td>
+                                    <td>${cliente.fantasia || '-'}</td>
+                                    <td>${endereco || '-'}</td>
+                                    <td>${cliente.bairro || '-'}</td>
+                                    <td>${cliente.grupo_desc || '-'}</td>
+                                    <td>${item.rot_ordem_visita || '-'}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    exportarConsultaRoteiro() {
+        const { repositorId } = this.coletarFiltrosConsultaRoteiro();
+        if (!repositorId) {
+            this.showNotification('Selecione um repositor para exportar o roteiro.', 'warning');
+            return;
+        }
+
+        if (!this.resultadosConsultaRoteiro || this.resultadosConsultaRoteiro.length === 0) {
+            this.showNotification('Nenhum dado para exportar. Realize uma busca primeiro.', 'warning');
+            return;
+        }
+
+        const header = ['Repositor', 'Dia da semana', 'Cidade', 'Ordem Cidade', 'Código', 'Nome', 'Fantasia', 'Endereço', 'Bairro', 'Grupo', 'Ordem Visita'];
+        const linhas = this.resultadosConsultaRoteiro.map(item => {
+            const cliente = item.cliente_dados || {};
+            const endereco = `${cliente.endereco || ''} ${cliente.num_endereco || ''}`.trim();
+            return [
+                `${item.repo_cod} - ${item.repo_nome}`,
+                this.formatarDiaSemanaLabel(item.rot_dia_semana),
+                item.rot_cidade,
+                item.rot_ordem_cidade || '-',
+                item.rot_cliente_codigo,
+                cliente.nome || '-',
+                cliente.fantasia || '-',
+                endereco || '-',
+                cliente.bairro || '-',
+                cliente.grupo_desc || '-',
+                item.rot_ordem_visita || '-'
+            ];
+        });
+
+        const csv = [header, ...linhas]
+            .map(linha => linha.map(valor => `"${String(valor).replace(/"/g, '""')}"`).join(','))
+            .join('\n');
+
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'consulta-roteiro.csv';
+        link.click();
+        URL.revokeObjectURL(url);
     }
 
     // ==================== ESTRUTURA DO BANCO ====================

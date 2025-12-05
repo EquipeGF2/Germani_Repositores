@@ -5,7 +5,7 @@
 
 import { TURSO_CONFIG } from './turso-config.js';
 import { createClient } from 'https://esm.sh/@libsql/client@0.6.0/web';
-import { normalizarTextoCadastro } from './utils.js';
+import { normalizarDataISO, normalizarSupervisor, normalizarTextoCadastro } from './utils.js';
 
 class TursoDatabase {
     constructor() {
@@ -69,6 +69,8 @@ class TursoDatabase {
 
             // Adicionar colunas novas se não existirem (migração)
             await this.migrateDatabase();
+
+            await this.normalizarSupervisoresCadastro();
 
             // Configurar tabelas de controle de acesso
             await this.ensureAclTables();
@@ -342,6 +344,28 @@ class TursoDatabase {
         }
     }
 
+    async normalizarSupervisoresCadastro() {
+        try {
+            const resultado = await this.mainClient.execute(`
+                SELECT repo_cod, rep_supervisor
+                FROM cad_repositor
+                WHERE rep_supervisor IS NOT NULL AND rep_supervisor <> ''
+            `);
+
+            for (const row of resultado.rows) {
+                const supervisorNormalizado = normalizarSupervisor(row.rep_supervisor);
+                if (supervisorNormalizado && supervisorNormalizado !== row.rep_supervisor) {
+                    await this.mainClient.execute({
+                        sql: 'UPDATE cad_repositor SET rep_supervisor = ? WHERE repo_cod = ?',
+                        args: [supervisorNormalizado, row.repo_cod]
+                    });
+                }
+            }
+        } catch (error) {
+            console.warn('Não foi possível normalizar supervisores já cadastrados:', error?.message || error);
+        }
+    }
+
     async ensureRoteiroTables() {
         try {
             await this.mainClient.execute(`
@@ -416,8 +440,10 @@ class TursoDatabase {
 
     // ==================== UTILITÁRIOS DE DATA ====================
     normalizarData(dataString) {
-        if (!dataString) return null;
-        const [ano, mes, dia] = dataString.split('T')[0].split('-').map(Number);
+        const dataIso = normalizarDataISO(dataString);
+        if (!dataIso) return null;
+
+        const [ano, mes, dia] = dataIso.split('-').map(Number);
         return new Date(ano, mes - 1, dia);
     }
 
@@ -463,6 +489,17 @@ class TursoDatabase {
         return {
             status: ativo ? 'Ativo' : 'Inativo',
             motivo: ativo ? '' : 'Representante com data fim anterior à data atual'
+        };
+    }
+
+    prepararRegistroRepresentante(rep) {
+        if (!rep) return rep;
+
+        return {
+            ...rep,
+            rep_supervisor: normalizarSupervisor(rep.rep_supervisor),
+            rep_data_inicio: normalizarDataISO(rep.rep_data_inicio),
+            rep_data_fim: normalizarDataISO(rep.rep_data_fim)
         };
     }
 
@@ -615,6 +652,7 @@ class TursoDatabase {
             const cidadeNormalizada = normalizarTextoCadastro(cidadeRef);
             const jornadaNormalizada = vinculo === 'agencia' ? null : (repJornadaTipo || 'INTEGRAL');
             const jornadaLegada = jornadaNormalizada ? jornadaNormalizada.toLowerCase() : null;
+            const supervisorNormalizado = normalizarSupervisor(repSupervisor);
             const diasParaGravar = vinculo === 'agencia' ? null : (diasTrabalhados || 'seg,ter,qua,qui,sex');
 
             const nomeDuplicado = await this.nomeRepositorJaExiste(nomeNormalizado);
@@ -633,9 +671,9 @@ class TursoDatabase {
                 sql: `INSERT INTO cad_repositor (
                         repo_nome, repo_data_inicio, repo_data_fim,
                         repo_cidade_ref, repo_representante, rep_contato_telefone, repo_vinculo,
-                        dias_trabalhados, jornada, rep_jornada_tipo,
-                        rep_supervisor, rep_representante_codigo, rep_representante_nome
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
+                    dias_trabalhados, jornada, rep_jornada_tipo,
+                    rep_supervisor, rep_representante_codigo, rep_representante_nome
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
                 args: [
                     nomeNormalizado, dataInicio, dataFim,
                     cidadeNormalizada,
@@ -643,7 +681,7 @@ class TursoDatabase {
                     null,
                     vinculo,
                     diasParaGravar, jornadaLegada, jornadaNormalizada,
-                    repSupervisor, repCodigo, repNome
+                    supervisorNormalizado, repCodigo, repNome
                 ]
             });
 
@@ -722,6 +760,7 @@ class TursoDatabase {
             const cidadeNormalizada = normalizarTextoCadastro(cidadeRef);
             const jornadaNormalizada = vinculo === 'agencia' ? null : (repJornadaTipo || 'INTEGRAL');
             const jornadaLegada = jornadaNormalizada ? jornadaNormalizada.toLowerCase() : null;
+            const supervisorNormalizado = normalizarSupervisor(repSupervisor);
             const diasParaGravar = vinculo === 'agencia' ? null : (diasTrabalhados || 'seg,ter,qua,qui,sex');
 
             const nomeDuplicado = await this.nomeRepositorJaExiste(nomeNormalizado, cod);
@@ -752,7 +791,7 @@ class TursoDatabase {
                     null,
                     vinculo,
                     diasParaGravar, jornadaLegada, jornadaNormalizada,
-                    repSupervisor, repCodigo, repNome,
+                    supervisorNormalizado, repCodigo, repNome,
                     cod
                 ]
             });
@@ -776,10 +815,10 @@ class TursoDatabase {
                     await this.registrarHistorico(cod, 'nome',
                         dadosAntigos.repo_nome, nome);
                 }
-                if (dadosAntigos.rep_supervisor !== repSupervisor) {
+                if (dadosAntigos.rep_supervisor !== supervisorNormalizado) {
                     await this.registrarHistorico(cod, 'rep_supervisor',
                         dadosAntigos.rep_supervisor || 'Nenhum',
-                        repSupervisor || 'Nenhum');
+                        supervisorNormalizado || 'Nenhum');
                 }
                 if (dadosAntigos.rep_representante_codigo !== repCodigo || dadosAntigos.rep_representante_nome !== repNome) {
                     await this.registrarHistorico(cod, 'representante',
@@ -902,6 +941,35 @@ class TursoDatabase {
         } catch (error) {
             console.error('Erro ao buscar clientes por cidade:', error);
             return [];
+        }
+    }
+
+    async getClientesPorCodigo(codigos = []) {
+        await this.connectComercial();
+        if (!this.comercialClient || codigos.length === 0) return {};
+
+        const placeholders = codigos.map(() => '?').join(',');
+
+        try {
+            const resultado = await this.comercialClient.execute({
+                sql: `
+                    SELECT cliente, nome, fantasia, cnpj_cpf, endereco, num_endereco,
+                           bairro, cidade, estado, grupo_desc
+                    FROM tab_cliente
+                    WHERE cliente IN (${placeholders})
+                `,
+                args: codigos
+            });
+
+            const mapa = {};
+            resultado.rows.forEach(cli => {
+                mapa[cli.cliente] = cli;
+            });
+
+            return mapa;
+        } catch (error) {
+            console.error('Erro ao buscar clientes por código:', error);
+            return {};
         }
     }
 
@@ -1071,6 +1139,78 @@ class TursoDatabase {
         }
     }
 
+    async getClientesRoteiroDetalhados(rotCidId) {
+        const clientesRoteiro = await this.getRoteiroClientes(rotCidId);
+        if (!clientesRoteiro || clientesRoteiro.length === 0) return [];
+
+        const codigos = [...new Set(clientesRoteiro.map(c => c.rot_cliente_codigo).filter(Boolean))];
+        const detalhes = await this.getClientesPorCodigo(codigos);
+
+        return clientesRoteiro.map(cliente => ({
+            ...cliente,
+            cliente_dados: detalhes[cliente.rot_cliente_codigo] || null
+        }));
+    }
+
+    async consultarRoteiro({ repositorId = null, diaSemana = '', cidade = '' } = {}) {
+        const args = [];
+        let sql = `
+            SELECT
+                rc.rot_cid_id,
+                rc.rot_repositor_id,
+                rc.rot_dia_semana,
+                rc.rot_cidade,
+                rc.rot_ordem_cidade,
+                cli.rot_cliente_codigo,
+                cli.rot_ordem_visita,
+                r.repo_nome,
+                r.repo_cod
+            FROM rot_roteiro_cidade rc
+            JOIN cad_repositor r ON r.repo_cod = rc.rot_repositor_id
+            JOIN rot_roteiro_cliente cli ON cli.rot_cid_id = rc.rot_cid_id
+            WHERE 1=1
+        `;
+
+        if (repositorId) {
+            sql += ' AND rc.rot_repositor_id = ?';
+            args.push(repositorId);
+        }
+
+        if (diaSemana) {
+            sql += ' AND rc.rot_dia_semana = ?';
+            args.push(diaSemana);
+        }
+
+        if (cidade) {
+            const cidadeNormalizada = cidade.toUpperCase();
+            sql += ' AND rc.rot_cidade = ?';
+            args.push(cidadeNormalizada);
+        }
+
+        sql += `
+            ORDER BY
+                r.repo_nome,
+                rc.rot_dia_semana,
+                COALESCE(rc.rot_ordem_cidade, rc.rot_cid_id),
+                COALESCE(cli.rot_ordem_visita, cli.rot_cli_id)
+        `;
+
+        try {
+            const resultado = await this.mainClient.execute({ sql, args });
+            const codigos = [...new Set(resultado.rows.map(row => row.rot_cliente_codigo).filter(Boolean))];
+            const detalhes = await this.getClientesPorCodigo(codigos);
+
+            return resultado.rows.map(row => ({
+                ...row,
+                rot_cidade: (row.rot_cidade || '').toUpperCase(),
+                cliente_dados: detalhes[row.rot_cliente_codigo] || null
+            }));
+        } catch (error) {
+            console.error('Erro ao consultar roteiro:', error);
+            return [];
+        }
+    }
+
     async adicionarClienteRoteiro(rotCidId, clienteCodigo, usuario = '') {
         try {
             const cidade = await this.getRoteiroCidadePorId(rotCidId);
@@ -1147,7 +1287,11 @@ class TursoDatabase {
                 ORDER BY rep_supervisor
             `);
 
-            return result.rows.map(row => row.rep_supervisor);
+            const listaNormalizada = result.rows
+                .map(row => normalizarSupervisor(row.rep_supervisor))
+                .filter(Boolean);
+
+            return Array.from(new Set(listaNormalizada)).sort();
         } catch (error) {
             console.error('Erro ao buscar supervisores comerciais:', error);
             return [];
@@ -1171,7 +1315,7 @@ class TursoDatabase {
                 ORDER BY representante
             `);
 
-            return result.rows;
+            return result.rows.map(rep => this.prepararRegistroRepresentante(rep));
         } catch (error) {
             console.error('Erro ao buscar representantes:', error);
             return [];
@@ -1197,7 +1341,7 @@ class TursoDatabase {
 
             const mapa = {};
             result.rows.forEach(row => {
-                mapa[row.representante] = row;
+                mapa[row.representante] = this.prepararRegistroRepresentante(row);
             });
 
             return mapa;
@@ -1213,9 +1357,10 @@ class TursoDatabase {
 
         const hoje = new Date().toISOString().split('T')[0];
 
-        if (supervisor) {
+        const supervisorFiltrado = normalizarSupervisor(supervisor);
+        if (supervisorFiltrado) {
             sql += ' AND rep_supervisor = ?';
-            args.push(supervisor);
+            args.push(supervisorFiltrado);
         }
 
         if (representante) {
@@ -1252,7 +1397,10 @@ class TursoDatabase {
 
         try {
             const result = await this.mainClient.execute({ sql, args });
-            const repositores = result.rows;
+            const repositores = result.rows.map(repo => ({
+                ...repo,
+                rep_supervisor: normalizarSupervisor(repo.rep_supervisor)
+            }));
             const codigoSet = new Set();
 
             for (const repo of repositores) {

@@ -6,14 +6,35 @@
  * Formata data sem problema de timezone
  * Converte '2025-01-01' para '01/01/2025' sem mudança de dia
  */
-export function formatarData(dataString) {
-    if (!dataString) return '-';
+export function normalizarDataISO(valor) {
+    if (!valor) return null;
 
-    // Split da string no formato YYYY-MM-DD
-    const [ano, mes, dia] = dataString.split('T')[0].split('-');
+    if (valor instanceof Date && !Number.isNaN(valor.getTime())) {
+        return valor.toISOString().split('T')[0];
+    }
 
-    // Retorna no formato DD/MM/YYYY
+    const texto = String(valor).trim();
+    if (!texto) return null;
+
+    const trechoISO = texto.match(/\d{4}-\d{2}-\d{2}/)?.[0];
+    if (trechoISO) return trechoISO;
+
+    const data = new Date(texto);
+    if (Number.isNaN(data.getTime())) return null;
+
+    return data.toISOString().split('T')[0];
+}
+
+export function formatarDataISO(dataString) {
+    const dataNormalizada = normalizarDataISO(dataString);
+    if (!dataNormalizada) return '-';
+
+    const [ano, mes, dia] = dataNormalizada.split('-');
     return `${dia}/${mes}/${ano}`;
+}
+
+export function formatarData(dataString) {
+    return formatarDataISO(dataString);
 }
 
 /**
@@ -45,6 +66,17 @@ export function normalizarTextoCadastro(valor) {
         .replace(/\p{Diacritic}/gu, '');
 
     return semAcento.toUpperCase();
+}
+
+export function normalizarSupervisor(texto) {
+    if (!texto) return '';
+
+    return texto
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/�/g, '')
+        .toUpperCase()
+        .trim();
 }
 
 /**
