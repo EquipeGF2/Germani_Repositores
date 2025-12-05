@@ -408,12 +408,32 @@ export const pages = {
                             <p class="form-card-eyebrow">Clientes</p>
                             <h4>Clientes da cidade selecionada</h4>
                         </div>
+                        <button class="btn btn-primary btn-sm" id="btnAdicionarClienteRoteiro">+ Adicionar cliente</button>
                     </div>
                     <div class="card-body">
                         <div id="roteiroClientesMensagem" class="roteiro-hint"></div>
                         <div class="table-container" id="roteiroClientesTabela"></div>
                     </div>
                 </section>
+            </div>
+
+            <div class="modal" id="modalAdicionarCliente">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Adicionar cliente ao roteiro</h3>
+                        <button class="modal-close" onclick="window.app.fecharModalAdicionarCliente()">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label for="modalBuscaClientesCidade">Buscar cliente</label>
+                            <input type="text" id="modalBuscaClientesCidade" placeholder="Nome, fantasia, bairro ou código">
+                        </div>
+                        <div class="table-container" id="modalTabelaClientesCidade"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" onclick="window.app.fecharModalAdicionarCliente()">Fechar</button>
+                    </div>
+                </div>
             </div>
         `;
     },
@@ -765,12 +785,13 @@ export const pages = {
                             <label for="filtro_dia_consulta_roteiro">Dia da semana</label>
                             <select id="filtro_dia_consulta_roteiro">
                                 <option value="">Todos</option>
-                                <option value="SEGUNDA">Segunda</option>
-                                <option value="TERCA">Terça</option>
-                                <option value="QUARTA">Quarta</option>
-                                <option value="QUINTA">Quinta</option>
-                                <option value="SEXTA">Sexta</option>
-                                <option value="SABADO">Sábado</option>
+                                <option value="seg">Segunda</option>
+                                <option value="ter">Terça</option>
+                                <option value="qua">Quarta</option>
+                                <option value="qui">Quinta</option>
+                                <option value="sex">Sexta</option>
+                                <option value="sab">Sábado</option>
+                                <option value="dom">Domingo</option>
                             </select>
                         </div>
                         <div class="filter-group">
@@ -790,10 +811,10 @@ export const pages = {
 
                     <div class="card" style="margin-top: 1rem;">
                         <div class="card-body" style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;">
-                            <button class="btn btn-secondary" disabled title="Em breve">
+                            <button class="btn btn-secondary" id="btnBuscarConsultaRoteiro">
                                 🔍 Buscar
                             </button>
-                            <button class="btn btn-primary" disabled title="Selecione um repositor para exportar">
+                            <button class="btn btn-primary" id="btnExportarConsultaRoteiro">
                                 📄 Exportar planilha
                             </button>
                             <span class="text-muted">A exportação seguirá o layout da planilha “Roteiro de Visitas”.</span>

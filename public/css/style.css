@@ -1004,6 +1004,12 @@ tbody td {
     align-items: center;
     margin-bottom: 1rem;
     gap: 1rem;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg-gray);
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--gray-200);
 }
 
 .roteiro-badges {
@@ -1078,10 +1084,37 @@ tbody td {
     font-weight: 600;
 }
 
-.roteiro-clientes-table th,
+.roteiro-clientes-table th {
+    white-space: nowrap;
+}
+
 .roteiro-clientes-table td {
     white-space: normal;
     word-break: break-word;
+}
+
+.roteiro-clientes-table .col-acao,
+.roteiro-clientes-table .col-ordem-visita,
+.roteiro-clientes-table .col-grupo,
+.roteiro-clientes-table .col-codigo {
+    white-space: nowrap;
+}
+
+.roteiro-clientes-table .col-ordem-visita {
+    width: 80px;
+}
+
+.roteiro-clientes-table .col-grupo {
+    width: 90px;
+}
+
+.roteiro-clientes-table .col-nome {
+    min-width: 180px;
+}
+
+.roteiro-clientes-table .col-fantasia,
+.roteiro-clientes-table .col-endereco {
+    min-width: 160px;
 }
 
 .roteiro-clientes-table td:nth-child(6),
@@ -1096,6 +1129,16 @@ tbody td {
 
 .tabela-roteiro-selecao td {
     vertical-align: middle;
+}
+
+.roteiro-cidades-table td,
+.roteiro-cidades-table th {
+    vertical-align: middle;
+}
+
+.input-ordem-cidade {
+    width: 80px;
+    text-align: center;
 }
 
 .cidade-busca-row {
