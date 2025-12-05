@@ -732,6 +732,86 @@ export const pages = {
         `;
     },
 
+    'consulta-roteiro': async () => {
+        const [repositores, cidadesRoteiro] = await Promise.all([
+            db.getAllRepositors(),
+            db.getCidadesRoteiroDistintas()
+        ]);
+
+        const repositorOptions = repositores.map(repo => `
+            <option value="${repo.repo_cod}">${repo.repo_cod} - ${repo.repo_nome}</option>
+        `).join('');
+
+        const cidadesRoteiroOptions = cidadesRoteiro.map(cidade => `<option value="${cidade}"></option>`).join('');
+
+        return `
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Consulta Roteiro</h3>
+                    <p class="text-muted" style="margin: 4px 0 0;">
+                        Utilize os filtros para visualizar e exportar um resumo estruturado do roteiro.
+                    </p>
+                </div>
+                <div class="card-body">
+                    <div class="filter-bar filter-bar-wide">
+                        <div class="filter-group">
+                            <label for="filtro_repositor_consulta_roteiro">Repositor</label>
+                            <select id="filtro_repositor_consulta_roteiro">
+                                <option value="">Selecione...</option>
+                                ${repositorOptions}
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="filtro_dia_consulta_roteiro">Dia da semana</label>
+                            <select id="filtro_dia_consulta_roteiro">
+                                <option value="">Todos</option>
+                                <option value="SEGUNDA">Segunda</option>
+                                <option value="TERCA">Terça</option>
+                                <option value="QUARTA">Quarta</option>
+                                <option value="QUINTA">Quinta</option>
+                                <option value="SEXTA">Sexta</option>
+                                <option value="SABADO">Sábado</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="filtro_cidade_consulta_roteiro">Cidade</label>
+                            <input type="text" id="filtro_cidade_consulta_roteiro" list="lista_cidades_consulta_roteiro" placeholder="Cidade" />
+                            <datalist id="lista_cidades_consulta_roteiro">${cidadesRoteiroOptions}</datalist>
+                        </div>
+                        <div class="filter-group">
+                            <label for="filtro_data_inicio_consulta_roteiro">Data Início</label>
+                            <input type="date" id="filtro_data_inicio_consulta_roteiro">
+                        </div>
+                        <div class="filter-group">
+                            <label for="filtro_data_fim_consulta_roteiro">Data Fim</label>
+                            <input type="date" id="filtro_data_fim_consulta_roteiro">
+                        </div>
+                    </div>
+
+                    <div class="card" style="margin-top: 1rem;">
+                        <div class="card-body" style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;">
+                            <button class="btn btn-secondary" disabled title="Em breve">
+                                🔍 Buscar
+                            </button>
+                            <button class="btn btn-primary" disabled title="Selecione um repositor para exportar">
+                                📄 Exportar planilha
+                            </button>
+                            <span class="text-muted">A exportação seguirá o layout da planilha “Roteiro de Visitas”.</span>
+                        </div>
+                    </div>
+
+                    <div class="table-container" id="resumoConsultaRoteiro">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">🧭</div>
+                            <p>Selecione um repositor para visualizar o roteiro consolidado.</p>
+                            <small>Os dados serão organizados por dia da semana e cidade, prontos para exportação.</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
     'estrutura-banco-comercial': async () => {
         const resultado = await db.getEstruturaBancoComercial();
 
@@ -840,6 +920,7 @@ export const pageTitles = {
     'analise-grafica-repo': 'Análise Gráfica',
     'alteracoes-rota': 'Alterações de Rota',
     'consulta-alteracoes': 'Consulta de Alterações',
+    'consulta-roteiro': 'Consulta de Roteiro',
     'estrutura-banco-comercial': 'Estrutura do Banco Comercial',
     'controle-acessos': 'Controle de Acessos',
     'roteiro-repositor': 'Roteiro do Repositor'

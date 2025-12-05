@@ -1125,6 +1125,10 @@ tbody td {
     z-index: 5;
 }
 
+.autocomplete-list.is-hidden {
+    display: none;
+}
+
 .autocomplete-item {
     padding: 0.5rem 0.75rem;
     cursor: pointer;

@@ -38,6 +38,7 @@ class App {
             'analise-grafica-repo': 'mod_repositores',
             'alteracoes-rota': 'mod_repositores',
             'consulta-alteracoes': 'mod_repositores',
+            'consulta-roteiro': 'mod_repositores',
             'estrutura-banco-comercial': 'mod_repositores',
             'controle-acessos': 'mod_configuracoes',
             'roteiro-repositor': 'mod_repositores'
@@ -986,14 +987,33 @@ class App {
         if (!inputCidade || !sugestoes) return;
 
         await this.obterCidadesPotenciaisCache();
-        this.renderSugestoesCidadesRoteiro('');
-
         inputCidade.value = '';
-        inputCidade.addEventListener('input', () => {
-            this.renderSugestoesCidadesRoteiro(inputCidade.value);
-        });
+        sugestoes.classList.add('is-hidden');
+
+        const esconderSugestoes = () => {
+            sugestoes.classList.add('is-hidden');
+        };
+
+        const exibirSugestoesSeNecessario = () => {
+            const termo = (inputCidade.value || '').trim();
+            if (!document.activeElement || document.activeElement !== inputCidade || !termo) {
+                esconderSugestoes();
+                return;
+            }
+
+            this.renderSugestoesCidadesRoteiro(termo);
+            sugestoes.classList.remove('is-hidden');
+        };
+
+        let blurTimeout = null;
+
+        inputCidade.addEventListener('input', exibirSugestoesSeNecessario);
         inputCidade.addEventListener('focus', () => {
-            this.renderSugestoesCidadesRoteiro(inputCidade.value);
+            clearTimeout(blurTimeout);
+            exibirSugestoesSeNecessario();
+        });
+        inputCidade.addEventListener('blur', () => {
+            blurTimeout = setTimeout(esconderSugestoes, 150);
         });
     }
 
@@ -1021,6 +1041,8 @@ class App {
             item.addEventListener('click', () => {
                 inputCidade.value = item.dataset.cidade;
                 this.renderSugestoesCidadesRoteiro(item.dataset.cidade);
+                sugestoes.classList.add('is-hidden');
+                inputCidade.blur();
             });
         });
     }
