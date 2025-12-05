@@ -522,14 +522,6 @@ export const pages = {
                     </div>
                 </section>
 
-                <section class="card busca-clientes-card">
-                    <div class="card-body">
-                        <label for="roteiroBuscaCliente">Buscar clientes na cidade selecionada</label>
-                        <input type="text" id="roteiroBuscaCliente" placeholder="Digite nome, fantasia, bairro, grupo ou código">
-                        <small class="text-muted">A busca refina apenas os clientes da cidade ativa.</small>
-                    </div>
-                </section>
-
                 <section class="card">
                     <div class="card-header">
                         <div>

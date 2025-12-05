@@ -1098,6 +1098,22 @@ class TursoDatabase {
 
     async adicionarCidadeRoteiro(repositorId, diaSemana, cidade, usuario = '') {
         try {
+            // Verificar se a cidade já existe para este repositor neste dia
+            const cidadeExistente = await this.mainClient.execute({
+                sql: `
+                    SELECT rot_cid_id
+                    FROM rot_roteiro_cidade
+                    WHERE rot_repositor_id = ?
+                    AND rot_dia_semana = ?
+                    AND rot_cidade = ?
+                `,
+                args: [repositorId, diaSemana, cidade]
+            });
+
+            if (cidadeExistente.rows && cidadeExistente.rows.length > 0) {
+                throw new Error(`A cidade ${cidade} já está cadastrada para este dia.`);
+            }
+
             const result = await this.mainClient.execute({
                 sql: `
                     INSERT INTO rot_roteiro_cidade (rot_repositor_id, rot_dia_semana, rot_cidade)
@@ -1117,7 +1133,10 @@ class TursoDatabase {
 
             return Number(result.lastInsertRowid);
         } catch (error) {
-            if (String(error?.message || '').includes('uniq_rot_cidade')) {
+            if (String(error?.message || '').includes('já está cadastrada')) {
+                throw error; // Re-throw com a mensagem amigável
+            }
+            if (String(error?.message || '').includes('UNIQUE constraint') || String(error?.message || '').includes('uniq_rot_cidade')) {
                 throw new Error('Cidade já cadastrada para este dia.');
             }
             console.error('Erro ao adicionar cidade ao roteiro:', error);

@@ -856,18 +856,6 @@ class App {
         this.renderDiasRoteiro();
         await this.carregarCidadesRoteiro();
 
-        const buscaInput = document.getElementById('roteiroBuscaCliente');
-        if (buscaInput) {
-            buscaInput.value = this.estadoRoteiro.buscaClientes || '';
-            buscaInput.addEventListener('input', (e) => {
-                clearTimeout(this.roteiroBuscaTimeout);
-                this.roteiroBuscaTimeout = setTimeout(() => {
-                    this.estadoRoteiro.buscaClientes = e.target.value;
-                    this.carregarClientesRoteiro();
-                }, 200);
-            });
-        }
-
         const btnAddCidade = document.getElementById('btnAdicionarCidade');
         if (btnAddCidade) {
             btnAddCidade.onclick = () => this.adicionarCidadeRoteiro();
@@ -1280,23 +1268,8 @@ class App {
 
         const selecionados = await db.getClientesRoteiroDetalhados(cidadeAtiva.rot_cid_id);
         this.clientesSelecionadosCidadeAtual = selecionados;
-        const termoBusca = (this.estadoRoteiro.buscaClientes || '').trim().toLowerCase();
-        const clientes = termoBusca
-            ? selecionados.filter(item => {
-                const dados = item.cliente_dados || {};
-                const campos = [
-                    dados.nome,
-                    dados.fantasia,
-                    dados.bairro,
-                    dados.grupo_desc,
-                    dados.cnpj_cpf
-                ].map(c => (c || '').toString().toLowerCase());
-                const codigoTexto = String(item.rot_cliente_codigo || '').toLowerCase();
-                return campos.some(c => c.includes(termoBusca)) || codigoTexto.includes(termoBusca);
-            })
-            : selecionados;
 
-        const clientesOrdenados = [...clientes].sort((a, b) => {
+        const clientesOrdenados = [...selecionados].sort((a, b) => {
             const ordemA = a.rot_ordem_visita ?? Number.MAX_SAFE_INTEGER;
             const ordemB = b.rot_ordem_visita ?? Number.MAX_SAFE_INTEGER;
 
@@ -1312,9 +1285,7 @@ class App {
 
         if (!clientesOrdenados || clientesOrdenados.length === 0) {
             tabela.innerHTML = '';
-            if (mensagem) mensagem.textContent = termoBusca
-                ? 'Nenhum cliente atende ao filtro digitado nesta cidade.'
-                : 'Nenhum cliente vinculado a esta cidade no roteiro.';
+            if (mensagem) mensagem.textContent = 'Nenhum cliente vinculado a esta cidade no roteiro.';
             return;
         }
 
