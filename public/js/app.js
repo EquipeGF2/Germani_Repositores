@@ -1135,9 +1135,15 @@ class App {
         const tabela = document.getElementById('roteiroCidadesTabela');
         const dia = this.estadoRoteiro.diaSelecionado;
 
-        if (!tabela) return;
+        console.log(`[ROTEIRO] carregarCidadesRoteiro iniciado. Dia: ${dia}, Tabela existe: ${!!tabela}`);
+
+        if (!tabela) {
+            console.warn('[ROTEIRO] Elemento roteiroCidadesTabela não encontrado! Abortando carregamento.');
+            return;
+        }
 
         if (!dia) {
+            console.log('[ROTEIRO] Nenhum dia selecionado, limpando tabela');
             tabela.innerHTML = '';
             if (mensagem) mensagem.textContent = 'Selecione um dia de trabalho para configurar o roteiro.';
             await this.carregarClientesRoteiro();
@@ -1158,6 +1164,7 @@ class App {
         }
 
         if (cidades.length === 0) {
+            console.log('[ROTEIRO] Nenhuma cidade encontrada, exibindo mensagem');
             tabela.innerHTML = '';
             if (mensagem) mensagem.textContent = 'Cadastre uma cidade para este dia para visualizar os clientes.';
             await this.carregarClientesRoteiro();
@@ -1166,8 +1173,13 @@ class App {
 
         // Novo design com checkboxes
         const container = document.getElementById('roteiroCidadesContainer');
-        if (!container) return;
+        console.log(`[ROTEIRO] Container existe: ${!!container}`);
+        if (!container) {
+            console.error('[ROTEIRO] Elemento roteiroCidadesContainer não encontrado! As cidades não serão exibidas.');
+            return;
+        }
 
+        console.log('[ROTEIRO] Renderizando cidades no container...');
         container.innerHTML = cidades.map(cidade => `
             <div class="cidade-item ${this.estadoRoteiro.cidadeSelecionada === cidade.rot_cid_id ? 'cidade-ativa' : ''}" data-id="${cidade.rot_cid_id}">
                 <input type="checkbox" class="cidade-checkbox" data-id="${cidade.rot_cid_id}">
@@ -1235,6 +1247,7 @@ class App {
             });
         });
 
+        console.log('[ROTEIRO] Cidades renderizadas com sucesso! Total:', cidades.length);
         if (mensagem) mensagem.textContent = '';
         await this.carregarClientesRoteiro();
     }
