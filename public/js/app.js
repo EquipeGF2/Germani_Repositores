@@ -6,7 +6,7 @@
 import { db } from './db.js';
 import { pages, pageTitles } from './pages.js';
 import { ACL_RECURSOS } from './acl-resources.js';
-import { formatarDataISO, normalizarSupervisor, normalizarTextoCadastro } from './utils.js';
+import { formatarDataISO, normalizarSupervisor, normalizarTextoCadastro, formatarCNPJCPF } from './utils.js';
 
 const AUTH_STORAGE_KEY = 'GERMANI_AUTH_USER';
 
@@ -24,6 +24,13 @@ class App {
             diaSelecionado: null,
             cidadeSelecionada: null,
             buscaClientes: ''
+        };
+        this.mudancasPendentesRoteiro = {
+            cidadesAdicionar: [], // {repositorId, diaSemana, cidade, ordem}
+            cidadesRemover: [], // {rotCidId}
+            clientesAdicionar: [], // {rotCidId, clienteCodigo}
+            clientesRemover: [], // {rotCidId, clienteCodigo}
+            ordensAtualizar: [] // {rotCidId, rotCliId, tipo: 'cidade'|'cliente', ordem}
         };
         this.ultimaConsultaRepositoresRoteiro = [];
         this.cidadesPotenciaisCache = [];
@@ -464,6 +471,9 @@ class App {
             const telefoneCampo = document.getElementById('repo_contato_telefone');
             if (telefoneCampo) telefoneCampo.value = '';
 
+            const emailCampo = document.getElementById('repo_email');
+            if (emailCampo) emailCampo.value = '';
+
             const representanteSelect = document.getElementById('repo_representante');
             if (representanteSelect) representanteSelect.value = '';
 
@@ -506,6 +516,8 @@ class App {
         const repNome = document.getElementById('repo_representante').selectedOptions[0]?.dataset?.nome || '';
         const vinculo = document.getElementById('repo_vinculo_agencia').checked ? 'agencia' : 'repositor';
         const supervisor = document.getElementById('repo_supervisor').value || null;
+        const telefone = document.getElementById('repo_contato_telefone').value || null;
+        const email = document.getElementById('repo_email').value || null;
 
         const diasCheckboxes = document.querySelectorAll('.dia-trabalho:checked');
         const diasTrabalhados = Array.from(diasCheckboxes).map(cb => cb.value).join(',');
@@ -520,10 +532,10 @@ class App {
 
         try {
             if (cod) {
-                await db.updateRepositor(cod, nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo, supervisor, diasTrabalhados, jornada);
+                await db.updateRepositor(cod, nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo, supervisor, diasTrabalhados, jornada, telefone, email);
                 this.showNotification(`${vinculo === 'agencia' ? 'Agência' : 'Repositor'} atualizado com sucesso!`, 'success');
             } else {
-                await db.createRepositor(nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo, supervisor, diasTrabalhados, jornada);
+                await db.createRepositor(nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo, supervisor, diasTrabalhados, jornada, telefone, email);
                 this.showNotification(`${vinculo === 'agencia' ? 'Agência' : 'Repositor'} cadastrado com sucesso!`, 'success');
             }
 
@@ -878,6 +890,11 @@ class App {
             btnAddCliente.onclick = () => this.abrirModalAdicionarCliente();
         }
 
+        const btnSalvarRoteiro = document.getElementById('btnSalvarRoteiroCompleto');
+        if (btnSalvarRoteiro) {
+            btnSalvarRoteiro.onclick = () => this.salvarRoteiroCompleto();
+        }
+
         const buscaModal = document.getElementById('modalBuscaClientesCidade');
         if (buscaModal) {
             buscaModal.value = this.buscaClientesModal || '';
@@ -1122,6 +1139,7 @@ class App {
 
             await this.carregarCidadesRoteiro();
             await this.carregarClientesRoteiro();
+            this.marcarRoteiroPendente();
             this.showNotification('Cidade adicionada ao roteiro.', 'success');
         } catch (error) {
             console.error('[ROTEIRO] Erro ao adicionar cidade:', error);
@@ -1260,6 +1278,7 @@ class App {
                 delete this.clientesCachePorCidade[cidadeAtual.rot_cidade];
             }
             await this.carregarCidadesRoteiro();
+            this.marcarRoteiroPendente();
             this.showNotification('Cidade removida do roteiro.', 'success');
         } catch (error) {
             this.showNotification(error.message || 'Erro ao remover cidade.', 'error');
@@ -1345,7 +1364,6 @@ class App {
             <table class="roteiro-clientes-table">
                 <thead>
                     <tr>
-                        <th class="col-acao">Remover</th>
                         <th class="col-ordem-visita">Ordem</th>
                         <th class="col-codigo">Código</th>
                         <th class="col-nome">Nome</th>
@@ -1354,6 +1372,7 @@ class App {
                         <th class="col-endereco">Endereço</th>
                         <th>Bairro</th>
                         <th class="col-grupo">Grupo</th>
+                        <th class="col-acao">Ação</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1362,9 +1381,6 @@ class App {
                         const enderecoCompleto = `${dados.endereco || ''} ${dados.num_endereco || ''}`.trim();
                         return `
                         <tr>
-                            <td class="table-actions">
-                                <button class="btn btn-danger btn-sm" data-acao="remover-cliente" data-id="${cliente.rot_cliente_codigo}">Remover</button>
-                            </td>
                             <td>
                                 <input
                                     type="number"
@@ -1379,10 +1395,13 @@ class App {
                             <td>${cliente.rot_cliente_codigo}</td>
                             <td>${dados.nome || '-'}</td>
                             <td>${dados.fantasia || '-'}</td>
-                            <td>${dados.cnpj_cpf || '-'}</td>
+                            <td>${formatarCNPJCPF(dados.cnpj_cpf)}</td>
                             <td>${enderecoCompleto || '-'}</td>
                             <td>${dados.bairro || '-'}</td>
                             <td>${dados.grupo_desc || '-'}</td>
+                            <td class="table-actions">
+                                <button class="btn btn-danger btn-sm" data-acao="remover-cliente" data-id="${cliente.rot_cliente_codigo}">Remover</button>
+                            </td>
                         </tr>
                         `;
                     }).join('')}
@@ -1430,9 +1449,37 @@ class App {
             }
 
             await this.carregarClientesRoteiro();
+            this.marcarRoteiroPendente();
         } catch (error) {
             this.showNotification(error.message || 'Erro ao atualizar cliente no roteiro.', 'error');
             await this.carregarClientesRoteiro();
+        }
+    }
+
+    marcarRoteiroPendente() {
+        const indicador = document.getElementById('roteiroPendentesIndicador');
+        if (indicador) {
+            indicador.style.display = 'inline-block';
+        }
+    }
+
+    limparRoteiroPendente() {
+        const indicador = document.getElementById('roteiroPendentesIndicador');
+        if (indicador) {
+            indicador.style.display = 'none';
+        }
+    }
+
+    async salvarRoteiroCompleto() {
+        try {
+            // Recarregar dados para sincronizar
+            await this.carregarCidadesRoteiro();
+            await this.carregarClientesRoteiro();
+
+            this.limparRoteiroPendente();
+            this.showNotification('Roteiro sincronizado com sucesso! Todas as alterações foram salvas.', 'success');
+        } catch (error) {
+            this.showNotification('Erro ao sincronizar roteiro: ' + error.message, 'error');
         }
     }
 
@@ -1518,29 +1565,34 @@ class App {
             <table class="roteiro-clientes-table">
                 <thead>
                     <tr>
-                        <th class="col-acao">Selecionar</th>
                         <th class="col-codigo">Código</th>
                         <th class="col-nome">Nome</th>
                         <th class="col-fantasia">Fantasia</th>
+                        <th>CNPJ/CPF</th>
+                        <th class="col-endereco">Endereço</th>
                         <th>Bairro</th>
                         <th class="col-grupo">Grupo</th>
+                        <th class="col-acao">Ação</th>
                     </tr>
                 </thead>
                 <tbody>
                     ${clientes.map(cliente => {
                         const jaIncluido = selecionadosSet.has(String(cliente.cliente));
+                        const enderecoCompleto = `${cliente.endereco || ''} ${cliente.num_endereco || ''}`.trim();
                         return `
                             <tr>
+                                <td>${cliente.cliente}</td>
+                                <td>${cliente.nome || '-'}</td>
+                                <td>${cliente.fantasia || '-'}</td>
+                                <td>${formatarCNPJCPF(cliente.cnpj_cpf)}</td>
+                                <td>${enderecoCompleto || '-'}</td>
+                                <td>${cliente.bairro || '-'}</td>
+                                <td>${cliente.grupo_desc || '-'}</td>
                                 <td class="table-actions">
                                     ${jaIncluido
                                         ? '<span class="badge badge-success">Incluído</span>'
                                         : `<button class="btn btn-primary btn-sm" data-acao="adicionar-cliente" data-id="${cliente.cliente}">Adicionar</button>`}
                                 </td>
-                                <td>${cliente.cliente}</td>
-                                <td>${cliente.nome || '-'}</td>
-                                <td>${cliente.fantasia || '-'}</td>
-                                <td>${cliente.bairro || '-'}</td>
-                                <td>${cliente.grupo_desc || '-'}</td>
                             </tr>
                         `;
                     }).join('')}
@@ -1573,9 +1625,94 @@ class App {
             btnSalvar.addEventListener('click', () => this.salvarRateioCadastro());
         }
 
+        const btnListar = document.getElementById('btnListarClientesComRateio');
+        if (btnListar) {
+            btnListar.addEventListener('click', () => this.abrirModalClientesComRateio());
+        }
+
         this.configurarBuscaRateioCliente();
         this.renderRateioInfo();
         this.renderRateioGrid();
+    }
+
+    async abrirModalClientesComRateio() {
+        const modal = document.getElementById('modalClientesComRateio');
+        if (!modal) return;
+
+        modal.classList.add('active');
+
+        try {
+            const clientesComRateio = await db.listarTodosClientesComRateio();
+            this.renderTabelaClientesComRateio(clientesComRateio);
+        } catch (error) {
+            this.showNotification('Erro ao carregar clientes com rateio: ' + error.message, 'error');
+        }
+    }
+
+    fecharModalClientesComRateio() {
+        const modal = document.getElementById('modalClientesComRateio');
+        if (modal) modal.classList.remove('active');
+    }
+
+    renderTabelaClientesComRateio(clientes) {
+        const tabela = document.getElementById('tabelaClientesComRateio');
+        if (!tabela) return;
+
+        if (!clientes || clientes.length === 0) {
+            tabela.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">📋</div>
+                    <p>Nenhum cliente com rateio cadastrado.</p>
+                </div>
+            `;
+            return;
+        }
+
+        tabela.innerHTML = `
+            <table style="font-size: 0.9rem;">
+                <thead>
+                    <tr>
+                        <th>Código</th>
+                        <th>Nome</th>
+                        <th>Fantasia</th>
+                        <th>Cidade</th>
+                        <th>Nº Repositores</th>
+                        <th>Ação</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${clientes.map(cliente => `
+                        <tr>
+                            <td>${cliente.rat_cliente_codigo}</td>
+                            <td>${cliente.cliente_nome || '-'}</td>
+                            <td>${cliente.cliente_fantasia || '-'}</td>
+                            <td>${cliente.cliente_cidade || '-'}</td>
+                            <td><span class="badge badge-info">${cliente.num_repositores} ${cliente.num_repositores > 1 ? 'repositores' : 'repositor'}</span></td>
+                            <td class="table-actions">
+                                <button class="btn btn-primary btn-sm" onclick="window.app.editarRateioCliente('${cliente.rat_cliente_codigo}')">Editar</button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    }
+
+    async editarRateioCliente(clienteCodigo) {
+        this.fecharModalClientesComRateio();
+
+        try {
+            // Buscar detalhes do cliente
+            const clientesDetalhes = await db.buscarClientesComercial(clienteCodigo, 1);
+            if (clientesDetalhes && clientesDetalhes.length > 0) {
+                await this.selecionarClienteRateio(clientesDetalhes[0]);
+            } else {
+                // Se não encontrou, criar objeto básico
+                await this.selecionarClienteRateio({ cliente: clienteCodigo, nome: '', fantasia: '' });
+            }
+        } catch (error) {
+            this.showNotification('Erro ao carregar cliente: ' + error.message, 'error');
+        }
     }
 
     configurarBuscaRateioCliente() {
@@ -1960,6 +2097,8 @@ class App {
             setValor('repo_cidade_ref', repositor.repo_cidade_ref || '');
             setValor('repo_representante', repositor.rep_representante_codigo || '');
             setValor('repo_supervisor', repositor.rep_supervisor || '');
+            setValor('repo_contato_telefone', repositor.rep_contato_telefone || '');
+            setValor('repo_email', repositor.rep_email || '');
 
             const campoVinculo = document.getElementById('repo_vinculo_agencia');
             if (campoVinculo) {
@@ -2062,6 +2201,7 @@ class App {
 
     async aplicarFiltrosAuditoriaRoteiro() {
         const repositorId = document.getElementById('filtro_repositor_roteiro')?.value || null;
+        const acao = document.getElementById('filtro_acao_roteiro')?.value || '';
         const diaSemana = document.getElementById('filtro_dia_roteiro')?.value || '';
         const cidade = document.getElementById('filtro_cidade_roteiro')?.value || '';
         const dataInicioRaw = document.getElementById('filtro_data_inicio_roteiro')?.value || '';
@@ -2073,6 +2213,7 @@ class App {
         try {
             const auditoria = await db.getAuditoriaRoteiro({
                 repositorId: repositorId ? Number(repositorId) : null,
+                acao,
                 diaSemana,
                 cidade,
                 dataInicio,
@@ -2262,7 +2403,7 @@ class App {
 
         container.innerHTML = `
             <div class="table-container">
-                <table>
+                <table style="font-size: 0.85rem;">
                     <thead>
                         <tr>
                             <th>Repositor</th>
@@ -2271,11 +2412,11 @@ class App {
                             <th>Ordem Cidade</th>
                             <th>Código</th>
                             <th>Nome</th>
+                            <th>Ordem Visita</th>
                             <th>Fantasia</th>
                             <th>Endereço</th>
                             <th>Bairro</th>
                             <th>Grupo</th>
-                            <th>Ordem Visita</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -2290,11 +2431,11 @@ class App {
                                     <td>${item.rot_ordem_cidade || '-'}</td>
                                     <td>${item.rot_cliente_codigo}</td>
                                     <td>${cliente.nome || '-'}</td>
+                                    <td>${item.rot_ordem_visita || '-'}</td>
                                     <td>${cliente.fantasia || '-'}</td>
                                     <td>${endereco || '-'}</td>
                                     <td>${cliente.bairro || '-'}</td>
                                     <td>${cliente.grupo_desc || '-'}</td>
-                                    <td>${item.rot_ordem_visita || '-'}</td>
                                 </tr>
                             `;
                         }).join('')}

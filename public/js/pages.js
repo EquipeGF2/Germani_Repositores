@@ -249,9 +249,12 @@ export const pages = {
                                             </select>
                                         </div>
                                         <div class="form-group">
-                                            <label for="repo_contato_telefone">Contato (Telefone)</label>
-                                            <input type="text" id="repo_contato_telefone" placeholder="Selecione um representante" readonly>
-                                            <small>Telefone exibido a partir do cadastro comercial</small>
+                                            <label for="repo_contato_telefone">Telefone</label>
+                                            <input type="text" id="repo_contato_telefone" placeholder="Telefone">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="repo_email">E-mail</label>
+                                            <input type="email" id="repo_email" placeholder="E-mail">
                                         </div>
                                     </div>
                                 </section>
@@ -337,8 +340,12 @@ export const pages = {
                     <div>
                         <p class="text-muted" style="margin: 0;">Distribua o percentual de atendimento de clientes entre os repositores.</p>
                         <h3 class="card-title">Cadastro de Rateio</h3>
+                        <p class="text-muted" style="margin: 4px 0 0; font-size: 0.9rem;">
+                            <strong>Dica:</strong> Clientes atendidos por múltiplos repositores devem ter o rateio configurado aqui.
+                        </p>
                     </div>
                     <div class="card-actions">
+                        <button class="btn btn-secondary btn-sm" id="btnListarClientesComRateio">Ver clientes com rateio</button>
                         <button class="btn btn-primary" id="btnSalvarRateio">Salvar rateio</button>
                     </div>
                 </div>
@@ -357,6 +364,27 @@ export const pages = {
                     <div class="rateio-footer">
                         <button class="btn btn-secondary" type="button" id="btnAdicionarLinhaRateio">+ Adicionar repositor</button>
                         <div id="rateioTotalPercentual" class="rateio-total">Total: 0%</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Lista de Clientes com Rateio -->
+            <div class="modal" id="modalClientesComRateio">
+                <div class="modal-content" style="max-width: 800px;">
+                    <div class="modal-header">
+                        <h3>Clientes com Rateio Configurado</h3>
+                        <button class="modal-close" onclick="window.app.fecharModalClientesComRateio()">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="table-container" id="tabelaClientesComRateio">
+                            <div class="empty-state">
+                                <div class="empty-state-icon">⏳</div>
+                                <p>Carregando...</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" onclick="window.app.fecharModalClientesComRateio()">Fechar</button>
                     </div>
                 </div>
             </div>
@@ -496,11 +524,13 @@ export const pages = {
                 <div>
                     <p class="form-card-eyebrow">Roteiro do Repositor</p>
                     <h3>${repositor.repo_nome}</h3>
-                    <p class="text-muted">Configure os dias, cidades e clientes atendidos.</p>
+                    <p class="text-muted">Configure os dias, cidades e clientes atendidos. As alterações serão salvas ao clicar no botão "Salvar Roteiro".</p>
                 </div>
                 <div class="roteiro-badges">
                     <span class="badge badge-info">Código ${repositor.repo_cod}</span>
                     <span class="badge">${repositor.repo_vinculo === 'agencia' ? 'Agência' : 'Repositor'}</span>
+                    <button class="btn btn-primary" id="btnSalvarRoteiroCompleto" style="margin-left: 1rem;">💾 Salvar Roteiro</button>
+                    <span id="roteiroPendentesIndicador" class="badge badge-warning" style="display: none; margin-left: 0.5rem;">Alterações pendentes</span>
                 </div>
             </div>
 
@@ -565,14 +595,6 @@ export const pages = {
                                 🗑️ Remover Selecionadas
                             </button>
                         </div>
-                    </div>
-                </section>
-
-                <section class="card busca-clientes-card">
-                    <div class="card-body">
-                        <label for="roteiroBuscaCliente">Buscar clientes na cidade selecionada</label>
-                        <input type="text" id="roteiroBuscaCliente" placeholder="Digite nome, fantasia, bairro, grupo ou código">
-                        <small class="text-muted">A busca refina apenas os clientes da cidade ativa.</small>
                     </div>
                 </section>
 
@@ -886,6 +908,18 @@ export const pages = {
                                 <select id="filtro_repositor_roteiro">
                                     <option value="">Todos</option>
                                     ${repositorOptions}
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label for="filtro_acao_roteiro">Ação</label>
+                                <select id="filtro_acao_roteiro">
+                                    <option value="">Todas</option>
+                                    <option value="INCLUIR_CIDADE">Incluir Cidade</option>
+                                    <option value="EXCLUIR_CIDADE">Excluir Cidade</option>
+                                    <option value="INCLUIR_CLIENTE">Incluir Cliente</option>
+                                    <option value="EXCLUIR_CLIENTE">Excluir Cliente</option>
+                                    <option value="ALTERAR_ORDEM">Alterar Ordem Cidade</option>
+                                    <option value="ALTERAR_ORDEM_VISITA">Alterar Ordem Visita</option>
                                 </select>
                             </div>
                             <div class="filter-group">

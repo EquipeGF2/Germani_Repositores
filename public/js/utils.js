@@ -90,3 +90,39 @@ export function validarCamposObrigatorios(campos) {
     }
     return { valido: true };
 }
+
+/**
+ * Formata CNPJ/CPF evitando notação científica
+ * Converte números grandes em strings com zeros à esquerda
+ */
+export function formatarCNPJCPF(valor) {
+    if (!valor) return '-';
+
+    // Converte para string e remove caracteres não numéricos
+    let texto = String(valor).replace(/\D/g, '');
+
+    // Se for número em notação científica, reconstrói o número completo
+    if (String(valor).includes('E') || String(valor).includes('e')) {
+        // Força conversão para bigint se possível
+        try {
+            const numero = Math.round(Number(valor));
+            texto = String(numero);
+        } catch (e) {
+            texto = String(valor).replace(/\D/g, '');
+        }
+    }
+
+    // Remove zeros à esquerda mas mantém pelo menos 11 dígitos (CPF) ou 14 (CNPJ)
+    const tamanho = texto.length;
+
+    if (tamanho === 11) {
+        // CPF: 000.000.000-00
+        return texto.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+    } else if (tamanho === 14) {
+        // CNPJ: 00.000.000/0000-00
+        return texto.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+    } else {
+        // Retorna sem formatação se tamanho não bater
+        return texto.padStart(Math.max(11, tamanho), '0');
+    }
+}
