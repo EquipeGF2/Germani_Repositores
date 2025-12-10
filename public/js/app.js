@@ -6,7 +6,7 @@
 import { db } from './db.js';
 import { pages, pageTitles } from './pages.js';
 import { ACL_RECURSOS } from './acl-resources.js';
-import { formatarDataISO, normalizarSupervisor, normalizarTextoCadastro } from './utils.js';
+import { formatarDataISO, normalizarSupervisor, normalizarTextoCadastro, formatarCNPJCPF } from './utils.js';
 
 const AUTH_STORAGE_KEY = 'GERMANI_AUTH_USER';
 
@@ -464,6 +464,9 @@ class App {
             const telefoneCampo = document.getElementById('repo_contato_telefone');
             if (telefoneCampo) telefoneCampo.value = '';
 
+            const emailCampo = document.getElementById('repo_email');
+            if (emailCampo) emailCampo.value = '';
+
             const representanteSelect = document.getElementById('repo_representante');
             if (representanteSelect) representanteSelect.value = '';
 
@@ -506,6 +509,8 @@ class App {
         const repNome = document.getElementById('repo_representante').selectedOptions[0]?.dataset?.nome || '';
         const vinculo = document.getElementById('repo_vinculo_agencia').checked ? 'agencia' : 'repositor';
         const supervisor = document.getElementById('repo_supervisor').value || null;
+        const telefone = document.getElementById('repo_contato_telefone').value || null;
+        const email = document.getElementById('repo_email').value || null;
 
         const diasCheckboxes = document.querySelectorAll('.dia-trabalho:checked');
         const diasTrabalhados = Array.from(diasCheckboxes).map(cb => cb.value).join(',');
@@ -520,10 +525,10 @@ class App {
 
         try {
             if (cod) {
-                await db.updateRepositor(cod, nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo, supervisor, diasTrabalhados, jornada);
+                await db.updateRepositor(cod, nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo, supervisor, diasTrabalhados, jornada, telefone, email);
                 this.showNotification(`${vinculo === 'agencia' ? 'Agência' : 'Repositor'} atualizado com sucesso!`, 'success');
             } else {
-                await db.createRepositor(nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo, supervisor, diasTrabalhados, jornada);
+                await db.createRepositor(nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo, supervisor, diasTrabalhados, jornada, telefone, email);
                 this.showNotification(`${vinculo === 'agencia' ? 'Agência' : 'Repositor'} cadastrado com sucesso!`, 'success');
             }
 
@@ -1345,7 +1350,6 @@ class App {
             <table class="roteiro-clientes-table">
                 <thead>
                     <tr>
-                        <th class="col-acao">Remover</th>
                         <th class="col-ordem-visita">Ordem</th>
                         <th class="col-codigo">Código</th>
                         <th class="col-nome">Nome</th>
@@ -1354,6 +1358,7 @@ class App {
                         <th class="col-endereco">Endereço</th>
                         <th>Bairro</th>
                         <th class="col-grupo">Grupo</th>
+                        <th class="col-acao">Ação</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1362,9 +1367,6 @@ class App {
                         const enderecoCompleto = `${dados.endereco || ''} ${dados.num_endereco || ''}`.trim();
                         return `
                         <tr>
-                            <td class="table-actions">
-                                <button class="btn btn-danger btn-sm" data-acao="remover-cliente" data-id="${cliente.rot_cliente_codigo}">Remover</button>
-                            </td>
                             <td>
                                 <input
                                     type="number"
@@ -1379,10 +1381,13 @@ class App {
                             <td>${cliente.rot_cliente_codigo}</td>
                             <td>${dados.nome || '-'}</td>
                             <td>${dados.fantasia || '-'}</td>
-                            <td>${dados.cnpj_cpf || '-'}</td>
+                            <td>${formatarCNPJCPF(dados.cnpj_cpf)}</td>
                             <td>${enderecoCompleto || '-'}</td>
                             <td>${dados.bairro || '-'}</td>
                             <td>${dados.grupo_desc || '-'}</td>
+                            <td class="table-actions">
+                                <button class="btn btn-danger btn-sm" data-acao="remover-cliente" data-id="${cliente.rot_cliente_codigo}">Remover</button>
+                            </td>
                         </tr>
                         `;
                     }).join('')}
@@ -1518,29 +1523,34 @@ class App {
             <table class="roteiro-clientes-table">
                 <thead>
                     <tr>
-                        <th class="col-acao">Selecionar</th>
                         <th class="col-codigo">Código</th>
                         <th class="col-nome">Nome</th>
                         <th class="col-fantasia">Fantasia</th>
+                        <th>CNPJ/CPF</th>
+                        <th class="col-endereco">Endereço</th>
                         <th>Bairro</th>
                         <th class="col-grupo">Grupo</th>
+                        <th class="col-acao">Ação</th>
                     </tr>
                 </thead>
                 <tbody>
                     ${clientes.map(cliente => {
                         const jaIncluido = selecionadosSet.has(String(cliente.cliente));
+                        const enderecoCompleto = `${cliente.endereco || ''} ${cliente.num_endereco || ''}`.trim();
                         return `
                             <tr>
+                                <td>${cliente.cliente}</td>
+                                <td>${cliente.nome || '-'}</td>
+                                <td>${cliente.fantasia || '-'}</td>
+                                <td>${formatarCNPJCPF(cliente.cnpj_cpf)}</td>
+                                <td>${enderecoCompleto || '-'}</td>
+                                <td>${cliente.bairro || '-'}</td>
+                                <td>${cliente.grupo_desc || '-'}</td>
                                 <td class="table-actions">
                                     ${jaIncluido
                                         ? '<span class="badge badge-success">Incluído</span>'
                                         : `<button class="btn btn-primary btn-sm" data-acao="adicionar-cliente" data-id="${cliente.cliente}">Adicionar</button>`}
                                 </td>
-                                <td>${cliente.cliente}</td>
-                                <td>${cliente.nome || '-'}</td>
-                                <td>${cliente.fantasia || '-'}</td>
-                                <td>${cliente.bairro || '-'}</td>
-                                <td>${cliente.grupo_desc || '-'}</td>
                             </tr>
                         `;
                     }).join('')}
@@ -1960,6 +1970,8 @@ class App {
             setValor('repo_cidade_ref', repositor.repo_cidade_ref || '');
             setValor('repo_representante', repositor.rep_representante_codigo || '');
             setValor('repo_supervisor', repositor.rep_supervisor || '');
+            setValor('repo_contato_telefone', repositor.rep_contato_telefone || '');
+            setValor('repo_email', repositor.rep_email || '');
 
             const campoVinculo = document.getElementById('repo_vinculo_agencia');
             if (campoVinculo) {
@@ -2062,6 +2074,7 @@ class App {
 
     async aplicarFiltrosAuditoriaRoteiro() {
         const repositorId = document.getElementById('filtro_repositor_roteiro')?.value || null;
+        const acao = document.getElementById('filtro_acao_roteiro')?.value || '';
         const diaSemana = document.getElementById('filtro_dia_roteiro')?.value || '';
         const cidade = document.getElementById('filtro_cidade_roteiro')?.value || '';
         const dataInicioRaw = document.getElementById('filtro_data_inicio_roteiro')?.value || '';
@@ -2073,6 +2086,7 @@ class App {
         try {
             const auditoria = await db.getAuditoriaRoteiro({
                 repositorId: repositorId ? Number(repositorId) : null,
+                acao,
                 diaSemana,
                 cidade,
                 dataInicio,

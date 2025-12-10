@@ -64,6 +64,7 @@ class TursoDatabase {
                     repo_cidade_ref TEXT,
                     repo_representante TEXT,
                     rep_contato_telefone TEXT,
+                    rep_email TEXT,
                     repo_vinculo TEXT DEFAULT 'repositor',
                     dias_trabalhados TEXT DEFAULT 'seg,ter,qua,qui,sex',
                     jornada TEXT DEFAULT 'integral',
@@ -157,6 +158,16 @@ class TursoDatabase {
                     ALTER TABLE cad_repositor ADD COLUMN rep_contato_telefone TEXT
                 `);
                 console.log('✅ Coluna rep_contato_telefone adicionada');
+            } catch (e) {
+                // Coluna já existe, ignorar
+            }
+
+            // Adicionar coluna rep_email se não existir
+            try {
+                await this.mainClient.execute(`
+                    ALTER TABLE cad_repositor ADD COLUMN rep_email TEXT
+                `);
+                console.log('✅ Coluna rep_email adicionada');
             } catch (e) {
                 // Coluna já existe, ignorar
             }
@@ -626,7 +637,7 @@ class TursoDatabase {
         }
     }
 
-    async getAuditoriaRoteiro({ repositorId = null, diaSemana = '', cidade = '', dataInicio = null, dataFim = null } = {}) {
+    async getAuditoriaRoteiro({ repositorId = null, acao = '', diaSemana = '', cidade = '', dataInicio = null, dataFim = null } = {}) {
         try {
             let sql = `
                 SELECT a.*, r.repo_nome
@@ -642,6 +653,11 @@ class TursoDatabase {
             if (repositorId) {
                 sql += ' AND a.rot_aud_repositor_id = ?';
                 args.push(repositorId);
+            }
+
+            if (acao) {
+                sql += ' AND a.rot_aud_acao = ?';
+                args.push(acao);
             }
 
             if (diaSemana) {
@@ -691,7 +707,7 @@ class TursoDatabase {
         });
     }
 
-    async createRepositor(nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo = 'repositor', repSupervisor = null, diasTrabalhados = 'seg,ter,qua,qui,sex', repJornadaTipo = 'INTEGRAL') {
+    async createRepositor(nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo = 'repositor', repSupervisor = null, diasTrabalhados = 'seg,ter,qua,qui,sex', repJornadaTipo = 'INTEGRAL', telefone = null, email = null) {
         try {
             const nomeNormalizado = normalizarTextoCadastro(nome);
             const cidadeNormalizada = normalizarTextoCadastro(cidadeRef);
@@ -715,15 +731,16 @@ class TursoDatabase {
             const result = await this.mainClient.execute({
                 sql: `INSERT INTO cad_repositor (
                         repo_nome, repo_data_inicio, repo_data_fim,
-                        repo_cidade_ref, repo_representante, rep_contato_telefone, repo_vinculo,
+                        repo_cidade_ref, repo_representante, rep_contato_telefone, rep_email, repo_vinculo,
                     dias_trabalhados, jornada, rep_jornada_tipo,
                     rep_supervisor, rep_representante_codigo, rep_representante_nome
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
                 args: [
                     nomeNormalizado, dataInicio, dataFim,
                     cidadeNormalizada,
                     `${repCodigo || ''}${repNome ? ' - ' + repNome : ''}`.trim(),
-                    null,
+                    telefone || null,
+                    email || null,
                     vinculo,
                     diasParaGravar, jornadaLegada, jornadaNormalizada,
                     supervisorNormalizado, repCodigo, repNome
@@ -796,7 +813,7 @@ class TursoDatabase {
         }
     }
 
-    async updateRepositor(cod, nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo = 'repositor', repSupervisor = null, diasTrabalhados = 'seg,ter,qua,qui,sex', repJornadaTipo = 'INTEGRAL') {
+    async updateRepositor(cod, nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo = 'repositor', repSupervisor = null, diasTrabalhados = 'seg,ter,qua,qui,sex', repJornadaTipo = 'INTEGRAL', telefone = null, email = null) {
         try {
             // Buscar dados antigos para comparação
             const dadosAntigos = await this.getRepositor(cod);
@@ -824,7 +841,7 @@ class TursoDatabase {
             await this.mainClient.execute({
                 sql: `UPDATE cad_repositor
                       SET repo_nome = ?, repo_data_inicio = ?, repo_data_fim = ?,
-                          repo_cidade_ref = ?, repo_representante = ?, rep_contato_telefone = ?, repo_vinculo = ?,
+                          repo_cidade_ref = ?, repo_representante = ?, rep_contato_telefone = ?, rep_email = ?, repo_vinculo = ?,
                           dias_trabalhados = ?, jornada = ?, rep_jornada_tipo = ?,
                           rep_supervisor = ?, rep_representante_codigo = ?, rep_representante_nome = ?,
                           updated_at = CURRENT_TIMESTAMP
@@ -833,7 +850,8 @@ class TursoDatabase {
                     nomeNormalizado, dataInicio, dataFim,
                     cidadeNormalizada,
                     `${repCodigo || ''}${repNome ? ' - ' + repNome : ''}`.trim(),
-                    null,
+                    telefone || null,
+                    email || null,
                     vinculo,
                     diasParaGravar, jornadaLegada, jornadaNormalizada,
                     supervisorNormalizado, repCodigo, repNome,

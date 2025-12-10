@@ -249,9 +249,12 @@ export const pages = {
                                             </select>
                                         </div>
                                         <div class="form-group">
-                                            <label for="repo_contato_telefone">Contato (Telefone)</label>
-                                            <input type="text" id="repo_contato_telefone" placeholder="Selecione um representante" readonly>
-                                            <small>Telefone exibido a partir do cadastro comercial</small>
+                                            <label for="repo_contato_telefone">Telefone</label>
+                                            <input type="text" id="repo_contato_telefone" placeholder="Telefone">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="repo_email">E-mail</label>
+                                            <input type="email" id="repo_email" placeholder="E-mail">
                                         </div>
                                     </div>
                                 </section>
@@ -568,14 +571,6 @@ export const pages = {
                     </div>
                 </section>
 
-                <section class="card busca-clientes-card">
-                    <div class="card-body">
-                        <label for="roteiroBuscaCliente">Buscar clientes na cidade selecionada</label>
-                        <input type="text" id="roteiroBuscaCliente" placeholder="Digite nome, fantasia, bairro, grupo ou código">
-                        <small class="text-muted">A busca refina apenas os clientes da cidade ativa.</small>
-                    </div>
-                </section>
-
                 <section class="card">
                     <div class="card-header">
                         <div>
@@ -886,6 +881,18 @@ export const pages = {
                                 <select id="filtro_repositor_roteiro">
                                     <option value="">Todos</option>
                                     ${repositorOptions}
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label for="filtro_acao_roteiro">Ação</label>
+                                <select id="filtro_acao_roteiro">
+                                    <option value="">Todas</option>
+                                    <option value="INCLUIR_CIDADE">Incluir Cidade</option>
+                                    <option value="EXCLUIR_CIDADE">Excluir Cidade</option>
+                                    <option value="INCLUIR_CLIENTE">Incluir Cliente</option>
+                                    <option value="EXCLUIR_CLIENTE">Excluir Cliente</option>
+                                    <option value="ALTERAR_ORDEM">Alterar Ordem Cidade</option>
+                                    <option value="ALTERAR_ORDEM_VISITA">Alterar Ordem Visita</option>
                                 </select>
                             </div>
                             <div class="filter-group">
