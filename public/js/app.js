@@ -1625,9 +1625,94 @@ class App {
             btnSalvar.addEventListener('click', () => this.salvarRateioCadastro());
         }
 
+        const btnListar = document.getElementById('btnListarClientesComRateio');
+        if (btnListar) {
+            btnListar.addEventListener('click', () => this.abrirModalClientesComRateio());
+        }
+
         this.configurarBuscaRateioCliente();
         this.renderRateioInfo();
         this.renderRateioGrid();
+    }
+
+    async abrirModalClientesComRateio() {
+        const modal = document.getElementById('modalClientesComRateio');
+        if (!modal) return;
+
+        modal.classList.add('active');
+
+        try {
+            const clientesComRateio = await db.listarTodosClientesComRateio();
+            this.renderTabelaClientesComRateio(clientesComRateio);
+        } catch (error) {
+            this.showNotification('Erro ao carregar clientes com rateio: ' + error.message, 'error');
+        }
+    }
+
+    fecharModalClientesComRateio() {
+        const modal = document.getElementById('modalClientesComRateio');
+        if (modal) modal.classList.remove('active');
+    }
+
+    renderTabelaClientesComRateio(clientes) {
+        const tabela = document.getElementById('tabelaClientesComRateio');
+        if (!tabela) return;
+
+        if (!clientes || clientes.length === 0) {
+            tabela.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">📋</div>
+                    <p>Nenhum cliente com rateio cadastrado.</p>
+                </div>
+            `;
+            return;
+        }
+
+        tabela.innerHTML = `
+            <table style="font-size: 0.9rem;">
+                <thead>
+                    <tr>
+                        <th>Código</th>
+                        <th>Nome</th>
+                        <th>Fantasia</th>
+                        <th>Cidade</th>
+                        <th>Nº Repositores</th>
+                        <th>Ação</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${clientes.map(cliente => `
+                        <tr>
+                            <td>${cliente.rat_cliente_codigo}</td>
+                            <td>${cliente.cliente_nome || '-'}</td>
+                            <td>${cliente.cliente_fantasia || '-'}</td>
+                            <td>${cliente.cliente_cidade || '-'}</td>
+                            <td><span class="badge badge-info">${cliente.num_repositores} ${cliente.num_repositores > 1 ? 'repositores' : 'repositor'}</span></td>
+                            <td class="table-actions">
+                                <button class="btn btn-primary btn-sm" onclick="window.app.editarRateioCliente('${cliente.rat_cliente_codigo}')">Editar</button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    }
+
+    async editarRateioCliente(clienteCodigo) {
+        this.fecharModalClientesComRateio();
+
+        try {
+            // Buscar detalhes do cliente
+            const clientesDetalhes = await db.buscarClientesComercial(clienteCodigo, 1);
+            if (clientesDetalhes && clientesDetalhes.length > 0) {
+                await this.selecionarClienteRateio(clientesDetalhes[0]);
+            } else {
+                // Se não encontrou, criar objeto básico
+                await this.selecionarClienteRateio({ cliente: clienteCodigo, nome: '', fantasia: '' });
+            }
+        } catch (error) {
+            this.showNotification('Erro ao carregar cliente: ' + error.message, 'error');
+        }
     }
 
     configurarBuscaRateioCliente() {

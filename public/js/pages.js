@@ -340,8 +340,12 @@ export const pages = {
                     <div>
                         <p class="text-muted" style="margin: 0;">Distribua o percentual de atendimento de clientes entre os repositores.</p>
                         <h3 class="card-title">Cadastro de Rateio</h3>
+                        <p class="text-muted" style="margin: 4px 0 0; font-size: 0.9rem;">
+                            <strong>Dica:</strong> Clientes atendidos por múltiplos repositores devem ter o rateio configurado aqui.
+                        </p>
                     </div>
                     <div class="card-actions">
+                        <button class="btn btn-secondary btn-sm" id="btnListarClientesComRateio">Ver clientes com rateio</button>
                         <button class="btn btn-primary" id="btnSalvarRateio">Salvar rateio</button>
                     </div>
                 </div>
@@ -360,6 +364,27 @@ export const pages = {
                     <div class="rateio-footer">
                         <button class="btn btn-secondary" type="button" id="btnAdicionarLinhaRateio">+ Adicionar repositor</button>
                         <div id="rateioTotalPercentual" class="rateio-total">Total: 0%</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Lista de Clientes com Rateio -->
+            <div class="modal" id="modalClientesComRateio">
+                <div class="modal-content" style="max-width: 800px;">
+                    <div class="modal-header">
+                        <h3>Clientes com Rateio Configurado</h3>
+                        <button class="modal-close" onclick="window.app.fecharModalClientesComRateio()">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="table-container" id="tabelaClientesComRateio">
+                            <div class="empty-state">
+                                <div class="empty-state-icon">⏳</div>
+                                <p>Carregando...</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" onclick="window.app.fecharModalClientesComRateio()">Fechar</button>
                     </div>
                 </div>
             </div>

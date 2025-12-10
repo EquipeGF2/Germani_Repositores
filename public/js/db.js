@@ -1465,6 +1465,31 @@ class TursoDatabase {
         }
     }
 
+    async listarTodosClientesComRateio() {
+        try {
+            const resultado = await this.mainClient.execute({
+                sql: `
+                    SELECT
+                        r.rat_cliente_codigo,
+                        COUNT(DISTINCT r.rat_repositor_id) as num_repositores,
+                        MAX(c.nome) as cliente_nome,
+                        MAX(c.fantasia) as cliente_fantasia,
+                        MAX(c.cidade) as cliente_cidade
+                    FROM rat_cliente_repositor r
+                    LEFT JOIN cliente c ON c.cliente = r.rat_cliente_codigo
+                    GROUP BY r.rat_cliente_codigo
+                    HAVING COUNT(DISTINCT r.rat_repositor_id) > 0
+                    ORDER BY num_repositores DESC, cliente_nome
+                `
+            });
+
+            return resultado.rows;
+        } catch (error) {
+            console.error('Erro ao buscar clientes com rateio:', error);
+            return [];
+        }
+    }
+
     validarRateioLinhas(linhas = []) {
         const total = linhas.reduce((acc, linha) => acc + Number(linha.rat_percentual || 0), 0);
         const repositorIds = linhas.map(l => l.rat_repositor_id).filter(Boolean);
