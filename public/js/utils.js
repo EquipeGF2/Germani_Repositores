@@ -154,3 +154,27 @@ export function formatarCNPJ(valor) {
 
     return apenasNumeros.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
 }
+
+export function formatarDocumento(valor) {
+    if (valor === null || valor === undefined) return '-';
+
+    const apenasNumeros = String(valor).replace(/\D/g, '');
+
+    if (apenasNumeros.length === 14) {
+        return apenasNumeros.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+    }
+
+    if (apenasNumeros.length === 11) {
+        return apenasNumeros.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+    }
+
+    if (!apenasNumeros) return '-';
+
+    return String(valor);
+}
+
+export function formatarGrupo(valor) {
+    if (valor === null || valor === undefined) return '-';
+    if (valor === 0 || valor === '0') return '-';
+    return valor || '-';
+}

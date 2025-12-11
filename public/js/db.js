@@ -1421,7 +1421,7 @@ class TursoDatabase {
         }));
     }
 
-    async consultarRoteiro({ repositorId = null, diaSemana = '', cidade = '' } = {}) {
+    async consultarRoteiro({ repositorIds = [], diaSemana = '', cidade = '' } = {}) {
         const args = [];
         let sql = `
             SELECT
@@ -1440,9 +1440,10 @@ class TursoDatabase {
             WHERE 1=1
         `;
 
-        if (repositorId) {
-            sql += ' AND rc.rot_repositor_id = ?';
-            args.push(repositorId);
+        if (Array.isArray(repositorIds) && repositorIds.length > 0) {
+            const placeholders = repositorIds.map(() => '?').join(',');
+            sql += ` AND rc.rot_repositor_id IN (${placeholders})`;
+            args.push(...repositorIds);
         }
 
         if (diaSemana) {

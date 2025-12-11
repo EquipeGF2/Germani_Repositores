@@ -6,7 +6,7 @@
 import { db } from './db.js';
 import { pages, pageTitles } from './pages.js';
 import { ACL_RECURSOS } from './acl-resources.js';
-import { formatarDataISO, normalizarSupervisor, normalizarTextoCadastro, formatarCNPJ } from './utils.js';
+import { formatarDataISO, normalizarSupervisor, normalizarTextoCadastro, formatarDocumento, formatarGrupo } from './utils.js';
 
 const AUTH_STORAGE_KEY = 'GERMANI_AUTH_USER';
 
@@ -777,7 +777,7 @@ class App {
                                     <td>${this.formatarDataSimples(repo.repo_data_inicio)}</td>
                                     <td>${repo.repo_cidade_ref || '-'}</td>
                                     <td class="table-actions">
-                                        <button class="btn-icon" onclick="window.app.abrirDetalhesRepresentante(${index}, 'consulta')" title="Detalhes do Representante">👁️</button>
+                                        <button class="btn btn-secondary btn-sm btn-visualizar-cadastro" onclick="window.app.abrirResumoRepositor(${index})" title="Visualizar cadastro completo do repositor">Visualizar cadastro</button>
                                         <button class="btn-icon" onclick="window.app.abrirRoteiroRepositor(${repo.repo_cod})" title="Roteiro">🗺️</button>
                                         <button class="btn-icon" onclick="window.app.abrirCadastroRepositor(${repo.repo_cod})" title="Editar">✏️</button>
                                         <button class="btn-icon" onclick="window.app.deleteRepositor(${repo.repo_cod})" title="Deletar">🗑️</button>
@@ -789,6 +789,49 @@ class App {
                 </table>
             </div>
         `;
+    }
+
+    abrirResumoRepositor(index) {
+        const repositor = this.ultimaConsultaRepositores?.[index];
+        if (!repositor) return;
+
+        const modal = document.getElementById('modalResumoRepositor');
+        if (!modal) return;
+
+        const dias = (repositor.dias_trabalhados || '').split(',').filter(Boolean);
+        const diasLabel = dias.length ? dias.map(d => this.formatarDiaSemanaLabel(d)).join(', ') : '-';
+        const jornada = repositor.rep_jornada_tipo || repositor.jornada || 'INTEGRAL';
+        const representanteLabel = repositor.representante
+            ? `${repositor.representante.representante} - ${repositor.representante.desc_representante}`
+            : `${repositor.rep_representante_codigo || '-'}${repositor.rep_representante_nome ? ' - ' + repositor.rep_representante_nome : ''}`;
+
+        const preencher = (id, valor) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = valor || '-';
+        };
+
+        preencher('repoResumoCodigo', repositor.repo_cod || '-');
+        preencher('repoResumoNome', repositor.repo_nome || '-');
+        preencher('repoResumoVinculo', repositor.repo_vinculo === 'agencia' ? 'Agência' : 'Repositor');
+        preencher('repoResumoCidade', repositor.repo_cidade_ref || '-');
+        preencher('repoResumoTelefone', repositor.rep_telefone || repositor.rep_contato_telefone || '-');
+        preencher('repoResumoEmail', repositor.rep_email || '-');
+        preencher('repoResumoDataInicio', this.formatarDataSimples(repositor.repo_data_inicio));
+        preencher('repoResumoDataFim', this.formatarDataSimples(repositor.repo_data_fim) || '-');
+        preencher('repoResumoJornada', jornada.replace('_', ' '));
+        preencher('repoResumoDias', diasLabel);
+        preencher('repoResumoRepresentante', representanteLabel || '-');
+        preencher('repoResumoSupervisor', normalizarSupervisor(repositor.rep_supervisor) || '-');
+
+        const contatoRepresentante = repositor.representante?.rep_fone || repositor.representante?.rep_email;
+        preencher('repoResumoRepresentanteContato', contatoRepresentante || '-');
+
+        modal.classList.add('active');
+    }
+
+    fecharResumoRepositor() {
+        const modal = document.getElementById('modalResumoRepositor');
+        if (modal) modal.classList.remove('active');
     }
 
     async abrirDetalhesRepresentante(index, origem = 'consulta') {
@@ -1516,10 +1559,10 @@ class App {
                                     </label>
                                 </div>
                             </td>
-                            <td class="col-cnpj">${formatarCNPJ(dados.cnpj_cpf)}</td>
+                            <td class="col-cnpj">${formatarDocumento(dados.cnpj_cpf)}</td>
                             <td>${enderecoCompleto || '-'}</td>
                             <td>${dados.bairro || '-'}</td>
-                            <td>${dados.grupo_desc || '-'}</td>
+                            <td>${formatarGrupo(dados.grupo_desc)}</td>
                             <td class="table-actions">
                                 <button class="btn btn-danger btn-sm" data-acao="remover-cliente" data-id="${cliente.rot_cliente_codigo}">Remover</button>
                             </td>
@@ -1785,10 +1828,10 @@ class App {
                                 <td>${cliente.cliente}</td>
                                 <td>${cliente.nome || '-'}</td>
                                 <td>${cliente.fantasia || '-'}</td>
-                                <td class="col-cnpj">${formatarCNPJ(cliente.cnpj_cpf)}</td>
+                                <td class="col-cnpj">${formatarDocumento(cliente.cnpj_cpf)}</td>
                                 <td>${enderecoCompleto || '-'}</td>
                                 <td>${cliente.bairro || '-'}</td>
-                                <td>${cliente.grupo_desc || '-'}</td>
+                                <td>${formatarGrupo(cliente.grupo_desc)}</td>
                                 <td class="table-actions">
                                     ${jaIncluido
                                         ? '<span class="badge badge-success">Incluído</span>'
@@ -2511,8 +2554,26 @@ class App {
             });
         });
 
-        this.aplicarFiltrosHistorico();
-        this.aplicarFiltrosAuditoriaRoteiro();
+        const resultadosHistorico = document.getElementById('resultadosHistorico');
+        const resultadosAuditoria = document.getElementById('resultadosAuditoriaRoteiro');
+
+        if (resultadosHistorico && !resultadosHistorico.innerHTML.trim()) {
+            resultadosHistorico.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">📋</div>
+                    <p>Selecione os filtros e clique em "Buscar" para consultar as alterações</p>
+                </div>
+            `;
+        }
+
+        if (resultadosAuditoria && !resultadosAuditoria.innerHTML.trim()) {
+            resultadosAuditoria.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">🗺️</div>
+                    <p>Use os filtros acima para consultar as alterações de roteiro.</p>
+                </div>
+            `;
+        }
     }
 
     // ==================== CONSULTA ROTEIRO ====================
@@ -2520,24 +2581,35 @@ class App {
     formatarDiaSemanaLabel(codigo) {
         const nomes = {
             seg: 'Segunda',
+            segunda: 'Segunda',
             ter: 'Terça',
+            terca: 'Terça',
             qua: 'Quarta',
+            quarta: 'Quarta',
             qui: 'Quinta',
+            quinta: 'Quinta',
             sex: 'Sexta',
+            sexta: 'Sexta',
             sab: 'Sábado',
-            dom: 'Domingo'
+            sabado: 'Sábado',
+            dom: 'Domingo',
+            domingo: 'Domingo'
         };
 
         return nomes[codigo] || codigo || '-';
     }
 
     coletarFiltrosConsultaRoteiro() {
-        const repositorId = document.getElementById('filtro_repositor_consulta_roteiro')?.value || '';
+        const selectRepositor = document.getElementById('filtro_repositor_consulta_roteiro');
+        const selecionados = selectRepositor?.selectedOptions
+            ? Array.from(selectRepositor.selectedOptions).map(opt => Number(opt.value)).filter(Boolean)
+            : [];
+
         const diaSemana = document.getElementById('filtro_dia_consulta_roteiro')?.value || '';
         const cidade = document.getElementById('filtro_cidade_consulta_roteiro')?.value || '';
 
         return {
-            repositorId: repositorId ? Number(repositorId) : null,
+            repositorIds: selecionados,
             diaSemana: diaSemana || '',
             cidade: cidade ? cidade.toUpperCase() : ''
         };
@@ -2546,11 +2618,11 @@ class App {
     atualizarEstadoBotoesConsultaRoteiro() {
         const btnExportarPDF = document.getElementById('btnExportarPDF');
         const btnExportarXLS = document.getElementById('btnExportarXLS');
-        const btnExportarCSV = document.getElementById('btnExportarCSV');
-        const { repositorId } = this.coletarFiltrosConsultaRoteiro();
+        const { repositorIds } = this.coletarFiltrosConsultaRoteiro();
+        const temResultados = Array.isArray(this.resultadosConsultaRoteiro) && this.resultadosConsultaRoteiro.length > 0;
 
-        const disabled = !repositorId;
-        const title = repositorId ? '' : 'Selecione um repositor para exportar';
+        const disabled = !repositorIds.length || !temResultados;
+        const title = repositorIds.length ? (temResultados ? '' : 'Realize uma busca antes de exportar') : 'Selecione ao menos um repositor';
 
         if (btnExportarPDF) {
             btnExportarPDF.disabled = disabled;
@@ -2560,22 +2632,16 @@ class App {
             btnExportarXLS.disabled = disabled;
             btnExportarXLS.title = title;
         }
-        if (btnExportarCSV) {
-            btnExportarCSV.disabled = disabled;
-            btnExportarCSV.title = title;
-        }
     }
 
     async inicializarConsultaRoteiro() {
         const btnBuscar = document.getElementById('btnBuscarConsultaRoteiro');
         const btnExportarPDF = document.getElementById('btnExportarPDF');
         const btnExportarXLS = document.getElementById('btnExportarXLS');
-        const btnExportarCSV = document.getElementById('btnExportarCSV');
 
         if (btnBuscar) btnBuscar.onclick = () => this.buscarConsultaRoteiro();
         if (btnExportarPDF) btnExportarPDF.onclick = () => this.exportarConsultaRoteiroPDF();
         if (btnExportarXLS) btnExportarXLS.onclick = () => this.exportarConsultaRoteiroXLS();
-        if (btnExportarCSV) btnExportarCSV.onclick = () => this.exportarConsultaRoteiro();
 
         ['filtro_repositor_consulta_roteiro', 'filtro_dia_consulta_roteiro', 'filtro_cidade_consulta_roteiro'].forEach(id => {
             const elemento = document.getElementById(id);
@@ -2587,18 +2653,27 @@ class App {
             }
         });
 
+        this.resultadosConsultaRoteiro = [];
         this.atualizarEstadoBotoesConsultaRoteiro();
-        await this.buscarConsultaRoteiro();
     }
 
     async buscarConsultaRoteiro() {
         const filtros = this.coletarFiltrosConsultaRoteiro();
         this.atualizarEstadoBotoesConsultaRoteiro();
 
+        if (!filtros.repositorIds || filtros.repositorIds.length === 0) {
+            this.showNotification('Selecione pelo menos um repositor para realizar a consulta.', 'warning');
+            this.renderConsultaRoteiro([]);
+            this.resultadosConsultaRoteiro = [];
+            this.atualizarEstadoBotoesConsultaRoteiro();
+            return;
+        }
+
         try {
             const registros = await db.consultarRoteiro(filtros);
             this.resultadosConsultaRoteiro = registros;
             this.renderConsultaRoteiro(registros);
+            this.atualizarEstadoBotoesConsultaRoteiro();
         } catch (error) {
             this.showNotification('Erro ao consultar roteiro: ' + error.message, 'error');
         }
@@ -2653,7 +2728,7 @@ class App {
                                     <td>${cliente.fantasia || '-'}</td>
                                     <td>${endereco || '-'}</td>
                                     <td>${cliente.bairro || '-'}</td>
-                                    <td>${cliente.grupo_desc || '-'}</td>
+                                    <td>${formatarGrupo(cliente.grupo_desc)}</td>
                                 </tr>
                             `;
                         }).join('')}
@@ -2663,130 +2738,28 @@ class App {
         `;
     }
 
-    exportarConsultaRoteiro() {
-        const { repositorId } = this.coletarFiltrosConsultaRoteiro();
-        if (!repositorId) {
-            this.showNotification('Selecione um repositor para exportar o roteiro.', 'warning');
-            return;
-        }
-
-        if (!this.resultadosConsultaRoteiro || this.resultadosConsultaRoteiro.length === 0) {
-            this.showNotification('Nenhum dado para exportar. Realize uma busca primeiro.', 'warning');
-            return;
-        }
-
-        // Agrupar dados por repositor e dia da semana
-        const primeiroItem = this.resultadosConsultaRoteiro[0];
-        const nomeRepositor = `${primeiroItem.repo_cod} - ${primeiroItem.repo_nome}`;
-        const telefone = primeiroItem.rep_telefone || primeiroItem.rep_contato_telefone || '';
-        const supervisor = normalizarSupervisor(primeiroItem.rep_supervisor) || '';
-        const representante = primeiroItem.repo_representante || '';
-
-        // Organizar dados por dia da semana
-        const diasSemana = ['segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'];
-        const dadosPorDia = {};
-
-        diasSemana.forEach(dia => {
-            dadosPorDia[dia] = this.resultadosConsultaRoteiro
-                .filter(item => item.rot_dia_semana === dia)
-                .sort((a, b) => {
-                    // Ordenar por ordem de cidade e depois ordem de visita
-                    const ordemCidadeA = a.rot_ordem_cidade || 999;
-                    const ordemCidadeB = b.rot_ordem_cidade || 999;
-                    if (ordemCidadeA !== ordemCidadeB) return ordemCidadeA - ordemCidadeB;
-
-                    const ordemVisitaA = a.rot_ordem_visita || 999;
-                    const ordemVisitaB = b.rot_ordem_visita || 999;
-                    return ordemVisitaA - ordemVisitaB;
-                });
-        });
-
-        // Calcular número máximo de linhas
-        const maxLinhas = Math.max(...diasSemana.map(dia => dadosPorDia[dia].length));
-
-        // Criar CSV
-        const linhas = [];
-
-        // Cabeçalho
-        const dataAtual = new Date().toLocaleDateString('pt-BR');
-        linhas.push(['ROTEIRO DE VISITAS - RS', '', '', '', '', `Atualizado em ${dataAtual}`]);
-        linhas.push(['REPOSITOR:', nomeRepositor, '', 'Turno Integral', '', '']);
-        linhas.push(['TELEFONE:', telefone, '', '', '', '']);
-        linhas.push([]);
-
-        // Cabeçalho da tabela
-        linhas.push(['SEGUNDA-FEIRA', 'TERÇA-FEIRA', 'QUARTA-FEIRA', 'QUINTA-FEIRA', 'SEXTA-FEIRA', 'SÁBADO']);
-
-        // Dados da tabela
-        for (let i = 0; i < maxLinhas; i++) {
-            const linha = [];
-            diasSemana.forEach(dia => {
-                const item = dadosPorDia[dia][i];
-                if (item) {
-                    const cliente = item.cliente_dados || {};
-                    const fantasia = cliente.fantasia || cliente.nome || '';
-                    const cidade = item.rot_cidade || '';
-                    linha.push(`${item.rot_cliente_codigo} - ${fantasia} (${cidade})`);
-                } else {
-                    linha.push('');
-                }
-            });
-            linhas.push(linha);
-        }
-
-        // Rodapé
-        linhas.push([]);
-        linhas.push([]);
-        linhas.push(['Supervisora:', supervisor, '', 'Coordenador:', '', 'Representantes']);
-        linhas.push(['Telefone:', '', '', 'Telefone:', '', representante]);
-        linhas.push([]);
-        linhas.push(['CÓDIGO - RAZÃO SOCIAL - CIDADE']);
-
-        // Adicionar lista de clientes por cidade
-        const cidadesUnicas = [...new Set(this.resultadosConsultaRoteiro.map(item => item.rot_cidade))].sort();
-        cidadesUnicas.forEach(cidade => {
-            linhas.push([cidade]);
-            const clientesCidade = this.resultadosConsultaRoteiro
-                .filter(item => item.rot_cidade === cidade)
-                .sort((a, b) => (a.rot_cliente_codigo || 0) - (b.rot_cliente_codigo || 0));
-
-            const clientesUnicos = [];
-            const codigosVistos = new Set();
-            clientesCidade.forEach(item => {
-                if (!codigosVistos.has(item.rot_cliente_codigo)) {
-                    codigosVistos.add(item.rot_cliente_codigo);
-                    const cliente = item.cliente_dados || {};
-                    clientesUnicos.push(item);
-                }
-            });
-
-            clientesUnicos.forEach(item => {
-                const cliente = item.cliente_dados || {};
-                linhas.push([`${item.rot_cliente_codigo} - ${cliente.nome || '-'}`]);
-            });
-        });
-
-        const csv = linhas
-            .map(linha => linha.map(valor => `"${String(valor).replace(/"/g, '""')}"`).join(','))
-            .join('\n');
-
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `roteiro-visitas-${primeiroItem.repo_cod}.csv`;
-        link.click();
-        URL.revokeObjectURL(url);
-
-        this.showNotification('Roteiro exportado com sucesso!', 'success');
-    }
-
     // ==================== EXPORTAÇÃO PDF ====================
 
+    agruparResultadosConsultaPorRepositor() {
+        const mapa = {};
+        (this.resultadosConsultaRoteiro || []).forEach(item => {
+            const repoId = item.rot_repositor_id;
+            if (!mapa[repoId]) {
+                mapa[repoId] = {
+                    repoCod: item.repo_cod,
+                    repoNome: item.repo_nome,
+                    registros: []
+                };
+            }
+            mapa[repoId].registros.push(item);
+        });
+        return mapa;
+    }
+
     exportarConsultaRoteiroPDF() {
-        const { repositorId } = this.coletarFiltrosConsultaRoteiro();
-        if (!repositorId) {
-            this.showNotification('Selecione um repositor para exportar.', 'warning');
+        const { repositorIds } = this.coletarFiltrosConsultaRoteiro();
+        if (!repositorIds || repositorIds.length === 0) {
+            this.showNotification('Selecione ao menos um repositor para exportar.', 'warning');
             return;
         }
 
@@ -2795,102 +2768,81 @@ class App {
             return;
         }
 
-        const primeiroItem = this.resultadosConsultaRoteiro[0];
-        const nomeRepositor = `${primeiroItem.repo_cod} - ${primeiroItem.repo_nome}`;
+        const grupos = this.agruparResultadosConsultaPorRepositor();
+        const dataNome = new Date().toISOString().split('T')[0].replace(/-/g, '');
         const dataAtual = new Date().toLocaleDateString('pt-BR');
 
-        // Organizar por dia da semana
-        const diasSemana = ['segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'];
-        const dadosPorDia = {};
+        repositorIds.forEach(repoId => {
+            const grupo = grupos[repoId];
+            if (!grupo || !grupo.registros.length) return;
 
-        diasSemana.forEach(dia => {
-            dadosPorDia[dia] = this.resultadosConsultaRoteiro
-                .filter(item => item.rot_dia_semana === dia)
-                .sort((a, b) => {
-                    const ordemCidadeA = a.rot_ordem_cidade || 999;
-                    const ordemCidadeB = b.rot_ordem_cidade || 999;
-                    if (ordemCidadeA !== ordemCidadeB) return ordemCidadeA - ordemCidadeB;
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF('landscape');
+            const nomeRepositor = `${grupo.repoCod} - ${grupo.repoNome}`;
 
-                    const ordemVisitaA = a.rot_ordem_visita || 999;
-                    const ordemVisitaB = b.rot_ordem_visita || 999;
-                    return ordemVisitaA - ordemVisitaB;
-                });
-        });
-
-        // Criar PDF
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF('landscape');
-
-        // Cabeçalho
-        doc.setFontSize(18);
-        doc.setFont(undefined, 'bold');
-        doc.text('ROTEIRO DE VISITAS - RS', 14, 20);
-
-        doc.setFontSize(10);
-        doc.setFont(undefined, 'normal');
-        doc.text(`Atualizado em ${dataAtual}`, 14, 27);
-
-        doc.setFontSize(12);
-        doc.setFont(undefined, 'bold');
-        doc.text(`REPOSITOR: ${nomeRepositor}`, 14, 35);
-
-        // Tabela por dias da semana
-        let y = 45;
-
-        diasSemana.forEach(dia => {
-            const items = dadosPorDia[dia];
-            if (items.length === 0) return;
-
-            const diaLabel = this.formatarDiaSemanaLabel(dia).toUpperCase();
-
-            doc.setFontSize(11);
+            doc.setFontSize(16);
             doc.setFont(undefined, 'bold');
-            doc.text(diaLabel, 14, y);
-            y += 7;
+            doc.text('Roteiro de Visitas', 14, 20);
+            doc.setFontSize(10);
+            doc.setFont(undefined, 'normal');
+            doc.text(`Atualizado em ${dataAtual}`, 14, 27);
+            doc.text(`Repositor: ${nomeRepositor}`, 14, 33);
 
-            // Agrupar por cidade
-            const cidadesUnicas = [...new Set(items.map(i => i.rot_cidade))];
+            const cabecalho = ['Dia', 'Cidade', 'Ordem Cidade', 'Código', 'Nome', 'Ordem Visita', 'Fantasia', 'Endereço', 'Bairro', 'Grupo', 'Documento'];
+            const linhas = grupo.registros.map(item => {
+                const cliente = item.cliente_dados || {};
+                const endereco = `${cliente.endereco || ''} ${cliente.num_endereco || ''}`.trim();
+                return [
+                    this.formatarDiaSemanaLabel(item.rot_dia_semana),
+                    item.rot_cidade,
+                    item.rot_ordem_cidade || '-',
+                    item.rot_cliente_codigo,
+                    cliente.nome || '-',
+                    item.rot_ordem_visita || '-',
+                    cliente.fantasia || '-',
+                    endereco || '-',
+                    cliente.bairro || '-',
+                    formatarGrupo(cliente.grupo_desc),
+                    formatarDocumento(cliente.cnpj_cpf)
+                ];
+            });
 
-            cidadesUnicas.forEach(cidade => {
-                const clientesCidade = items.filter(i => i.rot_cidade === cidade);
-
-                doc.setFontSize(10);
+            if (doc.autoTable) {
+                doc.autoTable({
+                    head: [cabecalho],
+                    body: linhas,
+                    startY: 40,
+                    styles: { fontSize: 8 }
+                });
+            } else {
+                let y = 40;
+                doc.setFontSize(9);
                 doc.setFont(undefined, 'bold');
-                doc.text(`  ${cidade}`, 14, y);
-                y += 5;
-
-                clientesCidade.forEach(item => {
-                    const cliente = item.cliente_dados || {};
-                    const fantasia = cliente.fantasia || cliente.nome || '-';
-                    const linha = `    ${item.rot_cliente_codigo} - ${fantasia}`;
-
-                    doc.setFont(undefined, 'normal');
-                    doc.text(linha, 14, y);
-                    y += 5;
-
-                    if (y > 180) {
+                doc.text(cabecalho.join(' | '), 14, y);
+                y += 6;
+                doc.setFont(undefined, 'normal');
+                linhas.forEach(linha => {
+                    doc.text(linha.join(' | '), 14, y);
+                    y += 6;
+                    if (y > 200) {
                         doc.addPage();
                         y = 20;
                     }
                 });
+            }
 
-                y += 3;
-            });
-
-            y += 5;
+            doc.save(`relatorio_roteiro_${grupo.repoCod}_${dataNome}.pdf`);
         });
 
-        // Salvar
-        doc.save(`roteiro-${primeiroItem.repo_cod}.pdf`);
-        this.showNotification('PDF gerado com sucesso!', 'success');
+        this.showNotification('Exportação em PDF iniciada.', 'success');
     }
 
     // ==================== EXPORTAÇÃO EXCEL ====================
 
     exportarConsultaRoteiroXLS() {
-        const { repositorId } = this.coletarFiltrosConsultaRoteiro();
-        if (!repositorId) {
-            this.showNotification('Selecione um repositor para exportar.', 'warning');
+        const { repositorIds } = this.coletarFiltrosConsultaRoteiro();
+        if (!repositorIds || repositorIds.length === 0) {
+            this.showNotification('Selecione ao menos um repositor para exportar.', 'warning');
             return;
         }
 
@@ -2899,84 +2851,40 @@ class App {
             return;
         }
 
-        const primeiroItem = this.resultadosConsultaRoteiro[0];
-        const nomeRepositor = `${primeiroItem.repo_cod} - ${primeiroItem.repo_nome}`;
-        const dataAtual = new Date().toLocaleDateString('pt-BR');
+        const grupos = this.agruparResultadosConsultaPorRepositor();
+        const dataNome = new Date().toISOString().split('T')[0].replace(/-/g, '');
 
-        // Organizar dados
-        const diasSemana = ['segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'];
-        const dadosPorDia = {};
+        repositorIds.forEach(repoId => {
+            const grupo = grupos[repoId];
+            if (!grupo || !grupo.registros.length) return;
 
-        diasSemana.forEach(dia => {
-            dadosPorDia[dia] = this.resultadosConsultaRoteiro
-                .filter(item => item.rot_dia_semana === dia)
-                .sort((a, b) => {
-                    const ordemCidadeA = a.rot_ordem_cidade || 999;
-                    const ordemCidadeB = b.rot_ordem_cidade || 999;
-                    if (ordemCidadeA !== ordemCidadeB) return ordemCidadeA - ordemCidadeB;
-
-                    const ordemVisitaA = a.rot_ordem_visita || 999;
-                    const ordemVisitaB = b.rot_ordem_visita || 999;
-                    return ordemVisitaA - ordemVisitaB;
-                });
-        });
-
-        // Criar estrutura do Excel
-        const ws_data = [];
-
-        // Cabeçalho
-        ws_data.push(['ROTEIRO DE VISITAS - RS']);
-        ws_data.push([`Atualizado em ${dataAtual}`]);
-        ws_data.push([`REPOSITOR: ${nomeRepositor}`]);
-        ws_data.push([]);
-
-        // Dados por dia
-        diasSemana.forEach(dia => {
-            const items = dadosPorDia[dia];
-            if (items.length === 0) return;
-
-            ws_data.push([this.formatarDiaSemanaLabel(dia).toUpperCase()]);
-
-            const cidadesUnicas = [...new Set(items.map(i => i.rot_cidade))];
-
-            cidadesUnicas.forEach(cidade => {
-                const clientesCidade = items.filter(i => i.rot_cidade === cidade);
-
-                ws_data.push([`  ${cidade}`]);
-
-                clientesCidade.forEach(item => {
-                    const cliente = item.cliente_dados || {};
-                    const fantasia = cliente.fantasia || cliente.nome || '-';
-                    ws_data.push([`    ${item.rot_cliente_codigo} - ${fantasia}`]);
-                });
-
-                ws_data.push([]);
+            const cabecalho = ['Dia', 'Cidade', 'Ordem Cidade', 'Código', 'Nome', 'Ordem Visita', 'Fantasia', 'Endereço', 'Bairro', 'Grupo', 'Documento'];
+            const linhas = grupo.registros.map(item => {
+                const cliente = item.cliente_dados || {};
+                const endereco = `${cliente.endereco || ''} ${cliente.num_endereco || ''}`.trim();
+                return [
+                    this.formatarDiaSemanaLabel(item.rot_dia_semana),
+                    item.rot_cidade,
+                    item.rot_ordem_cidade || '-',
+                    item.rot_cliente_codigo,
+                    cliente.nome || '-',
+                    item.rot_ordem_visita || '-',
+                    cliente.fantasia || '-',
+                    endereco || '-',
+                    cliente.bairro || '-',
+                    formatarGrupo(cliente.grupo_desc),
+                    formatarDocumento(cliente.cnpj_cpf)
+                ];
             });
 
-            ws_data.push([]);
+            const ws = XLSX.utils.aoa_to_sheet([cabecalho, ...linhas]);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Roteiro');
+            const nomeArquivo = `relatorio_roteiro_${grupo.repoCod}_${dataNome}.xlsx`;
+            XLSX.writeFile(wb, nomeArquivo);
         });
 
-        // Criar workbook
-        const ws = XLSX.utils.aoa_to_sheet(ws_data);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Roteiro");
-
-        // Salvar
-        XLSX.writeFile(wb, `roteiro-${primeiroItem.repo_cod}.xlsx`);
-        this.showNotification('Excel gerado com sucesso!', 'success');
-    }
-
-    // Helper para formatar dia da semana
-    formatarDiaSemanaLabel(dia) {
-        const labels = {
-            'segunda': 'Segunda-Feira',
-            'terca': 'Terça-Feira',
-            'quarta': 'Quarta-Feira',
-            'quinta': 'Quinta-Feira',
-            'sexta': 'Sexta-Feira',
-            'sabado': 'Sábado'
-        };
-        return labels[dia] || dia;
+        this.showNotification('Exportação em Excel iniciada.', 'success');
     }
 
     // ==================== SELEÇÃO MÚLTIPLA DE CIDADES ====================
