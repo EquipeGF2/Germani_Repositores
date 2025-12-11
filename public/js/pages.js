@@ -274,6 +274,95 @@ export const pages = {
                 </div>
             </div>
 
+            <div class="modal" id="modalResumoRepositor">
+                <div class="modal-content" style="max-width: 960px;">
+                    <div class="modal-header">
+                        <h3>Cadastro do Repositor</h3>
+                        <button class="modal-close" onclick="window.app.fecharResumoRepositor()">&times;</button>
+                    </div>
+                    <div class="modal-body resumo-repositor-body">
+                        <section class="form-card">
+                            <div class="form-card-header">
+                                <p class="form-card-eyebrow">Dados principais</p>
+                                <h4>Repositor</h4>
+                            </div>
+                            <div class="form-card-body resumo-repositor-grid">
+                                <div class="resumo-campo">
+                                    <small>Código</small>
+                                    <p id="repoResumoCodigo">-</p>
+                                </div>
+                                <div class="resumo-campo">
+                                    <small>Nome</small>
+                                    <p id="repoResumoNome">-</p>
+                                </div>
+                                <div class="resumo-campo">
+                                    <small>Vínculo</small>
+                                    <p id="repoResumoVinculo">-</p>
+                                </div>
+                                <div class="resumo-campo">
+                                    <small>Cidade referência</small>
+                                    <p id="repoResumoCidade">-</p>
+                                </div>
+                                <div class="resumo-campo">
+                                    <small>Telefone</small>
+                                    <p id="repoResumoTelefone">-</p>
+                                </div>
+                                <div class="resumo-campo">
+                                    <small>E-mail</small>
+                                    <p id="repoResumoEmail">-</p>
+                                </div>
+                                <div class="resumo-campo">
+                                    <small>Data início</small>
+                                    <p id="repoResumoDataInicio">-</p>
+                                </div>
+                                <div class="resumo-campo">
+                                    <small>Data fim</small>
+                                    <p id="repoResumoDataFim">-</p>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="form-card">
+                            <div class="form-card-header">
+                                <p class="form-card-eyebrow">Rotina</p>
+                                <h4>Jornada de Trabalho</h4>
+                            </div>
+                            <div class="form-card-body resumo-repositor-grid">
+                                <div class="resumo-campo">
+                                    <small>Jornada</small>
+                                    <p id="repoResumoJornada">-</p>
+                                </div>
+                                <div class="resumo-campo">
+                                    <small>Dias trabalhados</small>
+                                    <p id="repoResumoDias">-</p>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="form-card">
+                            <div class="form-card-header">
+                                <p class="form-card-eyebrow">Alinhamento Comercial</p>
+                                <h4>Representante e Supervisor</h4>
+                            </div>
+                            <div class="form-card-body resumo-repositor-grid">
+                                <div class="resumo-campo">
+                                    <small>Representante</small>
+                                    <p id="repoResumoRepresentante">-</p>
+                                </div>
+                                <div class="resumo-campo">
+                                    <small>Supervisor</small>
+                                    <p id="repoResumoSupervisor">-</p>
+                                </div>
+                                <div class="resumo-campo">
+                                    <small>Contato representante</small>
+                                    <p id="repoResumoRepresentanteContato">-</p>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </div>
+
             <!-- Modal Detalhes do Representante -->
             <div class="modal modal-representante" id="modalRepresentanteDetalhes">
                 <div class="modal-content">
@@ -991,10 +1080,10 @@ export const pages = {
                     <div class="filter-bar filter-bar-wide">
                         <div class="filter-group">
                             <label for="filtro_repositor_consulta_roteiro">Repositor</label>
-                            <select id="filtro_repositor_consulta_roteiro">
-                                <option value="">Selecione...</option>
+                            <select id="filtro_repositor_consulta_roteiro" multiple>
                                 ${repositorOptions}
                             </select>
+                            <small class="helper-compact">Selecione um ou mais repositores</small>
                         </div>
                         <div class="filter-group">
                             <label for="filtro_dia_consulta_roteiro">Dia da semana</label>
@@ -1034,9 +1123,6 @@ export const pages = {
                             </button>
                             <button class="btn btn-success" id="btnExportarXLS">
                                 📊 Exportar Excel
-                            </button>
-                            <button class="btn btn-secondary" id="btnExportarCSV">
-                                📋 Exportar CSV
                             </button>
                             <span class="text-muted">A exportação seguirá o layout da planilha “Roteiro de Visitas”.</span>
                         </div>
