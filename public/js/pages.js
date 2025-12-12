@@ -575,7 +575,6 @@ export const pages = {
                 <div class="roteiro-badges">
                     <span class="badge badge-info">Código ${repositor.repo_cod}</span>
                     <span class="badge">${repositor.repo_vinculo === 'agencia' ? 'Agência' : 'Repositor'}</span>
-                    <button class="btn btn-primary" id="btnSalvarRoteiroCompleto" style="margin-left: 1rem;">💾 Salvar Roteiro</button>
                     <span id="roteiroPendentesIndicador" class="badge badge-warning" style="display: none; margin-left: 0.5rem;">Alterações pendentes</span>
                 </div>
             </div>
@@ -663,6 +662,10 @@ export const pages = {
                 </section>
             </div>
 
+            <div class="roteiro-salvar-container">
+                <button class="btn btn-primary" id="btnSalvarRoteiroCompleto">💾 Salvar Roteiro</button>
+            </div>
+
             <div class="modal" id="modalAdicionarCliente">
                 <div class="modal-content">
                     <div class="modal-header">
@@ -690,7 +693,7 @@ export const pages = {
             </div>
 
             <div class="modal" id="modalRateioRapido">
-                <div class="modal-content" style="max-width: 520px;">
+                <div class="modal-content" style="max-width: 640px;">
                     <div class="modal-header">
                         <h3>Percentual de rateio</h3>
                         <button class="modal-close" onclick="window.app.cancelarModalRateioRapido()">&times;</button>
@@ -1062,9 +1065,11 @@ export const pages = {
     },
 
     'consulta-roteiro': async () => {
-        const [repositores, cidadesRoteiro] = await Promise.all([
+        const [repositores, cidadesRoteiro, supervisores, representantes] = await Promise.all([
             db.getAllRepositors(),
-            db.getCidadesRoteiroDistintas()
+            db.getCidadesRoteiroDistintas(),
+            db.getSupervisoresComercial(),
+            db.getRepresentantesComercial()
         ]);
 
         const repositorOptions = repositores.map(repo => `
@@ -1072,6 +1077,10 @@ export const pages = {
         `).join('');
 
         const cidadesRoteiroOptions = cidadesRoteiro.map(cidade => `<option value="${cidade}">${cidade}</option>`).join('');
+        const supervisorOptions = supervisores.map(sup => `<option value="${sup}">${sup}</option>`).join('');
+        const representanteOptions = representantes.map(rep => `
+            <option value="${rep.representante}">${rep.representante} - ${rep.desc_representante}</option>
+        `).join('');
 
         return `
             <div class="card">
@@ -1111,6 +1120,20 @@ export const pages = {
                             </select>
                         </div>
                         <div class="filter-group">
+                            <label for="filtro_supervisor_consulta_roteiro">Supervisor</label>
+                            <select id="filtro_supervisor_consulta_roteiro">
+                                <option value="">Todos</option>
+                                ${supervisorOptions}
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="filtro_representante_consulta_roteiro">Representante</label>
+                            <select id="filtro_representante_consulta_roteiro">
+                                <option value="">Todos</option>
+                                ${representanteOptions}
+                            </select>
+                        </div>
+                        <div class="filter-group">
                             <label for="filtro_data_inicio_consulta_roteiro">Data Início</label>
                             <input type="date" id="filtro_data_inicio_consulta_roteiro">
                         </div>
@@ -1135,13 +1158,13 @@ export const pages = {
                             </div>
                     </div>
 
-                    <div class="table-container" id="resumoConsultaRoteiro">
-                        <div class="empty-state">
-                            <div class="empty-state-icon">🧭</div>
-                            <p>Selecione um repositor ou uma cidade para visualizar o roteiro consolidado.</p>
+                        <div class="table-container" id="resumoConsultaRoteiro">
+                            <div class="empty-state">
+                                <div class="empty-state-icon">🧭</div>
+                            <p>Selecione um repositor, cidade, representante ou supervisor para visualizar o roteiro consolidado.</p>
                             <small>Os dados serão organizados por dia da semana e cidade, prontos para exportação.</small>
+                            </div>
                         </div>
-                    </div>
 
                     <div class="modal" id="modalExportacaoRoteiro">
                         <div class="modal-content" style="max-width: 720px;">
@@ -1186,6 +1209,7 @@ export const pages = {
                                     <select id="selectTipoRelatorioPDF">
                                         <option value="detalhado">Modelo 1 – Detalhado</option>
                                         <option value="semanal">Modelo 2 – Roteiro semanal</option>
+                                        <option value="mapa">Modelo 3 – Mapa consolidado de roteiro e rateio</option>
                                     </select>
                                 </div>
                             </div>
