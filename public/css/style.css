@@ -661,12 +661,20 @@ tbody td {
 
 #modalRateioRapido .form-row {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    grid-template-columns: minmax(220px, 0.9fr) minmax(220px, 1fr);
     gap: var(--spacing);
 }
 
 #modalRateioRapido .modal-footer {
     padding: var(--spacing-md) var(--spacing-lg);
+}
+
+#modalRateioRapido .modal-body {
+    padding: var(--spacing-lg);
+}
+
+#modalRateioRapido .modal-footer {
+    justify-content: flex-end;
 }
 
 .modal-repositor .modal-body {
@@ -1444,6 +1452,16 @@ tbody td {
     display: flex;
     flex-direction: column;
     gap: 1rem;
+}
+
+.roteiro-salvar-container {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 1rem;
+}
+
+.roteiro-salvar-container .btn {
+    min-width: 200px;
 }
 
 .roteiro-coluna {

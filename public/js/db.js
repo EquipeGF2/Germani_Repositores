@@ -1037,7 +1037,7 @@ class TursoDatabase {
         }
     }
 
-    async getCidadesConsultaRoteiro({ repositorId = null, diaSemana = '', dataInicio = null, dataFim = null } = {}) {
+    async getCidadesConsultaRoteiro({ repositorId = null, diaSemana = '', dataInicio = null, dataFim = null, supervisor = '', representante = '' } = {}) {
         try {
             const args = [];
             let sql = `
@@ -1049,6 +1049,18 @@ class TursoDatabase {
             if (repositorId) {
                 sql += ' AND rot_repositor_id = ?';
                 args.push(repositorId);
+            }
+
+            const supervisorNormalizado = normalizarSupervisor(supervisor);
+
+            if (supervisorNormalizado) {
+                sql += ' AND rot_repositor_id IN (SELECT repo_cod FROM cad_repositor WHERE rep_supervisor = ?)';
+                args.push(supervisorNormalizado);
+            }
+
+            if (representante) {
+                sql += ' AND rot_repositor_id IN (SELECT repo_cod FROM cad_repositor WHERE rep_representante_codigo = ?)';
+                args.push(representante);
             }
 
             if (diaSemana) {
@@ -1469,7 +1481,7 @@ class TursoDatabase {
         }));
     }
 
-    async consultarRoteiro({ repositorIds = [], diaSemana = '', cidade = '', dataInicio = null, dataFim = null } = {}) {
+    async consultarRoteiro({ repositorIds = [], diaSemana = '', cidade = '', dataInicio = null, dataFim = null, supervisor = '', representante = '', incluirRateio = false } = {}) {
         const args = [];
         let sql = `
               SELECT
@@ -1482,10 +1494,26 @@ class TursoDatabase {
                   cli.rot_cliente_codigo,
                   cli.rot_ordem_visita,
                   r.repo_nome,
-                  r.repo_cod
+                  r.repo_cod,
+                  r.rep_supervisor,
+                  r.rep_representante_codigo,
+                  r.rep_representante_nome,
+                  rat.rat_percentual,
+                  resumo.qtde_repositores,
+                  resumo.soma_percentuais
             FROM rot_roteiro_cidade rc
             JOIN cad_repositor r ON r.repo_cod = rc.rot_repositor_id
             JOIN rot_roteiro_cliente cli ON cli.rot_cid_id = rc.rot_cid_id
+            LEFT JOIN (
+                SELECT rat_cliente_codigo, rat_repositor_id, SUM(rat_percentual) AS rat_percentual
+                FROM rat_cliente_repositor
+                GROUP BY rat_cliente_codigo, rat_repositor_id
+            ) rat ON rat.rat_cliente_codigo = cli.rot_cliente_codigo AND rat.rat_repositor_id = rc.rot_repositor_id
+            LEFT JOIN (
+                SELECT rat_cliente_codigo, COUNT(*) AS qtde_repositores, SUM(rat_percentual) AS soma_percentuais
+                FROM rat_cliente_repositor
+                GROUP BY rat_cliente_codigo
+            ) resumo ON resumo.rat_cliente_codigo = cli.rot_cliente_codigo
             WHERE 1=1
         `;
 
@@ -1504,6 +1532,17 @@ class TursoDatabase {
             const cidadeNormalizada = cidade.toUpperCase();
             sql += ' AND rc.rot_cidade = ?';
             args.push(cidadeNormalizada);
+        }
+
+        const supervisorNormalizado = normalizarSupervisor(supervisor);
+        if (supervisorNormalizado) {
+            sql += ' AND r.rep_supervisor = ?';
+            args.push(supervisorNormalizado);
+        }
+
+        if (representante) {
+            sql += ' AND r.rep_representante_codigo = ?';
+            args.push(representante);
         }
 
         if (dataInicio) {
@@ -1535,19 +1574,51 @@ class TursoDatabase {
 
         try {
             const resultado = await this.mainClient.execute({ sql, args });
-            const codigos = [...new Set(resultado.rows.map(row => row.rot_cliente_codigo).filter(Boolean))];
+            const linhas = Array.isArray(resultado?.rows) ? resultado.rows.filter(Boolean) : [];
+            const codigos = [...new Set(linhas.map(row => row.rot_cliente_codigo).filter(Boolean))];
             const detalhes = await this.getClientesPorCodigo(codigos);
 
-            return resultado.rows.map(row => ({
+            const registrosBase = linhas.map(row => ({
                 ...row,
                 rot_cidade: (row.rot_cidade || '').toUpperCase(),
                 rot_atualizado_em: normalizarDataISO(row.rot_atualizado_em),
                 cliente_dados: detalhes[row.rot_cliente_codigo] || null
             }));
+
+            if (!incluirRateio) {
+                return registrosBase;
+            }
+
+            const agregados = this.calcularMapeamentoRateio(linhas);
+
+            return registrosBase.map(row => ({
+                ...row,
+                rat_percentual: Number(row.rat_percentual || 0),
+                qtde_repositores: agregados[row.rot_cliente_codigo]?.qtde_repositores || 0,
+                soma_percentuais: agregados[row.rot_cliente_codigo]?.soma_percentuais || 0
+            }));
         } catch (error) {
             console.error('Erro ao consultar roteiro:', error);
             return [];
         }
+    }
+
+    calcularMapeamentoRateio(registros = []) {
+        const mapa = {};
+
+        registros.forEach(row => {
+            if (!row?.rat_cliente_codigo && !row?.rot_cliente_codigo) return;
+            const codigo = row.rat_cliente_codigo || row.rot_cliente_codigo;
+
+            if (!mapa[codigo]) {
+                mapa[codigo] = {
+                    qtde_repositores: Number(row.qtde_repositores || 0),
+                    soma_percentuais: Number(row.soma_percentuais || 0)
+                };
+            }
+        });
+
+        return mapa;
     }
 
     async getUltimaAtualizacaoRoteiro(repositorId) {
@@ -1914,12 +1985,12 @@ class TursoDatabase {
                 `
             });
 
-            const linhas = resultado?.rows || [];
+            const linhas = Array.isArray(resultado?.rows) ? resultado.rows.filter(Boolean) : [];
 
             return linhas.map(row => ({
                 ...row,
-                cnpj_cpf: documentoParaExibicao(row.cnpj_cpf),
-                rat_vigencia_inicio: normalizarDataISO(row.rat_vigencia_inicio)
+                cnpj_cpf: documentoParaExibicao(row?.cnpj_cpf),
+                rat_vigencia_inicio: normalizarDataISO(row?.rat_vigencia_inicio)
             }));
         } catch (error) {
             console.error('Erro ao buscar rateios para manutenção:', error);
@@ -1933,30 +2004,24 @@ class TursoDatabase {
 
             const resultado = await this.mainClient.execute({
                 sql: `
-                    WITH clientes_rateio AS (
-                        SELECT DISTINCT rat_cliente_codigo AS cliente_codigo FROM rat_cliente_repositor
-                        UNION
-                        SELECT DISTINCT rot_cliente_codigo FROM rot_roteiro_cliente WHERE rot_possui_rateio = 1
-                    )
                     SELECT
-                        cr.cliente_codigo,
+                        rat.rat_cliente_codigo AS cliente_codigo,
                         COALESCE(SUM(rat.rat_percentual), 0) AS total_percentual,
                         MAX(cli.nome) AS cliente_nome,
                         MAX(cli.fantasia) AS cliente_fantasia
-                    FROM clientes_rateio cr
-                    LEFT JOIN rat_cliente_repositor rat ON rat.rat_cliente_codigo = cr.cliente_codigo
-                    LEFT JOIN cliente cli ON cli.cliente = cr.cliente_codigo
-                    GROUP BY cr.cliente_codigo
+                    FROM rat_cliente_repositor rat
+                    LEFT JOIN cliente cli ON cli.cliente = rat.rat_cliente_codigo
+                    GROUP BY rat.rat_cliente_codigo
                     HAVING ABS(COALESCE(SUM(rat.rat_percentual), 0) - 100) > 0.01
                     ORDER BY cliente_nome
                 `
             });
 
-            const linhas = resultado?.rows || [];
+            const linhas = Array.isArray(resultado?.rows) ? resultado.rows.filter(Boolean) : [];
 
             return linhas.map(linha => ({
                 ...linha,
-                total_percentual: Number(linha.total_percentual || 0)
+                total_percentual: Number(linha?.total_percentual || 0)
             }));
         } catch (error) {
             console.error('Erro ao buscar clientes com rateio incompleto:', error);
