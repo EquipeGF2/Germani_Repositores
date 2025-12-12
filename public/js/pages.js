@@ -1117,6 +1117,14 @@ export const pages = {
                 <div class="card-body">
                     <div class="filter-bar filter-bar-wide">
                         <div class="filter-group">
+                            <label for="filtro_data_inicio_consulta_roteiro">Data Início</label>
+                            <input type="date" id="filtro_data_inicio_consulta_roteiro">
+                        </div>
+                        <div class="filter-group">
+                            <label for="filtro_data_fim_consulta_roteiro">Data Fim</label>
+                            <input type="date" id="filtro_data_fim_consulta_roteiro">
+                        </div>
+                        <div class="filter-group">
                             <label for="filtro_repositor_consulta_roteiro">Repositor</label>
                             <select id="filtro_repositor_consulta_roteiro">
                                 <option value="">Selecione</option>
@@ -1156,14 +1164,6 @@ export const pages = {
                                 <option value="">Todos</option>
                                 ${representanteOptions}
                             </select>
-                        </div>
-                        <div class="filter-group">
-                            <label for="filtro_data_inicio_consulta_roteiro">Data Início</label>
-                            <input type="date" id="filtro_data_inicio_consulta_roteiro">
-                        </div>
-                        <div class="filter-group">
-                            <label for="filtro_data_fim_consulta_roteiro">Data Fim</label>
-                            <input type="date" id="filtro_data_fim_consulta_roteiro">
                         </div>
                     </div>
 
@@ -1293,6 +1293,107 @@ export const pages = {
         `;
     },
 
+    'custos-repositor': async () => {
+        const repositores = await db.getAllRepositors();
+        const repositorOptions = repositores
+            .map(repo => `<option value="${repo.repo_cod}">${repo.repo_cod} - ${repo.repo_nome}</option>`)
+            .join('');
+
+        const anoAtual = new Date().getFullYear();
+        const anos = [];
+        for (let i = anoAtual - 2; i <= anoAtual + 1; i++) {
+            anos.push(i);
+        }
+
+        return `
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h3 class="card-title">Custos por Repositor</h3>
+                        <p class="text-muted" style="margin: 4px 0 0;">
+                            Controle de custos mensais (fixos e variáveis) por repositor
+                        </p>
+                    </div>
+                    <div class="card-actions">
+                        <button class="btn btn-primary btn-sm" id="btnNovoCusto">➕ Novo Custo</button>
+                    </div>
+                </div>
+
+                <div class="card-body">
+                    <div class="filter-bar">
+                        <div class="filter-group">
+                            <label for="filtroCustosAno">Ano</label>
+                            <select id="filtroCustosAno">
+                                ${anos.map(ano => `<option value="${ano}" ${ano === anoAtual ? 'selected' : ''}>${ano}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="filtroCustosRepositor">Repositor</label>
+                            <select id="filtroCustosRepositor">
+                                <option value="">Todos</option>
+                                ${repositorOptions}
+                            </select>
+                        </div>
+                        <div class="filter-group" style="display: flex; align-items: flex-end;">
+                            <button class="btn btn-secondary" id="btnBuscarCustos">🔍 Buscar</button>
+                        </div>
+                    </div>
+
+                    <div id="custosContainer" style="margin-top: 1rem;">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">💰</div>
+                            <p>Selecione o ano e clique em "Buscar" para visualizar os custos</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal" id="modalCusto">
+                <div class="modal-content" style="max-width: 600px;">
+                    <div class="modal-header">
+                        <h3 id="modalCustoTitulo">Novo Custo</h3>
+                        <button class="modal-close" onclick="window.app.fecharModalCusto()">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" id="custoId">
+
+                        <div class="form-group">
+                            <label for="custoRepositor">Repositor *</label>
+                            <select id="custoRepositor" class="form-control" required>
+                                <option value="">Selecione...</option>
+                                ${repositorOptions}
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="custoCompetencia">Competência (Mês/Ano) *</label>
+                            <input type="month" id="custoCompetencia" class="form-control" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="custoCustoFixo">Custo Fixo (R$)</label>
+                            <input type="number" id="custoCustoFixo" class="form-control" min="0" step="0.01" value="0">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="custoCustoVariavel">Custo Variável (R$)</label>
+                            <input type="number" id="custoCustoVariavel" class="form-control" min="0" step="0.01" value="0">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="custoObservacoes">Observações</label>
+                            <textarea id="custoObservacoes" class="form-control" rows="3"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" onclick="window.app.fecharModalCusto()">Cancelar</button>
+                        <button class="btn btn-primary" id="btnSalvarCusto">Salvar</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
     'estrutura-banco-comercial': async () => {
         const resultado = await db.getEstruturaBancoComercial();
 
@@ -1404,6 +1505,7 @@ export const pageTitles = {
     'alteracoes-rota': 'Alterações de Rota',
     'consulta-alteracoes': 'Consulta de Alterações',
     'consulta-roteiro': 'Consulta de Roteiro',
+    'custos-repositor': 'Custos por Repositor',
     'estrutura-banco-comercial': 'Estrutura do Banco Comercial',
     'controle-acessos': 'Controle de Acessos',
     'roteiro-repositor': 'Roteiro do Repositor'
