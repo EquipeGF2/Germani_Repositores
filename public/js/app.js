@@ -3418,11 +3418,32 @@ class App {
             7: 'DOMINGO'
         };
 
+        // Mapa para converter strings de dia em números
+        const diaParaNumero = {
+            'seg': 1, 'segunda': 1, 'segunda-feira': 1,
+            'ter': 2, 'terça': 2, 'terca': 2, 'terça-feira': 2, 'terca-feira': 2,
+            'qua': 3, 'quarta': 3, 'quarta-feira': 3,
+            'qui': 4, 'quinta': 4, 'quinta-feira': 4,
+            'sex': 5, 'sexta': 5, 'sexta-feira': 5,
+            'sab': 6, 'sábado': 6, 'sabado': 6,
+            'dom': 7, 'domingo': 7
+        };
+
         // Agrupar por dia e cidade usando números de dia
         const agrupado = {};
 
         registros.forEach(reg => {
-            const dia = parseInt(reg.rot_dia_semana || reg.dia_semana || 1);
+            let dia;
+            const diaRaw = reg.rot_dia_semana || reg.dia_semana;
+
+            // Converter dia string para número
+            if (typeof diaRaw === 'string') {
+                const diaLower = diaRaw.toLowerCase().trim();
+                dia = diaParaNumero[diaLower] || parseInt(diaRaw) || 1;
+            } else {
+                dia = parseInt(diaRaw) || 1;
+            }
+
             const cidade = (reg.rot_cidade || reg.cidade || 'SEM CIDADE').trim().toUpperCase();
 
             if (!agrupado[dia]) {
@@ -3436,8 +3457,11 @@ class App {
         });
 
         console.log('Agrupamento por dia:', Object.keys(agrupado));
-        console.log('Estrutura:', JSON.stringify(Object.keys(agrupado).reduce((acc, dia) => {
-            acc[`Dia ${dia}`] = Object.keys(agrupado[dia]);
+        console.log('Estrutura completa:', JSON.stringify(Object.keys(agrupado).reduce((acc, dia) => {
+            acc[`Dia ${dia}`] = Object.keys(agrupado[dia]).map(cidade => ({
+                cidade,
+                qtd: agrupado[dia][cidade].length
+            }));
             return acc;
         }, {}), null, 2));
 
@@ -3445,8 +3469,8 @@ class App {
         Object.keys(agrupado).forEach(dia => {
             Object.keys(agrupado[dia]).forEach(cidade => {
                 agrupado[dia][cidade].sort((a, b) => {
-                    const ordemA = parseInt(a.rot_ordem_cidade || a.ordem_cidade || 0);
-                    const ordemB = parseInt(b.rot_ordem_cidade || b.ordem_cidade || 0);
+                    const ordemA = parseInt(a.rot_ordem_visita || a.ordem_visita || 0);
+                    const ordemB = parseInt(b.rot_ordem_visita || b.ordem_visita || 0);
                     return ordemA - ordemB;
                 });
             });
@@ -3467,9 +3491,11 @@ class App {
         mensagem += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
         // Iterar pelos dias em ordem (1-7)
+        let diasComClientes = 0;
         for (let diaNum = 1; diaNum <= 7; diaNum++) {
             if (!agrupado[diaNum]) continue;
 
+            diasComClientes++;
             mensagem += `*${diasSemana[diaNum]}*\n\n`;
 
             // Iterar pelas cidades (ordenadas alfabeticamente)
@@ -3484,9 +3510,6 @@ class App {
                     const numeroOrdem = idx + 1;
                     const emoji = numeroOrdem <= 9 ? `${numeroOrdem}️⃣` : `${numeroOrdem}.`;
 
-                    // Código do cliente
-                    const codigo = cliente.rot_cliente_codigo || cliente.cliente_codigo || '';
-
                     // Nome do cliente
                     const nomeCliente = cliente.cliente_dados?.fantasia
                         || cliente.cliente_dados?.nome
@@ -3494,12 +3517,7 @@ class App {
                         || cliente.rot_cliente_codigo
                         || 'CLIENTE';
 
-                    // Mostrar código e nome juntos
-                    if (codigo) {
-                        mensagem += `${emoji} *${codigo} - ${nomeCliente}*\n`;
-                    } else {
-                        mensagem += `${emoji} *${nomeCliente}*\n`;
-                    }
+                    mensagem += `${emoji} *${nomeCliente}*\n`;
 
                     // Endereço
                     const endereco = cliente.cliente_dados?.endereco || cliente.rot_endereco || '';
@@ -3513,12 +3531,20 @@ class App {
                         mensagem += `\n`;
                     }
 
+                    // Código do cliente
+                    const codigo = cliente.rot_cliente_codigo || cliente.cliente_codigo || '';
+                    if (codigo) {
+                        mensagem += `🏢 Cód: ${codigo}\n`;
+                    }
+
                     mensagem += `\n`;
                 });
             });
 
             mensagem += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
         }
+
+        console.log('Dias com clientes encontrados:', diasComClientes);
 
         // Resumo
         const totalClientes = registros.length;
@@ -3536,6 +3562,7 @@ class App {
 
         console.log('✅ Mensagem gerada!');
         console.log('Tamanho:', mensagem.length, 'caracteres');
+        console.log('Preview da mensagem:', mensagem.substring(0, 500));
 
         return mensagem;
     }
