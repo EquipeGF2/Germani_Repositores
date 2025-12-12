@@ -92,6 +92,9 @@ class TursoDatabase {
             // Configurar tabelas de controle de acesso
             await this.ensureAclTables();
 
+            // Configurar tabelas de controles e custos
+            await this.ensureCustosTables();
+
             this.schemaInitialized = true;
             console.log('✅ Schema inicializado com sucesso');
             return true;
@@ -572,6 +575,40 @@ class TursoDatabase {
             `);
         } catch (error) {
             console.error('Erro ao criar tabela de ACL:', error);
+            throw error;
+        }
+    }
+
+    async ensureCustosTables() {
+        try {
+            await this.mainClient.execute(`
+                CREATE TABLE IF NOT EXISTS cc_custos_repositor_mensal (
+                    cc_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cc_rep_id INTEGER NOT NULL,
+                    cc_competencia TEXT NOT NULL,
+                    cc_custo_fixo REAL DEFAULT 0,
+                    cc_custo_variavel REAL DEFAULT 0,
+                    cc_observacoes TEXT,
+                    cc_criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    cc_atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (cc_rep_id) REFERENCES cad_repositor(repo_cod),
+                    UNIQUE (cc_rep_id, cc_competencia)
+                )
+            `);
+
+            await this.mainClient.execute(`
+                CREATE INDEX IF NOT EXISTS idx_cc_custos_competencia
+                ON cc_custos_repositor_mensal (cc_competencia)
+            `);
+
+            await this.mainClient.execute(`
+                CREATE INDEX IF NOT EXISTS idx_cc_custos_rep_id
+                ON cc_custos_repositor_mensal (cc_rep_id)
+            `);
+
+            console.log('✅ Tabela cc_custos_repositor_mensal criada com sucesso');
+        } catch (error) {
+            console.error('Erro ao criar tabelas de custos:', error);
             throw error;
         }
     }
@@ -2730,6 +2767,178 @@ class TursoDatabase {
         }
 
         return true;
+    }
+
+    // ==================== CONTROLES E CUSTOS ====================
+
+    async listarCustos({ repId = null, competencia = null, ano = null } = {}) {
+        try {
+            await this.connect();
+
+            const args = [];
+            let sql = `
+                SELECT
+                    cc.cc_id,
+                    cc.cc_rep_id,
+                    cc.cc_competencia,
+                    cc.cc_custo_fixo,
+                    cc.cc_custo_variavel,
+                    cc.cc_observacoes,
+                    cc.cc_criado_em,
+                    cc.cc_atualizado_em,
+                    r.repo_nome,
+                    r.repo_cod
+                FROM cc_custos_repositor_mensal cc
+                LEFT JOIN cad_repositor r ON r.repo_cod = cc.cc_rep_id
+                WHERE 1=1
+            `;
+
+            if (repId) {
+                sql += ' AND cc.cc_rep_id = ?';
+                args.push(repId);
+            }
+
+            if (competencia) {
+                sql += ' AND cc.cc_competencia = ?';
+                args.push(competencia);
+            }
+
+            if (ano) {
+                sql += ' AND cc.cc_competencia LIKE ?';
+                args.push(`${ano}-%`);
+            }
+
+            sql += ' ORDER BY cc.cc_competencia DESC, r.repo_nome';
+
+            const result = await this.mainClient.execute({ sql, args });
+
+            return result.rows.map(row => ({
+                id: row.cc_id,
+                rep_id: row.cc_rep_id,
+                repo_cod: row.repo_cod,
+                repo_nome: row.repo_nome,
+                competencia: row.cc_competencia,
+                custo_fixo: row.cc_custo_fixo || 0,
+                custo_variavel: row.cc_custo_variavel || 0,
+                custo_total: (row.cc_custo_fixo || 0) + (row.cc_custo_variavel || 0),
+                observacoes: row.cc_observacoes || '',
+                criado_em: row.cc_criado_em,
+                atualizado_em: row.cc_atualizado_em
+            }));
+        } catch (error) {
+            console.error('Erro ao listar custos:', error);
+            throw error;
+        }
+    }
+
+    async salvarCusto({ id = null, repId, competencia, custoFixo = 0, custoVariavel = 0, observacoes = '' }) {
+        try {
+            await this.connect();
+
+            // Validações
+            if (!repId) {
+                throw new Error('Repositor é obrigatório');
+            }
+
+            if (!competencia) {
+                throw new Error('Competência é obrigatória');
+            }
+
+            // Validar formato YYYY-MM
+            if (!/^\d{4}-\d{2}$/.test(competencia)) {
+                throw new Error('Competência deve estar no formato YYYY-MM (ex: 2025-12)');
+            }
+
+            if (custoFixo < 0 || custoVariavel < 0) {
+                throw new Error('Custos não podem ser negativos');
+            }
+
+            // Verificar se repositor existe
+            const repoExiste = await this.mainClient.execute({
+                sql: 'SELECT repo_cod FROM cad_repositor WHERE repo_cod = ?',
+                args: [repId]
+            });
+
+            if (!repoExiste.rows.length) {
+                throw new Error('Repositor não encontrado');
+            }
+
+            if (id) {
+                // Atualizar
+                await this.mainClient.execute({
+                    sql: `
+                        UPDATE cc_custos_repositor_mensal
+                        SET cc_custo_fixo = ?,
+                            cc_custo_variavel = ?,
+                            cc_observacoes = ?,
+                            cc_atualizado_em = CURRENT_TIMESTAMP
+                        WHERE cc_id = ?
+                    `,
+                    args: [custoFixo, custoVariavel, observacoes, id]
+                });
+
+                return { id, success: true, action: 'updated' };
+            } else {
+                // Tentar inserir ou atualizar se já existir
+                const existente = await this.mainClient.execute({
+                    sql: 'SELECT cc_id FROM cc_custos_repositor_mensal WHERE cc_rep_id = ? AND cc_competencia = ?',
+                    args: [repId, competencia]
+                });
+
+                if (existente.rows.length > 0) {
+                    // Atualizar registro existente
+                    const existenteId = existente.rows[0].cc_id;
+                    await this.mainClient.execute({
+                        sql: `
+                            UPDATE cc_custos_repositor_mensal
+                            SET cc_custo_fixo = ?,
+                                cc_custo_variavel = ?,
+                                cc_observacoes = ?,
+                                cc_atualizado_em = CURRENT_TIMESTAMP
+                            WHERE cc_id = ?
+                        `,
+                        args: [custoFixo, custoVariavel, observacoes, existenteId]
+                    });
+
+                    return { id: existenteId, success: true, action: 'updated' };
+                } else {
+                    // Inserir novo
+                    const result = await this.mainClient.execute({
+                        sql: `
+                            INSERT INTO cc_custos_repositor_mensal (
+                                cc_rep_id, cc_competencia, cc_custo_fixo, cc_custo_variavel, cc_observacoes
+                            ) VALUES (?, ?, ?, ?, ?)
+                        `,
+                        args: [repId, competencia, custoFixo, custoVariavel, observacoes]
+                    });
+
+                    return { id: result.lastInsertRowid, success: true, action: 'created' };
+                }
+            }
+        } catch (error) {
+            console.error('Erro ao salvar custo:', error);
+            throw error;
+        }
+    }
+
+    async excluirCusto(id) {
+        try {
+            await this.connect();
+
+            if (!id) {
+                throw new Error('ID do custo é obrigatório');
+            }
+
+            await this.mainClient.execute({
+                sql: 'DELETE FROM cc_custos_repositor_mensal WHERE cc_id = ?',
+                args: [id]
+            });
+
+            return { success: true };
+        } catch (error) {
+            console.error('Erro ao excluir custo:', error);
+            throw error;
+        }
     }
 }
 

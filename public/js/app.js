@@ -466,6 +466,8 @@ class App {
                 await this.inicializarConsultaRoteiro();
             } else if (pageName === 'cadastro-rateio') {
                 await this.inicializarCadastroRateio();
+            } else if (pageName === 'custos-repositor') {
+                await this.inicializarCustosRepositor();
             }
         } catch (error) {
             console.error('Erro ao carregar página:', error);
@@ -4206,6 +4208,211 @@ class App {
             `;
         } catch (error) {
             amostraDiv.innerHTML = `<p style="color: var(--danger);">Erro ao carregar dados: ${error.message}</p>`;
+        }
+    }
+
+    // ==================== CONTROLES E CUSTOS ====================
+
+    async inicializarCustosRepositor() {
+        const btnBuscar = document.getElementById('btnBuscarCustos');
+        const btnNovo = document.getElementById('btnNovoCusto');
+        const btnSalvar = document.getElementById('btnSalvarCusto');
+
+        if (btnBuscar) {
+            btnBuscar.addEventListener('click', () => this.buscarCustos());
+        }
+
+        if (btnNovo) {
+            btnNovo.addEventListener('click', () => this.abrirModalCusto());
+        }
+
+        if (btnSalvar) {
+            btnSalvar.addEventListener('click', () => this.salvarCusto());
+        }
+    }
+
+    async buscarCustos() {
+        try {
+            const ano = document.getElementById('filtroCustosAno')?.value;
+            const repId = document.getElementById('filtroCustosRepositor')?.value;
+
+            const filtros = {};
+            if (ano) filtros.ano = ano;
+            if (repId) filtros.repId = parseInt(repId);
+
+            const custos = await db.listarCustos(filtros);
+            this.renderCustos(custos);
+        } catch (error) {
+            console.error('Erro ao buscar custos:', error);
+            this.showNotification('Erro ao buscar custos: ' + error.message, 'error');
+        }
+    }
+
+    renderCustos(custos) {
+        const container = document.getElementById('custosContainer');
+        if (!container) return;
+
+        if (!custos || custos.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">📋</div>
+                    <p>Nenhum custo encontrado com os filtros selecionados</p>
+                    <small>Clique em "➕ Novo Custo" para adicionar um registro</small>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Repositor</th>
+                            <th>Comp.</th>
+                            <th>Custo Fixo</th>
+                            <th>Custo Var.</th>
+                            <th>Total</th>
+                            <th>Observações</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${custos.map(custo => {
+                            const competenciaMes = custo.competencia.split('-').reverse().join('/');
+                            return `
+                                <tr>
+                                    <td>${custo.repo_cod} - ${custo.repo_nome}</td>
+                                    <td>${competenciaMes}</td>
+                                    <td>${this.formatarMoeda(custo.custo_fixo)}</td>
+                                    <td>${this.formatarMoeda(custo.custo_variavel)}</td>
+                                    <td style="font-weight: 600;">${this.formatarMoeda(custo.custo_total)}</td>
+                                    <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${custo.observacoes || '-'}</td>
+                                    <td>
+                                        <button class="btn btn-sm" style="background: #2196F3; color: white; margin-right: 4px;" onclick="window.app.editarCusto(${custo.id})">✏️</button>
+                                        <button class="btn btn-sm" style="background: #f44336; color: white;" onclick="window.app.excluirCusto(${custo.id})">🗑️</button>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    formatarMoeda(valor) {
+        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor || 0);
+    }
+
+    abrirModalCusto(id = null) {
+        const modal = document.getElementById('modalCusto');
+        const titulo = document.getElementById('modalCustoTitulo');
+
+        if (!modal) return;
+
+        if (id) {
+            titulo.textContent = 'Editar Custo';
+            this.carregarCusto(id);
+        } else {
+            titulo.textContent = 'Novo Custo';
+            document.getElementById('custoId').value = '';
+            document.getElementById('custoRepositor').value = '';
+            document.getElementById('custoCompetencia').value = '';
+            document.getElementById('custoCustoFixo').value = '0';
+            document.getElementById('custoCustoVariavel').value = '0';
+            document.getElementById('custoObservacoes').value = '';
+        }
+
+        modal.classList.add('active');
+    }
+
+    async carregarCusto(id) {
+        try {
+            const custos = await db.listarCustos({});
+            const custo = custos.find(c => c.id === id);
+
+            if (!custo) {
+                this.showNotification('Custo não encontrado', 'error');
+                return;
+            }
+
+            document.getElementById('custoId').value = custo.id;
+            document.getElementById('custoRepositor').value = custo.rep_id;
+            document.getElementById('custoCompetencia').value = custo.competencia;
+            document.getElementById('custoCustoFixo').value = custo.custo_fixo;
+            document.getElementById('custoCustoVariavel').value = custo.custo_variavel;
+            document.getElementById('custoObservacoes').value = custo.observacoes;
+        } catch (error) {
+            console.error('Erro ao carregar custo:', error);
+            this.showNotification('Erro ao carregar custo: ' + error.message, 'error');
+        }
+    }
+
+    async salvarCusto() {
+        try {
+            const id = document.getElementById('custoId')?.value || null;
+            const repId = document.getElementById('custoRepositor')?.value;
+            const competencia = document.getElementById('custoCompetencia')?.value;
+            const custoFixo = parseFloat(document.getElementById('custoCustoFixo')?.value || 0);
+            const custoVariavel = parseFloat(document.getElementById('custoCustoVariavel')?.value || 0);
+            const observacoes = document.getElementById('custoObservacoes')?.value || '';
+
+            if (!repId) {
+                this.showNotification('Selecione um repositor', 'warning');
+                return;
+            }
+
+            if (!competencia) {
+                this.showNotification('Selecione a competência', 'warning');
+                return;
+            }
+
+            const result = await db.salvarCusto({
+                id: id ? parseInt(id) : null,
+                repId: parseInt(repId),
+                competencia,
+                custoFixo,
+                custoVariavel,
+                observacoes
+            });
+
+            const mensagem = result.action === 'created' ?
+                'Custo cadastrado com sucesso!' :
+                'Custo atualizado com sucesso!';
+
+            this.showNotification(mensagem, 'success');
+            this.fecharModalCusto();
+            await this.buscarCustos();
+        } catch (error) {
+            console.error('Erro ao salvar custo:', error);
+            this.showNotification('Erro ao salvar custo: ' + error.message, 'error');
+        }
+    }
+
+    editarCusto(id) {
+        this.abrirModalCusto(id);
+    }
+
+    async excluirCusto(id) {
+        if (!confirm('Tem certeza que deseja excluir este custo?')) {
+            return;
+        }
+
+        try {
+            await db.excluirCusto(id);
+            this.showNotification('Custo excluído com sucesso!', 'success');
+            await this.buscarCustos();
+        } catch (error) {
+            console.error('Erro ao excluir custo:', error);
+            this.showNotification('Erro ao excluir custo: ' + error.message, 'error');
+        }
+    }
+
+    fecharModalCusto() {
+        const modal = document.getElementById('modalCusto');
+        if (modal) {
+            modal.classList.remove('active');
         }
     }
 
