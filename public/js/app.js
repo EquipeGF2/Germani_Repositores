@@ -468,6 +468,8 @@ class App {
                 await this.inicializarCadastroRateio();
             } else if (pageName === 'custos-repositor') {
                 await this.inicializarCustosRepositor();
+            } else if (pageName === 'custos-grid') {
+                await this.inicializarCustosGrid();
             }
         } catch (error) {
             console.error('Erro ao carregar página:', error);
@@ -4413,6 +4415,387 @@ class App {
         const modal = document.getElementById('modalCusto');
         if (modal) {
             modal.classList.remove('active');
+        }
+    }
+
+    // ==================== GRID DE CUSTOS ====================
+
+    custosGridState = {
+        ano: new Date().getFullYear(),
+        dadosOriginais: [],
+        alteracoes: {}, // { 'repId_mes': valor }
+        anoAtual: new Date().getFullYear(),
+        mesAtual: new Date().getMonth() + 1
+    };
+
+    async inicializarCustosGrid() {
+        const btnCarregar = document.getElementById('btnCarregarGrid');
+        const btnSalvar = document.getElementById('btnSalvarGrid');
+        const btnBaixarModelo = document.getElementById('btnBaixarModelo');
+        const btnImportar = document.getElementById('btnImportarExcel');
+        const btnProcessar = document.getElementById('btnProcessarExcel');
+
+        if (btnCarregar) {
+            btnCarregar.addEventListener('click', () => this.carregarCustosGrid());
+        }
+
+        if (btnSalvar) {
+            btnSalvar.addEventListener('click', () => this.salvarCustosGrid());
+        }
+
+        if (btnBaixarModelo) {
+            btnBaixarModelo.addEventListener('click', () => this.baixarModeloExcel());
+        }
+
+        if (btnImportar) {
+            btnImportar.addEventListener('click', () => this.abrirModalImportarExcel());
+        }
+
+        if (btnProcessar) {
+            btnProcessar.addEventListener('click', () => this.processarExcel());
+        }
+
+        // Auto-carregar no ano atual
+        this.carregarCustosGrid();
+    }
+
+    async carregarCustosGrid() {
+        try {
+            const ano = parseInt(document.getElementById('filtroGridAno')?.value || new Date().getFullYear());
+            this.custosGridState.ano = ano;
+
+            const dados = await db.listarCustosGrid(ano);
+            this.custosGridState.dadosOriginais = dados;
+            this.custosGridState.alteracoes = {};
+
+            this.renderizarCustosGrid(dados);
+            this.atualizarContadorAlteracoes();
+        } catch (error) {
+            console.error('Erro ao carregar grid de custos:', error);
+            this.showNotification('Erro ao carregar grid: ' + error.message, 'error');
+        }
+    }
+
+    renderizarCustosGrid(dados) {
+        const container = document.getElementById('gridCustosContainer');
+        if (!container) return;
+
+        if (!dados || dados.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">📋</div>
+                    <p>Nenhum repositor encontrado</p>
+                </div>
+            `;
+            return;
+        }
+
+        const meses = [
+            { num: 1, nome: 'Jan' },
+            { num: 2, nome: 'Fev' },
+            { num: 3, nome: 'Mar' },
+            { num: 4, nome: 'Abr' },
+            { num: 5, nome: 'Mai' },
+            { num: 6, nome: 'Jun' },
+            { num: 7, nome: 'Jul' },
+            { num: 8, nome: 'Ago' },
+            { num: 9, nome: 'Set' },
+            { num: 10, nome: 'Out' },
+            { num: 11, nome: 'Nov' },
+            { num: 12, nome: 'Dez' }
+        ];
+
+        let html = `
+            <table class="custos-grid-table">
+                <thead>
+                    <tr>
+                        <th>Repositor</th>
+                        ${meses.map(m => `<th>${m.nome}</th>`).join('')}
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        dados.forEach(repo => {
+            html += `
+                <tr>
+                    <td>
+                        ${repo.rep_id} - ${repo.repositor_nome}
+                        <button class="btn-replicar" onclick="window.app.mostrarReplicarValor(${repo.rep_id})" title="Replicar valor para meses seguintes">
+                            ↪️ Replicar
+                        </button>
+                    </td>
+            `;
+
+            meses.forEach(m => {
+                const valorAtual = repo.meses[m.num]?.custo_total || 0;
+                const key = `${repo.rep_id}_${m.num}`;
+                const valorAlterado = this.custosGridState.alteracoes[key];
+                const valor = valorAlterado !== undefined ? valorAlterado : valorAtual;
+                const editavel = this.isMesEditavel(m.num);
+                const classModified = valorAlterado !== undefined ? 'modified' : '';
+
+                html += `
+                    <td>
+                        <input
+                            type="number"
+                            class="cell-input ${classModified}"
+                            data-rep-id="${repo.rep_id}"
+                            data-mes="${m.num}"
+                            value="${valor}"
+                            ${editavel ? '' : 'disabled'}
+                            step="0.01"
+                            min="0"
+                            onchange="window.app.onCelulaCustoChanged(this, ${repo.rep_id}, ${m.num})"
+                        />
+                    </td>
+                `;
+            });
+
+            html += `</tr>`;
+        });
+
+        html += `
+                </tbody>
+            </table>
+        `;
+
+        container.innerHTML = html;
+    }
+
+    isMesEditavel(mes) {
+        const { ano, anoAtual, mesAtual } = this.custosGridState;
+
+        if (ano < anoAtual) {
+            return false; // Ano passado: tudo bloqueado
+        }
+
+        if (ano > anoAtual) {
+            return true; // Ano futuro: tudo editável
+        }
+
+        // Ano atual: só mês atual e futuros
+        return mes >= mesAtual;
+    }
+
+    onCelulaCustoChanged(input, repId, mes) {
+        const novoValor = parseFloat(input.value) || 0;
+        const key = `${repId}_${mes}`;
+
+        // Buscar valor original
+        const repo = this.custosGridState.dadosOriginais.find(r => r.rep_id === repId);
+        const valorOriginal = repo?.meses[mes]?.custo_total || 0;
+
+        if (novoValor !== valorOriginal) {
+            // Marcar como alterado
+            this.custosGridState.alteracoes[key] = novoValor;
+            input.classList.add('modified');
+        } else {
+            // Remover alteração
+            delete this.custosGridState.alteracoes[key];
+            input.classList.remove('modified');
+        }
+
+        this.atualizarContadorAlteracoes();
+    }
+
+    atualizarContadorAlteracoes() {
+        const qtd = Object.keys(this.custosGridState.alteracoes).length;
+        const btnSalvar = document.getElementById('btnSalvarGrid');
+        const infoPendentes = document.getElementById('gridInfoPendentes');
+        const contador = document.getElementById('gridContadorPendentes');
+
+        if (btnSalvar) {
+            btnSalvar.disabled = qtd === 0;
+        }
+
+        if (infoPendentes) {
+            infoPendentes.style.display = qtd > 0 ? 'block' : 'none';
+        }
+
+        if (contador) {
+            contador.textContent = qtd;
+        }
+    }
+
+    async salvarCustosGrid() {
+        try {
+            const alteracoes = this.custosGridState.alteracoes;
+            const qtd = Object.keys(alteracoes).length;
+
+            if (qtd === 0) {
+                this.showNotification('Nenhuma alteração para salvar', 'warning');
+                return;
+            }
+
+            // Confirmar
+            if (!confirm(`Salvar ${qtd} alteração(ões)?`)) {
+                return;
+            }
+
+            // Montar array de custos
+            const custos = [];
+            for (const [key, valor] of Object.entries(alteracoes)) {
+                const [repId, mes] = key.split('_');
+                custos.push({
+                    rep_id: parseInt(repId),
+                    ano: this.custosGridState.ano,
+                    mes: parseInt(mes),
+                    valor: parseFloat(valor)
+                });
+            }
+
+            // Salvar
+            const result = await db.salvarCustosEmLote(custos);
+
+            this.showNotification(`${result.salvos} custo(s) salvos com sucesso!`, 'success');
+
+            // Recarregar
+            await this.carregarCustosGrid();
+        } catch (error) {
+            console.error('Erro ao salvar custos em lote:', error);
+            this.showNotification('Erro ao salvar: ' + error.message, 'error');
+        }
+    }
+
+    mostrarReplicarValor(repId) {
+        const mesOrigem = prompt('Digite o número do mês origem (1-12) para replicar o valor:');
+
+        if (!mesOrigem || isNaN(mesOrigem)) {
+            return;
+        }
+
+        const mes = parseInt(mesOrigem);
+
+        if (mes < 1 || mes > 12) {
+            this.showNotification('Mês inválido. Digite um número entre 1 e 12.', 'error');
+            return;
+        }
+
+        // Buscar o valor do mês origem
+        const input = document.querySelector(`input[data-rep-id="${repId}"][data-mes="${mes}"]`);
+        if (!input) {
+            this.showNotification('Célula não encontrada', 'error');
+            return;
+        }
+
+        const valorOrigem = parseFloat(input.value) || 0;
+
+        // Replicar para meses seguintes editáveis
+        for (let m = mes + 1; m <= 12; m++) {
+            if (this.isMesEditavel(m)) {
+                const inputDestino = document.querySelector(`input[data-rep-id="${repId}"][data-mes="${m}"]`);
+                if (inputDestino && !inputDestino.disabled) {
+                    inputDestino.value = valorOrigem;
+                    this.onCelulaCustoChanged(inputDestino, repId, m);
+                }
+            }
+        }
+
+        this.showNotification(`Valor R$ ${valorOrigem.toFixed(2)} replicado para os meses seguintes`, 'success');
+    }
+
+    baixarModeloExcel() {
+        try {
+            // Criar planilha modelo
+            const dados = this.custosGridState.dadosOriginais;
+            const ano = this.custosGridState.ano;
+
+            const rows = [['rep_id', 'ano', 'mes', 'valor']];
+
+            dados.forEach(repo => {
+                for (let mes = 1; mes <= 12; mes++) {
+                    const valor = repo.meses[mes]?.custo_total || 0;
+                    rows.push([repo.rep_id, ano, mes, valor]);
+                }
+            });
+
+            // Criar worksheet
+            const ws = XLSX.utils.aoa_to_sheet(rows);
+
+            // Criar workbook
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Custos');
+
+            // Baixar
+            XLSX.writeFile(wb, `custos_modelo_${ano}.xlsx`);
+
+            this.showNotification('Modelo Excel baixado com sucesso!', 'success');
+        } catch (error) {
+            console.error('Erro ao gerar Excel:', error);
+            this.showNotification('Erro ao gerar Excel: ' + error.message, 'error');
+        }
+    }
+
+    abrirModalImportarExcel() {
+        const modal = document.getElementById('modalImportarExcel');
+        if (modal) {
+            document.getElementById('arquivoExcel').value = '';
+            modal.classList.add('active');
+        }
+    }
+
+    fecharModalImportarExcel() {
+        const modal = document.getElementById('modalImportarExcel');
+        if (modal) {
+            modal.classList.remove('active');
+        }
+    }
+
+    async processarExcel() {
+        try {
+            const input = document.getElementById('arquivoExcel');
+            const file = input?.files[0];
+
+            if (!file) {
+                this.showNotification('Selecione um arquivo', 'warning');
+                return;
+            }
+
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+
+                    // Ler primeira planilha
+                    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const json = XLSX.utils.sheet_to_json(worksheet);
+
+                    // Processar dados
+                    let importados = 0;
+
+                    json.forEach(row => {
+                        const repId = parseInt(row.rep_id);
+                        const mes = parseInt(row.mes);
+                        const valor = parseFloat(row.valor);
+
+                        if (!repId || !mes || isNaN(valor)) {
+                            return;
+                        }
+
+                        // Atualizar célula
+                        const input = document.querySelector(`input[data-rep-id="${repId}"][data-mes="${mes}"]`);
+                        if (input && !input.disabled) {
+                            input.value = valor;
+                            this.onCelulaCustoChanged(input, repId, mes);
+                            importados++;
+                        }
+                    });
+
+                    this.fecharModalImportarExcel();
+                    this.showNotification(`${importados} célula(s) importada(s). Clique em Salvar para gravar.`, 'success');
+                } catch (error) {
+                    console.error('Erro ao processar Excel:', error);
+                    this.showNotification('Erro ao processar arquivo: ' + error.message, 'error');
+                }
+            };
+
+            reader.readAsArrayBuffer(file);
+        } catch (error) {
+            console.error('Erro ao importar Excel:', error);
+            this.showNotification('Erro ao importar: ' + error.message, 'error');
         }
     }
 

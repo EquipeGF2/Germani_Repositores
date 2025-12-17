@@ -1394,6 +1394,181 @@ export const pages = {
         `;
     },
 
+    'custos-grid': async () => {
+        const repositores = await db.getAllRepositors();
+        const anoAtual = new Date().getFullYear();
+        const anos = [];
+        for (let i = anoAtual - 2; i <= anoAtual + 2; i++) {
+            anos.push(i);
+        }
+
+        const meses = [
+            { num: 1, nome: 'Jan' },
+            { num: 2, nome: 'Fev' },
+            { num: 3, nome: 'Mar' },
+            { num: 4, nome: 'Abr' },
+            { num: 5, nome: 'Mai' },
+            { num: 6, nome: 'Jun' },
+            { num: 7, nome: 'Jul' },
+            { num: 8, nome: 'Ago' },
+            { num: 9, nome: 'Set' },
+            { num: 10, nome: 'Out' },
+            { num: 11, nome: 'Nov' },
+            { num: 12, nome: 'Dez' }
+        ];
+
+        return `
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h3 class="card-title">Grid de Custos - Formato Excel</h3>
+                        <p class="text-muted" style="margin: 4px 0 0;">
+                            Edição em lote de custos mensais por repositor • Somente meses do mês vigente em diante são editáveis
+                        </p>
+                    </div>
+                    <div class="card-actions" style="gap: 8px;">
+                        <button class="btn btn-secondary btn-sm" id="btnBaixarModelo" title="Baixar modelo Excel">📥 Baixar Modelo</button>
+                        <button class="btn btn-secondary btn-sm" id="btnImportarExcel" title="Importar planilha Excel">📤 Importar Excel</button>
+                        <button class="btn btn-primary btn-sm" id="btnSalvarGrid" disabled>💾 Salvar Alterações</button>
+                    </div>
+                </div>
+
+                <div class="card-body">
+                    <div class="filter-bar">
+                        <div class="filter-group">
+                            <label for="filtroGridAno">Ano</label>
+                            <select id="filtroGridAno">
+                                ${anos.map(ano => `<option value="${ano}" ${ano === anoAtual ? 'selected' : ''}>${ano}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="filter-group" style="display: flex; align-items: flex-end;">
+                            <button class="btn btn-secondary" id="btnCarregarGrid">🔍 Carregar</button>
+                        </div>
+                    </div>
+
+                    <div id="gridCustosContainer" style="margin-top: 1rem; overflow-x: auto;">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📊</div>
+                            <p>Selecione o ano e clique em "Carregar" para visualizar o grid de custos</p>
+                        </div>
+                    </div>
+
+                    <div id="gridInfoPendentes" style="display: none; margin-top: 1rem; padding: 12px; background: #fff3cd; border-radius: 4px; border-left: 4px solid #ffc107;">
+                        <strong>⚠️ Alterações Pendentes:</strong> <span id="gridContadorPendentes">0</span> célula(s) modificada(s). Clique em "Salvar Alterações" para gravar no banco de dados.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal para importar Excel -->
+            <div class="modal" id="modalImportarExcel">
+                <div class="modal-content" style="max-width: 500px;">
+                    <div class="modal-header">
+                        <h3>Importar Planilha Excel</h3>
+                        <button class="modal-close" onclick="window.app.fecharModalImportarExcel()">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label for="arquivoExcel">Arquivo Excel (XLSX ou CSV)</label>
+                            <input type="file" id="arquivoExcel" class="form-control" accept=".xlsx,.xls,.csv">
+                            <small class="text-muted">
+                                O arquivo deve conter as colunas: rep_id, ano, mes, valor
+                            </small>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" onclick="window.app.fecharModalImportarExcel()">Cancelar</button>
+                        <button class="btn btn-primary" id="btnProcessarExcel">Processar</button>
+                    </div>
+                </div>
+            </div>
+
+            <style>
+                .custos-grid-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 13px;
+                    background: white;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                }
+
+                .custos-grid-table thead th {
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    padding: 12px 8px;
+                    text-align: center;
+                    font-weight: 600;
+                    border: 1px solid #5a67d8;
+                    position: sticky;
+                    top: 0;
+                    z-index: 10;
+                }
+
+                .custos-grid-table thead th:first-child {
+                    text-align: left;
+                    min-width: 200px;
+                    position: sticky;
+                    left: 0;
+                    z-index: 11;
+                }
+
+                .custos-grid-table tbody td {
+                    border: 1px solid #e2e8f0;
+                    padding: 0;
+                }
+
+                .custos-grid-table tbody td:first-child {
+                    padding: 8px;
+                    font-weight: 500;
+                    background: #f7fafc;
+                    position: sticky;
+                    left: 0;
+                    z-index: 5;
+                    border-right: 2px solid #cbd5e0;
+                }
+
+                .custos-grid-table .cell-input {
+                    width: 100%;
+                    border: none;
+                    padding: 8px;
+                    text-align: right;
+                    font-family: 'Courier New', monospace;
+                    background: transparent;
+                }
+
+                .custos-grid-table .cell-input:focus {
+                    outline: 2px solid #4299e1;
+                    background: #ebf8ff;
+                }
+
+                .custos-grid-table .cell-input:disabled {
+                    background: #f7fafc;
+                    color: #a0aec0;
+                    cursor: not-allowed;
+                }
+
+                .custos-grid-table .cell-input.modified {
+                    background: #fef5e7;
+                    border-left: 3px solid #f39c12;
+                }
+
+                .custos-grid-table .btn-replicar {
+                    padding: 4px 8px;
+                    font-size: 11px;
+                    background: #48bb78;
+                    color: white;
+                    border: none;
+                    border-radius: 3px;
+                    cursor: pointer;
+                    margin-left: 8px;
+                }
+
+                .custos-grid-table .btn-replicar:hover {
+                    background: #38a169;
+                }
+            </style>
+        `;
+    },
+
     'estrutura-banco-comercial': async () => {
         const resultado = await db.getEstruturaBancoComercial();
 
