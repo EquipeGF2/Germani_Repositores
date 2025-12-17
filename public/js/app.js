@@ -4505,28 +4505,34 @@ class App {
             { num: 12, nome: 'Dez' }
         ];
 
+        // Calcular totais mensais
+        const totaisMensais = {};
+        meses.forEach(m => {
+            totaisMensais[m.num] = 0;
+        });
+
         let html = `
             <table class="custos-grid-table">
                 <thead>
                     <tr>
                         <th>Repositor</th>
                         ${meses.map(m => `<th>${m.nome}</th>`).join('')}
+                        <th>Total</th>
+                        <th>Ações</th>
                     </tr>
                 </thead>
                 <tbody>
         `;
 
         dados.forEach(repo => {
+            let totalRepositor = 0;
+
             html += `
                 <tr>
-                    <td>
-                        ${repo.rep_id} - ${repo.repositor_nome}
-                        <button class="btn-replicar" onclick="window.app.mostrarReplicarValor(${repo.rep_id})" title="Replicar valor para meses seguintes">
-                            ↪️ Replicar
-                        </button>
-                    </td>
+                    <td>${repo.rep_id} - ${repo.repositor_nome}</td>
             `;
 
+            // Células de meses
             meses.forEach(m => {
                 const valorAtual = repo.meses[m.num]?.custo_total || 0;
                 const key = `${repo.rep_id}_${m.num}`;
@@ -4534,6 +4540,9 @@ class App {
                 const valor = valorAlterado !== undefined ? valorAlterado : valorAtual;
                 const editavel = this.isMesEditavel(m.num);
                 const classModified = valorAlterado !== undefined ? 'modified' : '';
+
+                totalRepositor += parseFloat(valor) || 0;
+                totaisMensais[m.num] += parseFloat(valor) || 0;
 
                 html += `
                     <td>
@@ -4552,8 +4561,38 @@ class App {
                 `;
             });
 
+            // Coluna de Total do Repositor
+            html += `<td class="total-col">${this.formatarMoeda(totalRepositor)}</td>`;
+
+            // Coluna de Ações
+            html += `
+                <td class="acoes-col">
+                    <button class="btn-acoes btn-replicar" onclick="window.app.mostrarReplicarValor(${repo.rep_id})" title="Replicar valor">
+                        ↪️ Replicar
+                    </button>
+                    <button class="btn-acoes btn-limpar" onclick="window.app.limparRepositor(${repo.rep_id})" title="Limpar todos os valores">
+                        🗑️ Limpar
+                    </button>
+                </td>
+            `;
+
             html += `</tr>`;
         });
+
+        // Linha de Totais Mensais
+        let totalGeral = 0;
+        html += `<tr class="total-row">`;
+        html += `<td><strong>TOTAL</strong></td>`;
+
+        meses.forEach(m => {
+            const total = totaisMensais[m.num];
+            totalGeral += total;
+            html += `<td>${this.formatarMoeda(total)}</td>`;
+        });
+
+        html += `<td>${this.formatarMoeda(totalGeral)}</td>`;
+        html += `<td></td>`; // Coluna de ações vazia
+        html += `</tr>`;
 
         html += `
                 </tbody>
@@ -4693,6 +4732,28 @@ class App {
         }
 
         this.showNotification(`Valor R$ ${valorOrigem.toFixed(2)} replicado para os meses seguintes`, 'success');
+    }
+
+    limparRepositor(repId) {
+        if (!confirm('Tem certeza que deseja limpar TODOS os valores deste repositor?\n\nEsta ação não pode ser desfeita até que você clique em Salvar.')) {
+            return;
+        }
+
+        let limpas = 0;
+
+        // Limpar todos os meses editáveis
+        for (let mes = 1; mes <= 12; mes++) {
+            if (this.isMesEditavel(mes)) {
+                const input = document.querySelector(`input[data-rep-id="${repId}"][data-mes="${mes}"]`);
+                if (input && !input.disabled) {
+                    input.value = 0;
+                    this.onCelulaCustoChanged(input, repId, mes);
+                    limpas++;
+                }
+            }
+        }
+
+        this.showNotification(`${limpas} célula(s) zerada(s). Clique em Salvar para confirmar.`, 'success');
     }
 
     baixarModeloExcel() {

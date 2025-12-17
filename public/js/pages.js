@@ -1492,12 +1492,12 @@ export const pages = {
                 }
 
                 .custos-grid-table thead th {
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
                     color: white;
                     padding: 12px 8px;
                     text-align: center;
                     font-weight: 600;
-                    border: 1px solid #5a67d8;
+                    border: 1px solid #b91c1c;
                     position: sticky;
                     top: 0;
                     z-index: 10;
@@ -1512,18 +1512,19 @@ export const pages = {
                 }
 
                 .custos-grid-table tbody td {
-                    border: 1px solid #e2e8f0;
+                    border: 1px solid #fecaca;
                     padding: 0;
+                    background: white;
                 }
 
                 .custos-grid-table tbody td:first-child {
                     padding: 8px;
                     font-weight: 500;
-                    background: #f7fafc;
+                    background: #fef2f2;
                     position: sticky;
                     left: 0;
                     z-index: 5;
-                    border-right: 2px solid #cbd5e0;
+                    border-right: 2px solid #fca5a5;
                 }
 
                 .custos-grid-table .cell-input {
@@ -1536,34 +1537,77 @@ export const pages = {
                 }
 
                 .custos-grid-table .cell-input:focus {
-                    outline: 2px solid #4299e1;
-                    background: #ebf8ff;
+                    outline: 2px solid #dc2626;
+                    background: #fee2e2;
                 }
 
                 .custos-grid-table .cell-input:disabled {
-                    background: #f7fafc;
-                    color: #a0aec0;
+                    background: #f9fafb;
+                    color: #9ca3af;
                     cursor: not-allowed;
                 }
 
                 .custos-grid-table .cell-input.modified {
                     background: #fef5e7;
-                    border-left: 3px solid #f39c12;
+                    border-left: 3px solid #f59e0b;
                 }
 
-                .custos-grid-table .btn-replicar {
+                .custos-grid-table .total-row {
+                    background: #fef2f2;
+                    font-weight: 600;
+                }
+
+                .custos-grid-table .total-row td {
+                    padding: 12px 8px;
+                    text-align: right;
+                    border-top: 2px solid #dc2626;
+                    color: #991b1b;
+                }
+
+                .custos-grid-table .total-row td:first-child {
+                    text-align: left;
+                }
+
+                .custos-grid-table .total-col {
+                    font-weight: 600;
+                    text-align: right;
+                    padding: 8px;
+                    background: #fef2f2;
+                    color: #991b1b;
+                }
+
+                .custos-grid-table .acoes-col {
+                    text-align: center;
+                    padding: 4px;
+                    white-space: nowrap;
+                }
+
+                .custos-grid-table .btn-acoes {
                     padding: 4px 8px;
                     font-size: 11px;
-                    background: #48bb78;
                     color: white;
                     border: none;
                     border-radius: 3px;
                     cursor: pointer;
-                    margin-left: 8px;
+                    margin: 2px;
+                    display: block;
+                    width: 100%;
+                }
+
+                .custos-grid-table .btn-replicar {
+                    background: #dc2626;
                 }
 
                 .custos-grid-table .btn-replicar:hover {
-                    background: #38a169;
+                    background: #b91c1c;
+                }
+
+                .custos-grid-table .btn-limpar {
+                    background: #6b7280;
+                }
+
+                .custos-grid-table .btn-limpar:hover {
+                    background: #4b5563;
                 }
             </style>
         `;
