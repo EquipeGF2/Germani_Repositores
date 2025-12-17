@@ -2940,6 +2940,138 @@ class TursoDatabase {
             throw error;
         }
     }
+
+    async listarCustosGrid(ano) {
+        try {
+            await this.connect();
+
+            if (!ano) {
+                throw new Error('Ano é obrigatório');
+            }
+
+            // Buscar todos os repositores ativos
+            const repositores = await this.mainClient.execute({
+                sql: 'SELECT repo_cod, repo_nome FROM cad_repositor ORDER BY repo_nome',
+                args: []
+            });
+
+            // Buscar todos os custos do ano
+            const custos = await this.mainClient.execute({
+                sql: `
+                    SELECT
+                        cc_rep_id,
+                        cc_competencia,
+                        cc_custo_fixo,
+                        cc_custo_variavel
+                    FROM cc_custos_repositor_mensal
+                    WHERE cc_competencia LIKE ?
+                `,
+                args: [`${ano}-%`]
+            });
+
+            // Criar mapa de custos por repositor e mês
+            const custosMap = {};
+            custos.rows.forEach(row => {
+                const mes = parseInt(row.cc_competencia.split('-')[1]);
+                const key = `${row.cc_rep_id}_${mes}`;
+                custosMap[key] = {
+                    custo_fixo: row.cc_custo_fixo || 0,
+                    custo_variavel: row.cc_custo_variavel || 0,
+                    custo_total: (row.cc_custo_fixo || 0) + (row.cc_custo_variavel || 0)
+                };
+            });
+
+            // Montar estrutura de grid
+            const grid = repositores.rows.map(repo => {
+                const meses = {};
+                for (let mes = 1; mes <= 12; mes++) {
+                    const key = `${repo.repo_cod}_${mes}`;
+                    meses[mes] = custosMap[key] || {
+                        custo_fixo: 0,
+                        custo_variavel: 0,
+                        custo_total: 0
+                    };
+                }
+
+                return {
+                    rep_id: repo.repo_cod,
+                    repositor_nome: repo.repo_nome,
+                    meses
+                };
+            });
+
+            return grid;
+        } catch (error) {
+            console.error('Erro ao listar custos em grid:', error);
+            throw error;
+        }
+    }
+
+    async salvarCustosEmLote(custos = []) {
+        try {
+            await this.connect();
+
+            if (!Array.isArray(custos) || custos.length === 0) {
+                throw new Error('Lista de custos é obrigatória');
+            }
+
+            let salvos = 0;
+
+            for (const custo of custos) {
+                const { rep_id, ano, mes, valor } = custo;
+
+                if (!rep_id || !ano || !mes) {
+                    console.warn('Custo inválido ignorado:', custo);
+                    continue;
+                }
+
+                // Validar ano/mês
+                if (mes < 1 || mes > 12) {
+                    throw new Error(`Mês inválido: ${mes}`);
+                }
+
+                // Montar competência YYYY-MM
+                const competencia = `${ano}-${String(mes).padStart(2, '0')}`;
+
+                // Verificar se já existe
+                const existente = await this.mainClient.execute({
+                    sql: 'SELECT cc_id FROM cc_custos_repositor_mensal WHERE cc_rep_id = ? AND cc_competencia = ?',
+                    args: [rep_id, competencia]
+                });
+
+                if (existente.rows.length > 0) {
+                    // Atualizar
+                    await this.mainClient.execute({
+                        sql: `
+                            UPDATE cc_custos_repositor_mensal
+                            SET cc_custo_fixo = ?,
+                                cc_custo_variavel = 0,
+                                cc_atualizado_em = CURRENT_TIMESTAMP
+                            WHERE cc_rep_id = ? AND cc_competencia = ?
+                        `,
+                        args: [valor, rep_id, competencia]
+                    });
+                } else {
+                    // Inserir
+                    await this.mainClient.execute({
+                        sql: `
+                            INSERT INTO cc_custos_repositor_mensal (
+                                cc_rep_id, cc_competencia, cc_custo_fixo, cc_custo_variavel
+                            ) VALUES (?, ?, ?, 0)
+                        `,
+                        args: [rep_id, competencia, valor]
+                    });
+                }
+
+                salvos++;
+            }
+
+            return { success: true, salvos };
+        } catch (error) {
+            console.error('Erro ao salvar custos em lote:', error);
+            throw error;
+        }
+    }
 }
 
 export const db = new TursoDatabase();
