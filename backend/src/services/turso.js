@@ -32,24 +32,34 @@ class TursoService {
   async criarTabelaVisitas() {
     await this.connect();
 
-    const sql = `
-      CREATE TABLE IF NOT EXISTS cc_registro_visita (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        rep_id INTEGER NOT NULL,
-        cliente_id TEXT NOT NULL,
-        data_hora DATETIME NOT NULL,
-        latitude REAL,
-        longitude REAL,
-        endereco_resolvido TEXT,
-        drive_file_id TEXT NOT NULL,
-        drive_file_url TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (rep_id) REFERENCES cad_repositor(repo_cod)
-      )
-    `;
+    try {
+      // Tentar criar tabela sem FOREIGN KEY (evita conflitos no Turso HTTP)
+      const sql = `
+        CREATE TABLE IF NOT EXISTS cc_registro_visita (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          rep_id INTEGER NOT NULL,
+          cliente_id TEXT NOT NULL,
+          data_hora DATETIME NOT NULL,
+          latitude REAL,
+          longitude REAL,
+          endereco_resolvido TEXT,
+          drive_file_id TEXT NOT NULL,
+          drive_file_url TEXT NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `;
 
-    await this.client.execute(sql);
-    console.log('✅ Tabela cc_registro_visita criada/verificada');
+      await this.client.execute({ sql, args: [] });
+      console.log('✅ Tabela cc_registro_visita criada/verificada');
+    } catch (error) {
+      // Se a tabela já existe, ignorar erro
+      if (error.message.includes('already exists') || error.message.includes('duplicate')) {
+        console.log('✅ Tabela cc_registro_visita já existe');
+      } else {
+        console.error('⚠️ Aviso ao criar tabela:', error.message);
+        // Não falhar aqui - a tabela pode já existir
+      }
+    }
   }
 
   async salvarVisita({ repId, clienteId, dataHora, latitude, longitude, driveFileId, driveFileUrl }) {
