@@ -12,12 +12,14 @@ const app = express();
 app.use(cors({
   origin: [
     config.frontendUrl,
+    'https://equipegf2.github.io',
     'http://localhost:8080',
     'http://localhost:3000',
     'http://127.0.0.1:8080'
   ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  credentials: true
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 // JSON parser
