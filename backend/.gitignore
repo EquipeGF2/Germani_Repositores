@@ -1,6 +1,5 @@
 # Dependências
 node_modules/
-package-lock.json
 yarn.lock
 
 # Variáveis de ambiente
@@ -12,6 +11,7 @@ yarn.lock
 credentials/
 *.json
 !package.json
+!package-lock.json
 
 # Logs
 logs/
