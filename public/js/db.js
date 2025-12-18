@@ -3077,17 +3077,15 @@ class TursoDatabase {
 
     async carregarRoteiroRepositorDia(repositorId, diaSemana) {
         try {
+            // 1. Buscar roteiro do repositor no banco principal
             const resultado = await this.mainClient.execute({
                 sql: `
                     SELECT DISTINCT
-                        c.cli_codigo,
-                        c.cli_nome,
-                        c.cli_cidade,
-                        c.cli_estado,
-                        cli.rot_ordem_visita
+                        cli.rot_cliente_codigo,
+                        cli.rot_ordem_visita,
+                        rc.rot_ordem_cidade
                     FROM rot_roteiro_cidade rc
                     JOIN rot_roteiro_cliente cli ON cli.rot_cid_id = rc.rot_cid_id
-                    LEFT JOIN tab_cliente c ON c.cli_codigo = cli.rot_cliente_codigo
                     WHERE rc.rot_repositor_id = ?
                       AND rc.rot_dia_semana = ?
                     ORDER BY
@@ -3097,7 +3095,27 @@ class TursoDatabase {
                 args: [repositorId, diaSemana.toString()]
             });
 
-            return resultado.rows || [];
+            if (!resultado.rows || resultado.rows.length === 0) {
+                return [];
+            }
+
+            // 2. Buscar dados dos clientes no banco comercial
+            const codigos = resultado.rows.map(r => r.rot_cliente_codigo);
+            const clientesMap = await this.getClientesPorCodigo(codigos);
+
+            // 3. Combinar dados do roteiro com dados dos clientes
+            const roteiro = resultado.rows.map(r => {
+                const cliente = clientesMap[r.rot_cliente_codigo] || {};
+                return {
+                    cli_codigo: r.rot_cliente_codigo,
+                    cli_nome: cliente.nome || cliente.fantasia || 'Cliente não encontrado',
+                    cli_cidade: cliente.cidade || '',
+                    cli_estado: cliente.estado || '',
+                    rot_ordem_visita: r.rot_ordem_visita
+                };
+            });
+
+            return roteiro;
         } catch (error) {
             console.error('Erro ao carregar roteiro do repositor:', error);
             throw error;
