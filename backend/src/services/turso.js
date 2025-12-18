@@ -2,19 +2,36 @@ import { getDbClient, DatabaseNotConfiguredError } from '../config/db.js';
 
 class TursoService {
   constructor() {
-    this.client = null;
+    try {
+      this.client = getDbClient();
+    } catch (error) {
+      if (error instanceof DatabaseNotConfiguredError) {
+        this.client = null;
+      } else {
+        throw error;
+      }
+    }
   }
 
   getClient() {
     if (!this.client) {
       this.client = getDbClient();
     }
+
     return this.client;
   }
 
   async execute(sql, args = []) {
     if (typeof sql !== 'string') {
-      throw new Error(`SQL_INVALID_TYPE: expected string, got ${typeof sql}`);
+      const error = new TypeError(`SQL_INVALID_TYPE: expected string, got ${typeof sql}`);
+      error.code = 'SQL_INVALID_TYPE';
+      throw error;
+    }
+
+    if (!Array.isArray(args)) {
+      const error = new TypeError(`SQL_INVALID_ARGS: expected array, got ${typeof args}`);
+      error.code = 'SQL_INVALID_ARGS';
+      throw error;
     }
 
     return await this.getClient().execute({ sql, args });
@@ -33,41 +50,28 @@ class TursoService {
     return { id: result.lastInsertRowid };
   }
 
-  async listarVisitas({ repId = null, clienteId = null, dataInicio = null, dataFim = null }) {
-    const filters = [];
-    const args = [];
-
-    if (repId !== null && repId !== undefined) {
-      filters.push('rep_id = ?');
-      args.push(repId);
-    }
-
-    if (clienteId !== null && clienteId !== undefined) {
-      filters.push('cliente_id = ?');
-      args.push(clienteId);
-    }
-
-    if (dataInicio && dataFim) {
-      filters.push('date(data_hora) BETWEEN date(?) AND date(?)');
-      args.push(dataInicio, dataFim);
-    } else if (dataInicio) {
-      filters.push('date(data_hora) >= date(?)');
-      args.push(dataInicio);
-    } else if (dataFim) {
-      filters.push('date(data_hora) <= date(?)');
-      args.push(dataFim);
-    }
-
-    const whereClause = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
-
+  async listarVisitasPorRepEPeriodo(repId, dataInicio, dataFim) {
     const sql = `
       SELECT id, rep_id, cliente_id, data_hora, latitude, longitude, endereco_resolvido, drive_file_id, drive_file_url, created_at
       FROM cc_registro_visita
-      ${whereClause}
+      WHERE rep_id = ?
+        AND date(data_hora) BETWEEN date(?) AND date(?)
       ORDER BY data_hora ASC
     `;
 
-    const result = await this.execute(sql, args);
+    const result = await this.execute(sql, [repId, dataInicio, dataFim]);
+    return result.rows;
+  }
+
+  async listarVisitasPorPeriodo(dataInicio, dataFim) {
+    const sql = `
+      SELECT id, rep_id, cliente_id, data_hora, latitude, longitude, endereco_resolvido, drive_file_id, drive_file_url, created_at
+      FROM cc_registro_visita
+      WHERE date(data_hora) BETWEEN date(?) AND date(?)
+      ORDER BY data_hora ASC
+    `;
+
+    const result = await this.execute(sql, [dataInicio, dataFim]);
     return result.rows;
   }
 

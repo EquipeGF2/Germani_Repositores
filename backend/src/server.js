@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { config } from './config/env.js';
-import { getDbClient, DatabaseNotConfiguredError } from './config/db.js';
+import { getDbClient, initDbClient, DatabaseNotConfiguredError } from './config/db.js';
 import registroRotaRoutes from './routes/registro-rota.js';
 
 const app = express();
@@ -41,16 +41,16 @@ app.use((req, res, next) => {
 app.get('/api/health', async (req, res) => {
   try {
     const db = getDbClient();
-    await db.execute('SELECT 1');
+    await db.execute({ sql: 'SELECT 1', args: [] });
 
     res.json({ ok: true });
   } catch (error) {
     if (error instanceof DatabaseNotConfiguredError) {
-      return res.status(503).json({ ok: false, code: error.code });
+      return res.status(503).json({ ok: false, code: error.code, message: error.message });
     }
 
-    console.error('Erro no health check:', error);
-    res.status(500).json({ ok: false, message: 'Erro ao verificar banco' });
+    console.error('Erro no health check:', error?.stack || error);
+    res.status(500).json({ ok: false, code: 'HEALTH_CHECK_ERROR', message: 'Erro ao verificar banco' });
   }
 });
 
@@ -81,6 +81,8 @@ app.use((err, req, res, next) => {
 async function inicializar() {
   try {
     console.log('🚀 Inicializando servidor...');
+
+    initDbClient();
 
     // Iniciar servidor
     app.listen(config.port, () => {
