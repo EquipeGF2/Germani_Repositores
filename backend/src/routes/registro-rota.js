@@ -118,7 +118,7 @@ router.get('/visitas', async (req, res) => {
 
     res.json({
       success: true,
-      data: visitas
+      visitas: visitas
     });
   } catch (error) {
     console.error('Erro ao consultar visitas:', error);
