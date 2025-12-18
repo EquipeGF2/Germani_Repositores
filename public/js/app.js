@@ -4905,6 +4905,8 @@ class App {
     }
 
     async carregarRoteiroRepositor() {
+        const container = document.getElementById('roteiroContainer');
+
         try {
             const selectRepositor = document.getElementById('registroRepositor');
             const inputData = document.getElementById('registroData');
@@ -4916,6 +4918,14 @@ class App {
                 this.showNotification('Selecione o repositor e a data', 'warning');
                 return;
             }
+
+            // Mostrar loading
+            container.innerHTML = `
+                <div style="text-align:center;padding:40px;">
+                    <div class="spinner"></div>
+                    <p style="margin-top:16px;color:#666;font-size:14px;">Carregando roteiro...</p>
+                </div>
+            `;
 
             // Calcular dia da semana (0=Domingo, 1=Segunda, etc.)
             const data = new Date(dataVisita + 'T12:00:00');
@@ -4930,7 +4940,7 @@ class App {
 
             if (!roteiro || roteiro.length === 0) {
                 this.showNotification('Nenhum cliente no roteiro para este dia', 'info');
-                document.getElementById('roteiroContainer').innerHTML = '<p style="text-align:center;color:#999;margin-top:20px;">Nenhum cliente encontrado</p>';
+                container.innerHTML = '<p style="text-align:center;color:#999;margin-top:20px;">Nenhum cliente encontrado</p>';
                 return;
             }
 
@@ -4938,7 +4948,6 @@ class App {
             const visitasRealizadas = await this.verificarVisitasRealizadas(repId, dataVisita);
 
             // Renderizar roteiro
-            const container = document.getElementById('roteiroContainer');
             container.innerHTML = '';
 
             roteiro.forEach(cliente => {
@@ -5066,7 +5075,7 @@ class App {
             },
             {
                 enableHighAccuracy: true,
-                timeout: 10000,
+                timeout: 20000, // 20 segundos
                 maximumAge: 0
             }
         );
