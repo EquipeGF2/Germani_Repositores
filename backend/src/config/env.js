@@ -16,6 +16,11 @@ export const config = {
   port: process.env.PORT || 3001,
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:8080',
   nodeEnv: process.env.NODE_ENV || 'development',
+  skipMigrations: (() => {
+    const value = process.env.SKIP_MIGRATIONS;
+    if (value === undefined || value === null || value === '') return true;
+    return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
+  })(),
 
   turso: {
     url: process.env.TURSO_DATABASE_URL || process.env.TURSO_MAIN_URL,

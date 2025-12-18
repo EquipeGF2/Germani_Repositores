@@ -23,8 +23,8 @@ router.post('/visitas', async (req, res) => {
     if (!rep_id || !cliente_id || !data_hora || !foto_base64 || !foto_mime) {
       return res.status(400).json({
         ok: false,
-        message: 'Campos obrigatórios ausentes',
-        code: 'INVALID_PAYLOAD'
+        code: 'INVALID_PAYLOAD',
+        message: 'Campos obrigatórios ausentes: rep_id, cliente_id, data_hora, foto_base64 e foto_mime'
       });
     }
 
@@ -52,7 +52,7 @@ router.post('/visitas', async (req, res) => {
     }
 
     if (!googleDriveService.isConfigured()) {
-      return res.status(400).json({ ok: false, code: 'DRIVE_NOT_CONFIGURED' });
+      return res.status(400).json({ ok: false, code: 'DRIVE_NOT_CONFIGURED', message: 'Google Drive não configurado' });
     }
 
     const now = new Date(dataHora);
@@ -91,14 +91,14 @@ router.post('/visitas', async (req, res) => {
     });
   } catch (error) {
     if (error instanceof DatabaseNotConfiguredError) {
-      return res.status(503).json({ ok: false, code: error.code });
+      return res.status(503).json({ ok: false, code: error.code, message: error.message });
     }
 
-    console.error('Erro ao registrar visita:', error);
+    console.error('Erro ao registrar visita:', error?.stack || error);
     res.status(500).json({
       ok: false,
-      message: 'Erro ao registrar visita',
-      details: error.message
+      code: 'REGISTRO_VISITA_ERROR',
+      message: 'Erro ao registrar visita'
     });
   }
 });
@@ -123,11 +123,7 @@ router.get('/visitas', async (req, res) => {
       return res.status(400).json({ ok: false, code: 'INVALID_DATE', message: 'Datas devem estar no formato YYYY-MM-DD' });
     }
 
-    const visitas = await tursoService.listarVisitas({
-      repId: repIdNumber,
-      dataInicio: data_inicio,
-      dataFim: data_fim
-    });
+    const visitas = await tursoService.listarVisitasPorRepEPeriodo(repIdNumber, data_inicio, data_fim);
 
     res.json({
       ok: true,
@@ -135,13 +131,14 @@ router.get('/visitas', async (req, res) => {
     });
   } catch (error) {
     if (error instanceof DatabaseNotConfiguredError) {
-      return res.status(503).json({ ok: false, code: error.code });
+      return res.status(503).json({ ok: false, code: error.code, message: error.message });
     }
 
-    console.error('Erro ao consultar visitas:', error);
+    console.error('Erro ao consultar visitas:', error?.stack || error);
     res.status(500).json({
       ok: false,
-      message: 'Erro ao consultar visitas: ' + error.message
+      code: 'LISTAR_VISITAS_ERROR',
+      message: 'Erro ao consultar visitas'
     });
   }
 });
@@ -156,10 +153,7 @@ router.post('/disparar-resumo', async (req, res) => {
     const dataRef = data_referencia || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
     // Buscar visitas do dia
-    const visitas = await tursoService.listarVisitas({
-      dataInicio: dataRef,
-      dataFim: dataRef
-    });
+    const visitas = await tursoService.listarVisitasPorPeriodo(dataRef, dataRef);
 
     // Enviar e-mail
     const result = await emailService.enviarResumoVisitasDia(dataRef, visitas);

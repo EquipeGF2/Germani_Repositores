@@ -65,6 +65,7 @@ FRONTEND_URL=https://equipegf2.github.io/Germani_Repositores
 # Turso
 TURSO_MAIN_URL=libsql://seu-banco.turso.io
 TURSO_MAIN_TOKEN=seu-token-aqui
+SKIP_MIGRATIONS=true
 
 # Google Drive
 DRIVE_VISITAS_ROOT_ID=1Jdp2ZVLzZxNAzxViZMFc1tUbuBKw-nT_
