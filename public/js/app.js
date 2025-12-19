@@ -4941,110 +4941,107 @@ class App {
     }
 
     async carregarRoteiroRepositor() {
-        const container = document.getElementById('roteiroContainer');
+    const container = document.getElementById('roteiroContainer');
 
-        try {
-            const selectRepositor = document.getElementById('registroRepositor');
-            const inputData = document.getElementById('registroData');
+    try {
+        const selectRepositor = document.getElementById('registroRepositor');
+        const inputData = document.getElementById('registroData');
 
-            const repId = selectRepositor?.value ? parseInt(selectRepositor.value) : null;
-            const dataVisita = inputData?.value;
+        const repId = selectRepositor?.value ? parseInt(selectRepositor.value) : null;
+        const dataVisita = inputData?.value;
 
-            if (!repId || !dataVisita) {
-                this.showNotification('Selecione o repositor e a data', 'warning');
-                return;
-            }
+        if (!repId || !dataVisita) {
+            this.showNotification('Selecione o repositor e a data', 'warning');
+            return;
+        }
 
-            // Mostrar loading
-            container.innerHTML = `
-                <div style="text-align:center;padding:40px;">
-                    <div class="spinner"></div>
-                    <p style="margin-top:16px;color:#666;font-size:14px;">Carregando roteiro...</p>
+        // Mostrar loading
+        container.innerHTML = `
+            <div style="text-align:center;padding:40px;">
+                <div class="spinner"></div>
+                <p style="margin-top:16px;color:#666;font-size:14px;">Carregando roteiro...</p>
+            </div>
+        `;
+
+        // Calcular dia da semana (0=Domingo, 1=Segunda, etc.)
+        const data = new Date(dataVisita + 'T12:00:00');
+        const diaNumero = data.getDay();
+
+        // Converter para formato usado no banco (seg, ter, qua, qui, sex, sab, dom)
+        const diasMap = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+        const diaSemana = diasMap[diaNumero];
+
+        // Carregar roteiro do repositor para aquele dia da semana
+        const roteiro = await db.carregarRoteiroRepositorDia(repId, diaSemana);
+
+        if (!roteiro || roteiro.length === 0) {
+            this.showNotification('Nenhum cliente no roteiro para este dia', 'info');
+            container.innerHTML = '<p style="text-align:center;color:#999;margin-top:20px;">Nenhum cliente encontrado</p>';
+            return;
+        }
+
+        // Helpers
+        const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
+
+        // Verificar visitas já realizadas (e normalizar)
+        const visitasRealizadas = await this.verificarVisitasRealizadas(repId, dataVisita);
+        const visitasPorCliente = new Set((visitasRealizadas || []).map(normalizeClienteId));
+
+        // Renderizar roteiro
+        container.innerHTML = '';
+
+        roteiro.forEach(cliente => {
+            const cliId = normalizeClienteId(cliente.cli_codigo);
+            const cliNome = String(cliente.cli_nome || '');
+
+            const cidadeUF = [cliente.cli_cidade, cliente.cli_estado].filter(Boolean).join(' - ');
+
+            const enderecoPartes = [
+                cliente.cli_endereco || cliente.cli_logradouro || cliente.cli_rua || '',
+                cliente.cli_numero || '',
+                cliente.cli_bairro || ''
+            ].filter(Boolean);
+
+            const enderecoTexto = enderecoPartes.join(', ');
+            const linhaEndereco = [cidadeUF, enderecoTexto].filter(Boolean).join(' • ');
+
+            const visitado = visitasPorCliente.has(cliId);
+
+            const item = document.createElement('div');
+            item.className = 'route-item';
+
+            const nomeEsc = cliNome.replace(/'/g, "\\'");
+            const endEsc = linhaEndereco.replace(/'/g, "\\'");
+
+            item.innerHTML = `
+                <div class="route-item-info">
+                    <div class="route-item-name">${cliId} - ${cliNome}</div>
+                    <div class="route-item-address">${linhaEndereco}</div>
+                </div>
+                <div class="route-item-actions">
+                    <span class="route-status ${visitado ? 'status-visited' : 'status-pending'}">
+                        ${visitado ? 'Visitado' : 'Pendente'}
+                    </span>
+                    ${
+                        !visitado
+                        ? `<button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataVisita}')" class="btn-small">📸 Registrar</button>`
+                        : ''
+                    }
                 </div>
             `;
+            container.appendChild(item);
+        });
 
-            // Calcular dia da semana (0=Domingo, 1=Segunda, etc.)
-            const data = new Date(dataVisita + 'T12:00:00');
-            const diaNumero = data.getDay();
-
-            // Converter para formato usado no banco (seg, ter, qua, qui, sex, sab, dom)
-            const diasMap = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
-            const diaSemana = diasMap[diaNumero];
-
-            // Carregar roteiro do repositor para aquele dia da semana
-            const roteiro = await db.carregarRoteiroRepositorDia(repId, diaSemana);
-
-            if (!roteiro || roteiro.length === 0) {
-                this.showNotification('Nenhum cliente no roteiro para este dia', 'info');
-                container.innerHTML = '<p style="text-align:center;color:#999;margin-top:20px;">Nenhum cliente encontrado</p>';
-                return;
-            }
-
-            // Verificar visitas já realizadas
-            const visitasRealizadas = await this.verificarVisitasRealizadas(repId, dataVisita);
-            const visitasPorCliente = new Set(visitasRealizadas);
-
-            // Renderizar roteiro
-            container.innerHTML = '';
-            
-            const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
-            
-            const visitasPorCliente = new Set((visitasRealizadas || []).map(normalizeClienteId));
-            
-            roteiro.forEach(cliente => {
-                const cliId = normalizeClienteId(cliente.cli_codigo);
-                const cliNome = String(cliente.cli_nome || '');
-            
-                // Monte o endereço de forma resiliente (ajuste os campos conforme seu retorno do DB)
-                const cidadeUF = [cliente.cli_cidade, cliente.cli_estado].filter(Boolean).join(' - ');
-            
-                const enderecoPartes = [
-                    cliente.cli_endereco || cliente.cli_logradouro || cliente.cli_rua || '',
-                    cliente.cli_numero || '',
-                    cliente.cli_bairro || ''
-                ].filter(Boolean);
-            
-                const enderecoTexto = enderecoPartes.join(', ');
-                const linhaEndereco = [cidadeUF, enderecoTexto].filter(Boolean).join(' • ');
-            
-                const visitado = visitasPorCliente.has(cliId);
-            
-                const item = document.createElement('div');
-                item.className = 'route-item';
-            
-                // escape simples pra não quebrar aspas no onclick
-                const nomeEsc = cliNome.replace(/'/g, "\\'");
-                const endEsc = linhaEndereco.replace(/'/g, "\\'");
-            
-                item.innerHTML = `
-                    <div class="route-item-info">
-                        <div class="route-item-name">${cliId} - ${cliNome}</div>
-                        <div class="route-item-address">${linhaEndereco}</div>
-                    </div>
-                    <div class="route-item-actions">
-                        <span class="route-status ${visitado ? 'status-visited' : 'status-pending'}">
-                            ${visitado ? 'Visitado' : 'Pendente'}
-                        </span>
-                        ${
-                            !visitado
-                            ? `<button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataVisita}')" class="btn-small">📸 Registrar</button>`
-                            : ''
-                        }
-                    </div>
-                `;
-                container.appendChild(item);
-            });
-
-
-            this.showNotification(`${roteiro.length} cliente(s) no roteiro`, 'success');
-        } catch (error) {
-            console.error('Erro ao carregar roteiro:', error);
-            this.showNotification('Erro ao carregar roteiro: ' + error.message, 'error');
-            if (container) {
-                container.innerHTML = '<p style="text-align:center;color:#999;margin-top:20px;">Não foi possível carregar o roteiro</p>';
-            }
+        this.showNotification(`${roteiro.length} cliente(s) no roteiro`, 'success');
+    } catch (error) {
+        console.error('Erro ao carregar roteiro:', error);
+        this.showNotification('Erro ao carregar roteiro: ' + error.message, 'error');
+        if (container) {
+            container.innerHTML = '<p style="text-align:center;color:#999;margin-top:20px;">Não foi possível carregar o roteiro</p>';
         }
     }
+}
+
 
     async verificarVisitasRealizadas(repId, dataVisita) {
         let visitas = [];
