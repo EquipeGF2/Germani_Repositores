@@ -46,6 +46,17 @@ function parseDataHoraOrNow(input) {
   return new Date().toISOString();
 }
 
+function dataLocalIso(isoDate) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+
+  return formatter.format(new Date(isoDate));
+}
+
 function getTimeZoneOffsetMs(timeZone, date) {
   const dtf = new Intl.DateTimeFormat('en-US', {
     timeZone,
@@ -129,7 +140,6 @@ router.post('/visitas', async (req, res) => {
     const {
       rep_id,
       cliente_id,
-      data_hora,
       latitude,
       longitude,
       endereco_resolvido,
@@ -141,11 +151,11 @@ router.post('/visitas', async (req, res) => {
       data_planejada
     } = req.body;
 
-    if (!rep_id || !cliente_id || !foto_base64) {
+    if (!rep_id || !cliente_id || !foto_base64 || !tipo || !cliente_nome || !cliente_endereco) {
       return res.status(400).json({
         ok: false,
         code: 'INVALID_PAYLOAD',
-        message: 'Campos obrigatórios ausentes: rep_id, cliente_id, foto_base64'
+        message: 'Campos obrigatórios ausentes: rep_id, cliente_id, tipo, foto_base64, cliente_nome, cliente_endereco'
       });
     }
 
@@ -160,10 +170,22 @@ router.post('/visitas', async (req, res) => {
       return res.status(400).json({ ok: false, message: 'Latitude e longitude são obrigatórias', code: 'LOCATION_REQUIRED' });
     }
 
-    const dataHoraIso = parseDataHoraOrNow(data_hora);
-    const rvTipo = RV_TIPOS.includes(String(tipo).toLowerCase()) ? String(tipo).toLowerCase() : 'campanha';
+    const enderecoSnapshot = String(endereco_resolvido || '').trim();
+    if (!enderecoSnapshot) {
+      return res.status(400).json({ ok: false, code: 'ENDERECO_OBRIGATORIO', message: 'Endereço resolvido é obrigatório' });
+    }
+
+    const tipoNormalizado = String(tipo).toLowerCase();
+    if (!RV_TIPOS.includes(tipoNormalizado)) {
+      return res.status(400).json({ ok: false, code: 'TIPO_INVALIDO', message: 'Tipo de registro inválido' });
+    }
+
+    const dataHoraIso = new Date().toISOString();
+    const rvTipo = tipoNormalizado;
     const clienteIdNorm = normalizeClienteId(cliente_id);
     const dataPlanejadaValida = validarDataPlanejada(data_planejada);
+    const dataReferencia = dataPlanejadaValida || dataLocalIso(dataHoraIso);
+    const { inicioIso, fimIso } = buildUtcRangeFromLocalDates(dataReferencia, dataReferencia);
 
     const repositor = await tursoService.obterRepositor(repIdNumber);
     if (!repositor) {
@@ -177,21 +199,42 @@ router.post('/visitas', async (req, res) => {
     let sessaoId = null;
     let tempoTrabalhoMin = null;
 
+    const registrosDia = await tursoService.listarVisitasPorDia({
+      repId: repIdNumber,
+      clienteId: clienteIdNorm,
+      dataPlanejada: dataReferencia,
+      inicioIso,
+      fimIso
+    });
+
+    const checkinExistente = registrosDia.find((r) => r.rv_tipo === 'checkin');
+    const checkoutExistente = registrosDia.find((r) => r.rv_tipo === 'checkout');
+
     if (rvTipo === 'checkin') {
-      const aberta = await tursoService.buscarSessaoAberta(repIdNumber, clienteIdNorm);
-      if (aberta) {
-        return res.status(409).json({ ok: false, code: 'SESSAO_ABERTA', message: 'Já existe check-in em aberto para este cliente.' });
+      if (checkinExistente) {
+        return res.status(409).json({ ok: false, code: 'CHECKIN_EXISTENTE', message: 'Já existe check-in para este cliente no dia.' });
       }
       sessaoId = crypto.randomUUID();
     }
 
     if (rvTipo === 'checkout') {
-      const aberta = await tursoService.buscarSessaoAberta(repIdNumber, clienteIdNorm);
-      if (!aberta) {
-        return res.status(409).json({ ok: false, code: 'CHECKIN_NAO_ENCONTRADO', message: 'Não há check-in em aberto para este cliente.' });
+      if (!checkinExistente) {
+        return res.status(409).json({ ok: false, code: 'CHECKIN_NAO_ENCONTRADO', message: 'Não há check-in para este cliente no dia.' });
       }
-      sessaoId = aberta.rv_sessao_id || `sessao-${aberta.id}`;
-      tempoTrabalhoMin = Math.round((new Date(dataHoraIso).getTime() - new Date(aberta.data_hora).getTime()) / 60000);
+      if (checkoutExistente) {
+        return res.status(409).json({ ok: false, code: 'CHECKOUT_EXISTENTE', message: 'Check-out já registrado para este cliente no dia.' });
+      }
+      sessaoId = checkinExistente.rv_sessao_id || `sessao-${checkinExistente.id}`;
+      tempoTrabalhoMin = Math.round((new Date(dataHoraIso).getTime() - new Date(checkinExistente.data_hora).getTime()) / 60000);
+    }
+
+    if (rvTipo === 'campanha') {
+      if (!checkinExistente) {
+        return res.status(409).json({ ok: false, code: 'CAMPANHA_SEM_CHECKIN', message: 'Faça o check-in antes de registrar campanha.' });
+      }
+      if (checkoutExistente) {
+        return res.status(409).json({ ok: false, code: 'CAMPANHA_APOS_CHECKOUT', message: 'Campanha não permitida após o check-out.' });
+      }
     }
 
     const mimeType = foto_mime || 'image/jpeg';
@@ -218,12 +261,13 @@ router.post('/visitas', async (req, res) => {
       dataHora: dataHoraIso,
       latitude: latitudeNumber,
       longitude: longitudeNumber,
-      enderecoResolvido: endereco_resolvido || null,
+      enderecoResolvido: enderecoSnapshot,
       driveFileId: uploadResult.fileId,
       driveFileUrl: uploadResult.webViewLink,
       rvTipo,
       rvSessaoId: sessaoId,
-      rvDataPlanejada: dataPlanejadaValida,
+      rvDataPlanejada: dataReferencia,
+      rvClienteNome: cliente_nome || cliente_id,
       rvEnderecoCliente: cliente_endereco || null,
       rvPastaDriveId: parentFolderId
     });
@@ -237,8 +281,8 @@ router.post('/visitas', async (req, res) => {
       const baseNome = `${clienteIdNorm}_${nomeClienteSanitizado}_${partesData.ddmmaa}.jpg`;
       nomeFinal = await garantirNomeCampanhaUnico(parentFolderId, baseNome);
     } else {
-      const prefixo = rvTipo === 'checkin' ? 'CHECKIN' : 'CHECKOUT';
-      nomeFinal = `${prefixo}_${partesData.ddmmaa}_${partesData.hhmm}_${clienteIdNorm}.${visita.id}_${nomeClienteSanitizado}.jpg`;
+      const prefixo = rvTipo === 'checkin' ? 'in' : 'out';
+      nomeFinal = `${prefixo}_${partesData.ddmmaa}_${partesData.hhmm}_${clienteIdNorm}_${nomeClienteSanitizado}.jpg`;
     }
 
     const renameResult = await googleDriveService.renameFile(uploadResult.fileId, nomeFinal);
@@ -251,12 +295,12 @@ router.post('/visitas', async (req, res) => {
       data_hora: dataHoraIso,
       latitude: latitudeNumber,
       longitude: longitudeNumber,
-      endereco_resolvido: endereco_resolvido || null,
+      endereco_resolvido: enderecoSnapshot,
       drive_file_id: renameResult.fileId,
       drive_file_url: renameResult.webViewLink,
       tipo: rvTipo,
       sessao_id: sessaoId,
-      data_planejada: dataPlanejadaValida,
+      data_planejada: dataReferencia,
       tempo_trabalho_min: tempoTrabalhoMin,
       rv_endereco_cliente: cliente_endereco || null
     };
@@ -303,9 +347,25 @@ router.get('/visitas', async (req, res) => {
     const { inicioIso, fimIso } = buildUtcRangeFromLocalDates(data_inicio, data_fim);
 
     const modoNormalizado = String(modo || '').toLowerCase();
-    const visitas = modoNormalizado === 'resumo'
-      ? await tursoService.listarResumoVisitas({ repId: repIdNumber, inicioIso, fimIso })
-      : await tursoService.listarVisitasDetalhadas({ repId: repIdNumber, inicioIso, fimIso });
+
+    if (modoNormalizado === 'resumo') {
+      try {
+        const resumo = await tursoService.listarResumoVisitas({
+          repId: repIdNumber,
+          dataInicio: data_inicio,
+          dataFim: data_fim,
+          inicioIso,
+          fimIso
+        });
+
+        return res.json(sanitizeForJson({ ok: true, resumo, visitas: resumo, modo: modoNormalizado }));
+      } catch (errorResumo) {
+        console.error('Erro ao gerar resumo de visitas:', errorResumo?.stack || errorResumo);
+        return res.status(200).json({ ok: true, resumo: [], visitas: [], modo: modoNormalizado });
+      }
+    }
+
+    const visitas = await tursoService.listarVisitasDetalhadas({ repId: repIdNumber, inicioIso, fimIso });
 
     return res.json(
       sanitizeForJson({

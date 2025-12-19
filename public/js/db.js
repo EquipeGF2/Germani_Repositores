@@ -3088,6 +3088,9 @@ class TursoDatabase {
                     cli_nome: cliente.nome || cliente.fantasia || 'Cliente não encontrado',
                     cli_cidade: cliente.cidade || '',
                     cli_estado: cliente.estado || '',
+                    cli_endereco: cliente.endereco || '',
+                    cli_numero: cliente.num_endereco || '',
+                    cli_bairro: cliente.bairro || '',
                     rot_ordem_visita: r.rot_ordem_visita
                 };
             });
