@@ -4909,7 +4909,7 @@ class App {
         clienteAtual: null,
         enderecoResolvido: null,
         resumoVisitas: new Map(),
-        tipoRegistro: 'campanha'
+        tipoRegistro: null
     };
 
     async inicializarRegistroRota() {
@@ -4946,6 +4946,11 @@ class App {
     const container = document.getElementById('roteiroContainer');
 
     try {
+        if (!container) {
+            console.warn('Container do roteiro não encontrado.');
+            return;
+        }
+
         const selectRepositor = document.getElementById('registroRepositor');
         const inputData = document.getElementById('registroData');
 
@@ -4995,7 +5000,7 @@ class App {
             const cliId = normalizeClienteId(cliente.cli_codigo);
             const cliNome = String(cliente.cli_nome || '');
 
-            const cidadeUF = [cliente.cli_cidade, cliente.cli_estado].filter(Boolean).join(' - ');
+            const cidadeUF = [cliente.cli_cidade, cliente.cli_estado].filter(Boolean).join('/');
 
             const enderecoPartes = [
                 cliente.cli_endereco || cliente.cli_logradouro || cliente.cli_rua || '',
@@ -5007,20 +5012,22 @@ class App {
             const linhaEndereco = [cidadeUF, enderecoTexto].filter(Boolean).join(' • ');
             const enderecoCadastro = [cidadeUF, enderecoTexto].filter(Boolean).join(' - ');
 
-            const statusCliente = mapaResumo.get(cliId);
-            const statusClasse = statusCliente?.status === 'em_atendimento'
+            const statusCliente = mapaResumo.get(cliId) || { status: 'sem_checkin' };
+            const statusBase = statusCliente.status || 'sem_checkin';
+
+            const statusClasse = statusBase === 'finalizado'
                 ? 'status-visited'
-                : statusCliente?.status === 'finalizado'
+                : statusBase === 'em_atendimento'
                     ? 'status-visited'
                     : 'status-pending';
 
-            const statusTexto = statusCliente?.status === 'em_atendimento'
+            const statusTexto = statusBase === 'em_atendimento'
                 ? 'Em atendimento'
-                : statusCliente?.status === 'finalizado'
+                : statusBase === 'finalizado'
                     ? `Finalizado${statusCliente.tempo_minutos ? ` ${String(statusCliente.tempo_minutos).padStart(2, '0')} min` : ''}`
                     : 'Pendente';
 
-            const tempoTexto = statusCliente?.tempo_minutos != null
+            const tempoTexto = statusCliente?.tempo_minutos != null && statusBase === 'finalizado'
                 ? `<div class="route-item-time">⏱️ ${statusCliente.tempo_minutos} min</div>`
                 : '';
 
@@ -5032,10 +5039,11 @@ class App {
             const btnCheckout = `<button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'checkout', '${cadastroEsc}')" class="btn-small">🚪 Checkout</button>`;
             const btnCampanha = `<button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'campanha', '${cadastroEsc}')" class="btn-small">🎯 Campanha</button>`;
 
-            const haSessaoAberta = statusCliente?.status === 'em_atendimento';
-            const botoes = haSessaoAberta
-                ? `${btnCheckout}${btnCampanha}`
-                : `${btnCheckin}${btnCampanha}`;
+            const botoes = statusBase === 'sem_checkin'
+                ? btnCheckin
+                : statusBase === 'em_atendimento'
+                    ? `${btnCheckout}${btnCampanha}`
+                    : '';
 
             const item = document.createElement('div');
             item.className = 'route-item';
@@ -5072,7 +5080,7 @@ class App {
                 return [];
             }
             const result = await response.json();
-            return result.visitas || [];
+            return result.resumo || result.visitas || [];
         } catch (error) {
             console.warn('Erro ao buscar resumo de visitas:', error);
             return [];
@@ -5134,27 +5142,9 @@ class App {
         tituloModal.textContent = `Registrar Visita - ${this.registroRotaState.clienteAtual.clienteNome}`;
     }
 
-    // Ajustar seleção de tipo
-    const radios = document.querySelectorAll('input[name="tipoRegistro"]');
     const aviso = document.getElementById('avisoTipoRegistro');
-    const haSessaoAberta = statusCliente?.status === 'em_atendimento';
-
-    radios.forEach((radio) => {
-        const valor = radio.value;
-        if (valor === 'checkin') {
-            radio.disabled = haSessaoAberta;
-        } else if (valor === 'checkout') {
-            radio.disabled = !haSessaoAberta;
-        } else {
-            radio.disabled = false;
-        }
-        radio.checked = valor === tipoPadrao || (!haSessaoAberta && valor === 'checkin' && tipoPadrao === 'checkin');
-    });
-
     if (aviso) {
-        aviso.textContent = haSessaoAberta
-            ? 'Check-out habilitado porque há um check-in em andamento. Campanha sempre disponível.'
-            : 'Inicie com check-in; campanhas podem ser feitas a qualquer momento.';
+        aviso.textContent = `Tipo selecionado: ${tipoPadrao.toUpperCase()}`;
     }
 
     // Resetar estado
@@ -5463,7 +5453,7 @@ class App {
         const clienteId = normalizeClienteId(atual.clienteId);
         const clienteNome = String(atual.clienteNome || '');
         const dataVisita = String(atual.dataVisita || '').trim(); // esperado YYYY-MM-DD
-        const tipoRegistro = (document.querySelector('input[name="tipoRegistro"]:checked')?.value || this.registroRotaState.tipoRegistro || 'campanha').toLowerCase();
+        const tipoRegistro = (this.registroRotaState.tipoRegistro || '').toLowerCase();
         const statusCliente = atual.statusCliente;
 
         const gpsCoords = this.registroRotaState.gpsCoords;
@@ -5478,8 +5468,18 @@ class App {
             this.showNotification('Aguarde a captura do GPS', 'warning');
             return;
         }
+
+        if (!enderecoResolvido) {
+            this.showNotification('Endereço do registro não identificado ainda. Aguarde a geolocalização.', 'warning');
+            return;
+        }
         if (!repId || !clienteId) {
             this.showNotification('Dados do cliente inválidos. Recarregue o roteiro e tente novamente.', 'warning');
+            return;
+        }
+
+        if (!tipoRegistro) {
+            this.showNotification('Tipo de registro não identificado. Escolha o cliente novamente.', 'warning');
             return;
         }
 
@@ -5493,14 +5493,17 @@ class App {
             return;
         }
 
+        if (tipoRegistro === 'campanha' && (!statusCliente || statusCliente.status !== 'em_atendimento')) {
+            this.showNotification('Campanha liberada apenas após o check-in e antes do checkout.', 'warning');
+            return;
+        }
+
         if (btnSalvar) {
             btnSalvar.disabled = true;
             btnSalvar.textContent = 'Salvando...';
         }
 
         const dtLocal = new Date();
-        const dataHoraISO = dtLocal.toISOString(); // sempre horário real
-
         // ✅ carimbo (foto + coords + endereço + data/hora)
         const latTxt = Number(gpsCoords.latitude).toFixed(6);
         const lonTxt = Number(gpsCoords.longitude).toFixed(6);
@@ -5526,11 +5529,11 @@ class App {
 
         const blobCarimbado = await stampOnBlob(fotoCapturada, linhasCarimbo);
         const fotoBase64 = await toBase64Raw(blobCarimbado);
+        const enderecoClienteSnapshot = (atual.clienteEndereco || atual.enderecoLinha || '').trim();
 
         const payload = {
             rep_id: repId,
             cliente_id: clienteId,                 // SEM .0 e como string
-            data_hora: dataHoraISO,                // ISO com hora real
             data_planejada: dataVisita || null,
             latitude: Number(gpsCoords.latitude),
             longitude: Number(gpsCoords.longitude),
@@ -5541,7 +5544,7 @@ class App {
 
             // extras “forward compatible” (se o backend quiser usar p/ nome do arquivo)
             cliente_nome: clienteNome,
-            cliente_endereco: atual.clienteEndereco || null,
+            cliente_endereco: enderecoClienteSnapshot || null,
             foto_padrao_nome: 'DDMMAA_HHMM_IDCLIENTE.SEQ_NOMECLIENTE.JPG'
         };
 
@@ -5604,12 +5607,7 @@ class App {
         this.registroRotaState.gpsCoords = null;
         this.registroRotaState.fotoCapturada = null;
         this.registroRotaState.enderecoResolvido = null;
-        this.registroRotaState.tipoRegistro = 'campanha';
-
-        const radioCampanha = document.getElementById('tipoRegistroCampanha');
-        if (radioCampanha) {
-            radioCampanha.checked = true;
-        }
+        this.registroRotaState.tipoRegistro = null;
     }
 
     // ==================== CONSULTA DE VISITAS ====================
@@ -5666,6 +5664,7 @@ class App {
             }
 
             container.innerHTML = '';
+            const sessoes = new Map();
 
             visitas.forEach(visita => {
                 const item = document.createElement('div');
@@ -5675,7 +5674,26 @@ class App {
                 const dataBase = dataBruta ? (isNaN(Number(dataBruta)) ? new Date(dataBruta) : new Date(Number(dataBruta))) : null;
                 const dataFormatada = dataBase ? dataBase.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
                 const tipo = (visita.rv_tipo || visita.tipo || 'campanha').toUpperCase();
-                const tempoTexto = visita.tempo_minutos != null ? `<span style="margin-left:6px;">⏱️ ${visita.tempo_minutos} min</span>` : '';
+                const chaveSessao = visita.rv_sessao_id || `${visita.rep_id}-${visita.cliente_id}`;
+
+                if (visita.rv_tipo === 'checkin' && dataBase) {
+                    sessoes.set(chaveSessao, dataBase);
+                }
+
+                let tempoTotal = null;
+                if (visita.rv_tipo === 'checkout' && dataBase && sessoes.has(chaveSessao)) {
+                    const inicio = sessoes.get(chaveSessao);
+                    tempoTotal = Math.max(0, Math.round((dataBase.getTime() - inicio.getTime()) / 60000));
+                }
+
+                const tempoTexto = tempoTotal != null
+                    ? `<span style="margin-left:6px;">⏱️ ${tempoTotal} min</span>`
+                    : visita.tempo_minutos != null
+                        ? `<span style="margin-left:6px;">⏱️ ${visita.tempo_minutos} min</span>`
+                        : '';
+
+                const enderecoCliente = visita.rv_endereco_cliente || visita.endereco_cliente || 'Não informado';
+                const enderecoRegistro = visita.endereco_resolvido || '';
 
                 item.innerHTML = `
                     <div style="flex: 1;">
@@ -5684,9 +5702,9 @@ class App {
                             📅 ${dataFormatada}
                         </div>
                         <div style="font-size: 0.9em; color: #666; margin-top: 4px;">
-                            🏘️ Endereço cliente: ${visita.rv_endereco_cliente || visita.endereco_cliente || 'Não informado'}
+                            🏘️ Endereço cliente: ${enderecoCliente}
                         </div>
-                        ${visita.endereco_resolvido ? `<div style="font-size: 0.9em; color: #4b5563; margin-top: 4px;">📍 Registro: ${visita.endereco_resolvido}</div>` : ''}
+                        ${enderecoRegistro ? `<div style="font-size: 0.9em; color: #4b5563; margin-top: 4px;">📍 Registro: ${enderecoRegistro}</div>` : ''}
                         <div style="font-size: 0.9em; color: #666; margin-top: 4px;">GPS: ${visita.latitude}, ${visita.longitude}</div>
                         <div style="font-size: 0.9em; color: #666; margin-top: 4px;">🧑‍🤝‍🧑 Repositor: ${visita.rep_id}</div>
                     </div>
