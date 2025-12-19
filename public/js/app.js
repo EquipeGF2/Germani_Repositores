@@ -5060,7 +5060,8 @@ class App {
             }
 
             const result = await response.json();
-            visitas = (result.visitas || []).map(v => v.cliente_id);
+            const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
+            visitas = (result.visitas || []).map(v => normalizeClienteId(v.cliente_id));
         } catch (error) {
             console.warn('Erro ao verificar visitas:', error);
             this.showNotification('Não foi possível verificar visitas agora. Exibindo roteiro sem status.', 'warning');
