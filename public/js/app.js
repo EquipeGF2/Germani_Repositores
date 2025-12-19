@@ -4986,26 +4986,55 @@ class App {
 
             // Renderizar roteiro
             container.innerHTML = '';
-
+            
+            const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
+            
+            const visitasPorCliente = new Set((visitasRealizadas || []).map(normalizeClienteId));
+            
             roteiro.forEach(cliente => {
-                const visitado = visitasPorCliente.has(cliente.cli_codigo);
-
+                const cliId = normalizeClienteId(cliente.cli_codigo);
+                const cliNome = String(cliente.cli_nome || '');
+            
+                // Monte o endereço de forma resiliente (ajuste os campos conforme seu retorno do DB)
+                const cidadeUF = [cliente.cli_cidade, cliente.cli_estado].filter(Boolean).join(' - ');
+            
+                const enderecoPartes = [
+                    cliente.cli_endereco || cliente.cli_logradouro || cliente.cli_rua || '',
+                    cliente.cli_numero || '',
+                    cliente.cli_bairro || ''
+                ].filter(Boolean);
+            
+                const enderecoTexto = enderecoPartes.join(', ');
+                const linhaEndereco = [cidadeUF, enderecoTexto].filter(Boolean).join(' • ');
+            
+                const visitado = visitasPorCliente.has(cliId);
+            
                 const item = document.createElement('div');
                 item.className = 'route-item';
+            
+                // escape simples pra não quebrar aspas no onclick
+                const nomeEsc = cliNome.replace(/'/g, "\\'");
+                const endEsc = linhaEndereco.replace(/'/g, "\\'");
+            
                 item.innerHTML = `
                     <div class="route-item-info">
-                        <div class="route-item-name">${cliente.cli_codigo} - ${cliente.cli_nome}</div>
-                        <div class="route-item-address">${cliente.cli_cidade || ''} - ${cliente.cli_estado || ''}</div>
+                        <div class="route-item-name">${cliId} - ${cliNome}</div>
+                        <div class="route-item-address">${linhaEndereco}</div>
                     </div>
                     <div class="route-item-actions">
                         <span class="route-status ${visitado ? 'status-visited' : 'status-pending'}">
                             ${visitado ? 'Visitado' : 'Pendente'}
                         </span>
-                        ${!visitado ? `<button onclick="app.abrirModalCaptura(${repId}, ${cliente.cli_codigo}, '${cliente.cli_nome.replace(/'/g, '\\\'')}')" class="btn-small">📸 Registrar</button>` : ''}
+                        ${
+                            !visitado
+                            ? `<button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataVisita}')" class="btn-small">📸 Registrar</button>`
+                            : ''
+                        }
                     </div>
                 `;
                 container.appendChild(item);
             });
+
 
             this.showNotification(`${roteiro.length} cliente(s) no roteiro`, 'success');
         } catch (error) {
