@@ -89,6 +89,7 @@ async function inicializar() {
 
     initDbClient();
     await tursoService.ensureSchemaRegistroRota();
+    await tursoService.ensureSchemaDocumentos();
 
     // Iniciar servidor
     app.listen(config.port, () => {
