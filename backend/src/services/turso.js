@@ -7,6 +7,7 @@ function normalizeClienteId(clienteId) {
 class TursoService {
   constructor() {
     this.schemaEnsured = false;
+    this.tableColumnsCache = new Map();
     try {
       this.client = getDbClient();
       this.schemaEnsured = false;
@@ -49,6 +50,36 @@ class TursoService {
     return await this.getClient().execute({ sql, args });
   }
 
+  async _getTableColumns(tableName) {
+    if (this.tableColumnsCache.has(tableName)) {
+      return this.tableColumnsCache.get(tableName);
+    }
+
+    const result = await this.execute(`PRAGMA table_info(${tableName})`, []);
+    const columns = result.rows.map((row) => row.name);
+    this.tableColumnsCache.set(tableName, columns);
+    return columns;
+  }
+
+  async _insertDynamic(tableName, dataObj) {
+    const availableColumns = await this._getTableColumns(tableName);
+    const entries = Object.entries(dataObj).filter(([key]) => availableColumns.includes(key));
+
+    if (entries.length === 0) {
+      throw new Error(`No valid columns to insert into ${tableName}`);
+    }
+
+    const columns = entries.map(([key]) => key);
+    const values = entries.map(([, value]) => value);
+    const placeholders = columns.map(() => '?').join(', ');
+
+    const sql = `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`;
+    const result = await this.execute(sql, values);
+
+    const insertedId = result.lastInsertRowid;
+    return { id: typeof insertedId === 'bigint' ? insertedId.toString() : String(insertedId) };
+  }
+
   async salvarVisitaDetalhada({
     repId,
     clienteId,
@@ -79,50 +110,34 @@ class TursoService {
     drive_file_id,
     drive_file_url
   }) {
-    const sql = `
-      INSERT INTO cc_registro_visita (
-        rep_id, cliente_id, data_hora, latitude, longitude,
-        endereco_resolvido, drive_file_id, drive_file_url,
-        rv_tipo, rv_sessao_id, rv_data_planejada, rv_cliente_nome, rv_endereco_cliente, rv_pasta_drive_id,
-        rv_data_hora_registro, rv_endereco_registro, rv_drive_file_id, rv_drive_file_url, rv_latitude, rv_longitude,
-        sessao_id, tipo, data_hora_registro, endereco_registro, latitude, longitude, drive_file_id, drive_file_url
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
+    const row = {
+      rep_id: repId,
+      cliente_id: clienteId,
+      data_hora: dataHora || rvDataHoraRegistro || new Date().toISOString(),
+      latitude: latitude ?? latitudeBase,
+      longitude: longitude ?? longitudeBase,
+      endereco_resolvido: enderecoResolvido,
+      drive_file_id: driveFileId || drive_file_id || rvDriveFileId,
+      drive_file_url: driveFileUrl || drive_file_url || rvDriveFileUrl,
+      rv_tipo: rvTipo,
+      rv_sessao_id: rvSessaoId,
+      rv_data_planejada: rvDataPlanejada,
+      rv_cliente_nome: rvClienteNome,
+      rv_endereco_cliente: rvEnderecoCliente,
+      rv_pasta_drive_id: rvPastaDriveId,
+      rv_data_hora_registro: rvDataHoraRegistro,
+      rv_endereco_registro: rvEnderecoRegistro,
+      rv_drive_file_id: rvDriveFileId || driveFileId || drive_file_id,
+      rv_drive_file_url: rvDriveFileUrl || driveFileUrl || drive_file_url,
+      rv_latitude: rvLatitude ?? latitude ?? latitudeBase,
+      rv_longitude: rvLongitude ?? longitude ?? longitudeBase,
+      sessao_id: sessao_id,
+      tipo: tipo,
+      data_hora_registro: data_hora_registro || rvDataHoraRegistro,
+      endereco_registro: endereco_registro || enderecoResolvido
+    };
 
-    const result = await this.execute(sql, [
-      repId,
-      clienteId,
-      dataHora,
-      latitude,
-      longitude,
-      enderecoResolvido,
-      driveFileId,
-      driveFileUrl,
-      rvTipo,
-      rvSessaoId,
-      rvDataPlanejada,
-      rvClienteNome,
-      rvEnderecoCliente,
-      rvPastaDriveId,
-      rvDataHoraRegistro,
-      rvEnderecoRegistro,
-      rvDriveFileId,
-      rvDriveFileUrl,
-      rvLatitude,
-      rvLongitude,
-      sessao_id,
-      tipo,
-      data_hora_registro,
-      endereco_registro,
-      latitudeBase,
-      longitudeBase,
-      drive_file_id,
-      drive_file_url
-    ]);
-
-    const insertedId = result.lastInsertRowid;
-
-    return { id: typeof insertedId === 'bigint' ? insertedId.toString() : insertedId };
+    return await this._insertDynamic('cc_registro_visita', row);
   }
 
   async listarVisitasDetalhadas({ repId, inicioIso, fimIso, tipo, servico }) {
