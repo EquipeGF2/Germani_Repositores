@@ -6675,9 +6675,11 @@ class App {
                 if (!s.tempo_minutos) return false;
 
                 const minutos = s.tempo_minutos;
-                if (filtroTempo === 'rapido') return minutos < 10;
-                if (filtroTempo === 'medio') return minutos >= 10 && minutos <= 60;
-                if (filtroTempo === 'longo') return minutos > 60;
+                if (filtroTempo === '0-15') return minutos < 15;
+                if (filtroTempo === '15-30') return minutos >= 15 && minutos < 30;
+                if (filtroTempo === '30-45') return minutos >= 30 && minutos < 45;
+                if (filtroTempo === '45-60') return minutos >= 45 && minutos < 60;
+                if (filtroTempo === '60+') return minutos >= 60;
                 return true;
             });
 
@@ -6705,8 +6707,24 @@ class App {
         const html = sessoes.map(s => {
             const minutos = s.tempo_minutos || 0;
             let badgeClass = 'badge-medio';
-            if (minutos < 10) badgeClass = 'badge-rapido';
-            else if (minutos > 60) badgeClass = 'badge-longo';
+            let faixaTempo = '';
+
+            if (minutos < 15) {
+                badgeClass = 'badge-rapido';
+                faixaTempo = '< 15min';
+            } else if (minutos < 30) {
+                badgeClass = 'badge-medio';
+                faixaTempo = '15-30min';
+            } else if (minutos < 45) {
+                badgeClass = 'badge-medio';
+                faixaTempo = '30-45min';
+            } else if (minutos < 60) {
+                badgeClass = 'badge-medio';
+                faixaTempo = '45-60min';
+            } else {
+                badgeClass = 'badge-longo';
+                faixaTempo = '> 1h';
+            }
 
             return `
                 <div class="performance-card">
@@ -6720,7 +6738,7 @@ class App {
                     </div>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Tempo em Loja</span>
-                        <span class="badge-tempo ${badgeClass}">${minutos} min</span>
+                        <span class="badge-tempo ${badgeClass}">${minutos} min (${faixaTempo})</span>
                     </div>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Repositor</span>

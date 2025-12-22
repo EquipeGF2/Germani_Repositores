@@ -2604,9 +2604,11 @@ export const pages = {
                                 <label for="tempoFiltro">Filtro de Tempo</label>
                                 <select id="tempoFiltro">
                                     <option value="todos">Todos</option>
-                                    <option value="rapido">Rápido (< 10 min)</option>
-                                    <option value="medio">Médio (10-60 min)</option>
-                                    <option value="longo">Longo (> 1h)</option>
+                                    <option value="0-15">Menos de 15 min</option>
+                                    <option value="15-30">15 a 30 min</option>
+                                    <option value="30-45">30 a 45 min</option>
+                                    <option value="45-60">45 a 60 min</option>
+                                    <option value="60+">Mais de 1 hora</option>
                                 </select>
                             </div>
                             <div class="filter-group" style="display: flex; align-items: flex-end;">
