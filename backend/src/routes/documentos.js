@@ -4,9 +4,12 @@ import { tursoService } from '../services/turso.js';
 import { googleDriveService } from '../services/googleDrive.js';
 
 const router = express.Router();
+const MAX_UPLOAD_MB = 10;
+const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB
+  limits: { fileSize: MAX_UPLOAD_BYTES } // 10MB
 });
 
 const EXTENSOES_PERMITIDAS = [
@@ -43,6 +46,36 @@ function formatarDataHoraLocal(iso) {
     data_ref: `${ano}-${mes}-${dia}`,
     hora_ref: `${hora}:${minuto}`
   };
+}
+
+function validarEPadronizarReferencia(isoReferencia = new Date().toISOString()) {
+  const data = new Date(isoReferencia);
+
+  if (Number.isNaN(data.getTime())) {
+    throw new Error('Data de referência inválida');
+  }
+
+  const { data_ref, hora_ref, ddmmaa, hhmm } = formatarDataHoraLocal(data.toISOString());
+  const dataRefRegex = /^\d{4}-\d{2}-\d{2}$/;
+  const horaRefRegex = /^\d{2}:\d{2}$/;
+
+  if (!dataRefRegex.test(data_ref) || data_ref.length !== 10) {
+    throw new Error('doc_data_ref inválido. Use YYYY-MM-DD');
+  }
+
+  if (!horaRefRegex.test(hora_ref) || hora_ref.length !== 5) {
+    throw new Error('doc_hora_ref inválido. Use HH:MM');
+  }
+
+  return { data_ref, hora_ref, ddmmaa, hhmm };
+}
+
+function registrarFalhaValidacao(contexto, detalhe) {
+  console.error(JSON.stringify({
+    code: 'DOC_UPLOAD_VALIDATE_FAIL',
+    contexto,
+    detalhe
+  }));
 }
 
 async function ensureRepositorFolders(repositorId, repositorNome) {
@@ -229,6 +262,14 @@ router.post('/upload', upload.single('arquivo'), async (req, res) => {
       return res.status(400).json({ ok: false, message: 'Extensão de arquivo não permitida' });
     }
 
+    let referencia;
+    try {
+      referencia = validarEPadronizarReferencia();
+    } catch (error) {
+      registrarFalhaValidacao('upload_unico', error.message);
+      return res.status(400).json({ ok: false, message: error.message });
+    }
+
     console.log('✅ Validações iniciais OK');
 
     // Buscar tipo
@@ -279,8 +320,7 @@ router.post('/upload', upload.single('arquivo'), async (req, res) => {
     console.log('✅ Pasta tipo:', tipoFolderId);
 
     // Gerar nome do arquivo
-    const agora = new Date().toISOString();
-    const { ddmmaa, hhmm, data_ref, hora_ref } = formatarDataHoraLocal(agora);
+    const { ddmmaa, hhmm, data_ref, hora_ref } = referencia;
     let nomeBase = `${tipo.dct_codigo}_${ddmmaa}_${hhmm}${ext}`;
 
     // Verificar se já existe arquivo com mesmo nome e gerar sufixo se necessário
@@ -429,8 +469,15 @@ router.post('/upload-multiplo', upload.array('arquivos', 10), async (req, res) =
     for (const arquivo of arquivos) {
       try {
         const ext = arquivo.originalname.substring(arquivo.originalname.lastIndexOf('.')).toLowerCase();
-        const agora = new Date().toISOString();
-        const { ddmmaa, hhmm, data_ref, hora_ref } = formatarDataHoraLocal(agora);
+        let referencia;
+        try {
+          referencia = validarEPadronizarReferencia();
+        } catch (err) {
+          registrarFalhaValidacao('upload_multiplo', err.message);
+          throw new Error(err.message);
+        }
+
+        const { ddmmaa, hhmm, data_ref, hora_ref } = referencia;
         let nomeBase = `${tipo.dct_codigo}_${ddmmaa}_${hhmm}${ext}`;
 
         // Gerar nome único
