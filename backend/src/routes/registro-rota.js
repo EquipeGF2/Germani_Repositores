@@ -735,10 +735,42 @@ router.get('/sessoes', async (req, res) => {
 
     const result = await tursoService.execute(sql, params);
 
-    res.json({
-      ok: true,
-      sessoes: result.rows
-    });
+    // Adicionar campos de dia previsto para cada sessão
+    if (rep_id) {
+      const repIdNumber = parseInt(rep_id);
+      const mapaDiasPrevistos = await tursoService.mapearDiaPrevistoClientes(repIdNumber);
+
+      const sessoesComDia = result.rows.map((sessao) => {
+        const clienteId = normalizeClienteId(sessao.cliente_id);
+        const dataReferencia = sessao.data_planejada;
+        const diaPrevisto = mapaDiasPrevistos.get(clienteId) || null;
+
+        const dataDia = dataReferencia ? new Date(`${dataReferencia}T12:00:00-03:00`) : null;
+        const diaRealNumero = dataDia ? dataDia.getDay() : null;
+
+        const diaRealLabel = diaRealNumero != null ? obterDiaSemanaLabel(diaRealNumero) : '';
+        const diaPrevistoLabel = diaPrevisto ? obterDiaSemanaLabel(diaPrevisto) : '';
+
+        const foraDoDia = Boolean(diaPrevisto && diaRealNumero != null && obterDiaSemanaLabel(diaPrevisto) !== diaRealLabel);
+
+        return {
+          ...sessao,
+          fora_do_dia: foraDoDia ? 1 : 0,
+          dia_previsto_label: diaPrevistoLabel,
+          dia_real_label: diaRealLabel
+        };
+      });
+
+      res.json({
+        ok: true,
+        sessoes: sessoesComDia
+      });
+    } else {
+      res.json({
+        ok: true,
+        sessoes: result.rows
+      });
+    }
   } catch (error) {
     console.error('Erro ao listar sessões:', error);
     res.status(500).json({

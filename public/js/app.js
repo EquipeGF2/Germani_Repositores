@@ -6031,8 +6031,8 @@ class App {
                 return;
             }
 
-            // Montar URL
-            const url = `${this.registroRotaState.backendUrl}/api/registro-rota/visitas?data_inicio=${dataInicio}&data_fim=${dataFim}&rep_id=${repId}`;
+            // Usar rota de sessões para agrupar checkin/checkout
+            const url = `${this.registroRotaState.backendUrl}/api/registro-rota/sessoes?data_inicio=${dataInicio}&data_fim=${dataFim}&rep_id=${repId}`;
 
             const response = await fetch(url);
 
@@ -6041,7 +6041,10 @@ class App {
             }
 
             const result = await response.json();
-            const visitas = result.visitas || [];
+            const sessoes = result.sessoes || [];
+
+            // Filtrar apenas sessões com checkin (não mostrar campanhas isoladas)
+            const sessoesComCheckin = sessoes.filter(s => s.checkin_at);
 
             // Renderizar resultados
             const container = document.getElementById('visitasContainer');
@@ -6050,93 +6053,88 @@ class App {
                 return;
             }
 
-            if (visitas.length === 0) {
+            if (sessoesComCheckin.length === 0) {
                 container.innerHTML = '<p style="text-align:center;color:#999;margin-top:20px;">Nenhuma visita encontrada</p>';
                 return;
             }
 
             container.innerHTML = '';
-            const sessoes = new Map();
 
-            visitas.forEach(visita => {
+            sessoesComCheckin.forEach(sessao => {
                 const item = document.createElement('div');
-                const foraDia = Number(visita.fora_do_dia) === 1;
+
+                // Verificar se está fora do dia previsto
+                const foraDia = Boolean(sessao.fora_do_dia);
                 item.className = `visit-item${foraDia ? ' fora-dia' : ''}`;
 
-                const dataBruta = visita.data_hora || visita.created_at;
-                const dataBase = dataBruta ? (isNaN(Number(dataBruta)) ? new Date(dataBruta) : new Date(Number(dataBruta))) : null;
-                const dataFormatada = dataBase ? dataBase.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
-                const tipo = (visita.rv_tipo || visita.tipo || 'campanha').toUpperCase();
-                const chaveSessao = visita.rv_sessao_id || `${visita.rep_id}-${visita.cliente_id}`;
-
-                if (visita.rv_tipo === 'checkin' && dataBase) {
-                    sessoes.set(chaveSessao, dataBase);
+                // Calcular tempo de atendimento
+                let tempoAtendimento = null;
+                if (sessao.checkin_at && sessao.checkout_at) {
+                    const checkinTime = new Date(sessao.checkin_at).getTime();
+                    const checkoutTime = new Date(sessao.checkout_at).getTime();
+                    tempoAtendimento = Math.max(0, Math.round((checkoutTime - checkinTime) / 60000));
                 }
 
-                let tempoTotal = null;
-                if (visita.rv_tipo === 'checkout' && dataBase && sessoes.has(chaveSessao)) {
-                    const inicio = sessoes.get(chaveSessao);
-                    tempoTotal = Math.max(0, Math.round((dataBase.getTime() - inicio.getTime()) / 60000));
-                }
+                const tempoTexto = tempoAtendimento != null ? `⏱️ ${tempoAtendimento} min` : '';
 
-                const tempoTexto = tempoTotal != null
-                    ? `<span style="margin-left:6px;">⏱️ ${tempoTotal} min</span>`
-                    : visita.tempo_minutos != null
-                        ? `<span style="margin-left:6px;">⏱️ ${visita.tempo_minutos} min</span>`
-                        : '';
+                // Formatar datas
+                const checkinFormatado = sessao.checkin_at ? new Date(sessao.checkin_at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
+                const checkoutFormatado = sessao.checkout_at ? new Date(sessao.checkout_at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : 'Não finalizado';
 
-                const enderecoCliente = visita.rv_endereco_cliente || visita.endereco_cliente || 'Não informado';
-                const enderecoRegistro = visita.endereco_resolvido || '';
+                // Status badge
+                const statusBadge = sessao.checkout_at
+                    ? '<span style="background: #dcfce7; color: #166534; padding: 4px 8px; border-radius: 6px; font-size: 0.85em; font-weight: 600;">FINALIZADO</span>'
+                    : '<span style="background: #fef3c7; color: #92400e; padding: 4px 8px; border-radius: 6px; font-size: 0.85em; font-weight: 600;">EM ATENDIMENTO</span>';
 
+                // Alerta de dia previsto
                 const alertaDia = foraDia
-                    ? `<div class="fora-dia-badge">Realizado fora do dia previsto<br>Dia previsto: ${visita.dia_previsto_label || '-'} | Realizado: ${visita.dia_real_label || '-'}</div>`
+                    ? `<div class="fora-dia-badge">Realizado fora do dia previsto<br>Dia previsto: ${sessao.dia_previsto_label || '-'} | Realizado: ${sessao.dia_real_label || '-'}</div>`
                     : '';
+
+                // Montar lista de serviços realizados
+                const servicos = [];
+                if (sessao.serv_abastecimento) servicos.push('Abastecimento');
+                if (sessao.serv_espaco_loja) servicos.push('Espaço Loja');
+                if (sessao.serv_ruptura_loja) servicos.push('Ruptura Loja');
+                if (sessao.serv_pontos_extras) servicos.push(`Pontos Extras (${sessao.qtd_pontos_extras || 0})`);
+
+                const servicosTexto = servicos.length > 0
+                    ? `<div style="font-size: 0.9em; color: #2563eb; margin-top: 6px; padding: 8px; background: #eff6ff; border-radius: 6px;">
+                         <strong>🛠️ Serviços:</strong> ${servicos.join(', ')}<br>
+                         <strong>🔢 Frentes:</strong> ${sessao.qtd_frentes || 0} | <strong>📦 Merchandising:</strong> ${sessao.usou_merchandising ? 'Sim' : 'Não'}
+                       </div>`
+                    : '<div style="font-size: 0.9em; color: #6b7280; margin-top: 6px; font-style: italic;">Nenhum serviço registrado</div>';
 
                 item.innerHTML = `
                     <div style="flex: 1;">
-                        <div><strong>${visita.cliente_id}</strong> <span style="font-size:0.85em;color:#ef4444;font-weight:700;">${tipo}</span>${tempoTexto}</div>
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <strong style="font-size: 1.1em;">${sessao.cliente_id}</strong>
+                            ${statusBadge}
+                            <span style="color: #6b7280; font-size: 0.9em;">${tempoTexto}</span>
+                        </div>
                         ${alertaDia}
-                        <div style="font-size: 0.9em; color: #666; margin-top: 4px;">
-                            📅 ${dataFormatada}
+                        <div style="font-size: 0.9em; color: #374151; margin-top: 6px; background: #f9fafb; padding: 8px; border-radius: 6px;">
+                            <div><strong>Check-in:</strong> ${checkinFormatado}</div>
+                            <div style="margin-top: 4px;"><strong>Checkout:</strong> ${checkoutFormatado}</div>
                         </div>
-                        <div style="font-size: 0.9em; color: #666; margin-top: 4px;">
-                            🏘️ Endereço cliente: ${enderecoCliente}
+                        <div style="font-size: 0.9em; color: #666; margin-top: 6px;">
+                            🏘️ ${sessao.endereco_cliente || 'Endereço não informado'}
                         </div>
-                        ${enderecoRegistro ? `<div style="font-size: 0.9em; color: #4b5563; margin-top: 4px;">📍 Registro: ${enderecoRegistro}</div>` : ''}
-                        <div style="font-size: 0.9em; color: #666; margin-top: 4px;">GPS: ${visita.latitude}, ${visita.longitude}</div>
-                        <div style="font-size: 0.9em; color: #666; margin-top: 4px;">🧑‍🤝‍🧑 Repositor: ${visita.rep_id}</div>
+                        ${servicosTexto}
                     </div>
                     <div style="display: flex; flex-direction: column; gap: 8px;">
-                        <div style="display: flex; gap: 8px;">
-                            ${visita.drive_file_url ? `
-                                <a href="${visita.drive_file_url}" target="_blank" class="btn-small">
-                                    🖼️ Ver Foto
-                                </a>
-                            ` : ''}
-                            <a href="https://www.google.com/maps?q=${visita.latitude},${visita.longitude}" target="_blank" class="btn-small">
-                                🗺️ Ver Mapa
-                            </a>
-                        </div>
                         ${foraDia ? `
-                            <button class="btn-small btn-warning" data-cliente-id="${visita.cliente_id}" data-rep-id="${visita.rep_id}" style="background: #fbbf24; color: #78350f;">
+                            <button class="btn-small btn-warning" onclick="app.verificarRoteiroCliente('${sessao.cliente_id}', ${sessao.rep_id})" style="background: #fbbf24; color: #78350f;">
                                 🔧 Verificar Roteiro
                             </button>
                         ` : ''}
                     </div>
                 `;
 
-                // Adicionar listener para o botão de verificar roteiro
-                if (foraDia) {
-                    const btnVerificar = item.querySelector('.btn-warning');
-                    if (btnVerificar) {
-                        btnVerificar.onclick = () => this.verificarRoteiroCliente(visita.cliente_id, visita.rep_id);
-                    }
-                }
-
                 container.appendChild(item);
             });
 
-            this.showNotification(`${visitas.length} visita(s) encontrada(s)`, 'success');
+            this.showNotification(`${sessoesComCheckin.length} visita(s) encontrada(s)`, 'success');
         } catch (error) {
             console.error('Erro ao consultar visitas:', error);
             this.showNotification('Erro ao consultar: ' + error.message, 'error');
