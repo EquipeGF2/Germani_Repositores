@@ -304,7 +304,15 @@ class TursoService {
     for (const row of result.rows) {
       const clienteId = normalizeClienteId(row.cliente_id);
       if (!mapa.has(clienteId)) {
-        mapa.set(clienteId, String(row.rot_dia_semana || '').toLowerCase());
+        const diaSemana = String(row.rot_dia_semana || '').toLowerCase();
+        mapa.set(clienteId, diaSemana);
+
+        // Debug log para investigar problema de dia previsto
+        if (clienteId === '3213') {
+          console.log(`🔍 [DEBUG ROTEIRO] Cliente ${clienteId}:`);
+          console.log(`   rot_dia_semana (raw): "${row.rot_dia_semana}" (tipo: ${typeof row.rot_dia_semana})`);
+          console.log(`   diaSemana (processado): "${diaSemana}"`);
+        }
       }
     }
 

@@ -550,6 +550,18 @@ router.get('/visitas', async (req, res) => {
 
       const foraDoDia = Boolean(diaPrevisto && diaRealNumero != null && obterDiaSemanaLabel(diaPrevisto) !== diaRealLabel);
 
+      // Debug log para investigar problema de dia previsto
+      if (clienteId === '3213' || foraDoDia) {
+        console.log(`🔍 [DEBUG DIA PREVISTO] Cliente ${clienteId}:`);
+        console.log(`   dataReferencia: ${dataReferencia}`);
+        console.log(`   dataParaDia: ${dataParaDia}`);
+        console.log(`   diaPrevisto (do roteiro): "${diaPrevisto}"`);
+        console.log(`   diaRealNumero: ${diaRealNumero}`);
+        console.log(`   diaPrevistoLabel: "${diaPrevistoLabel}"`);
+        console.log(`   diaRealLabel: "${diaRealLabel}"`);
+        console.log(`   foraDoDia: ${foraDoDia}`);
+      }
+
       return {
         ...visita,
         fora_do_dia: foraDoDia ? 1 : 0,
@@ -732,6 +744,128 @@ router.get('/sessoes', async (req, res) => {
     res.status(500).json({
       ok: false,
       message: 'Erro ao listar sessões',
+      error: error.message
+    });
+  }
+});
+
+// GET /api/registro-rota/cliente/:cliente_id/roteiro - Consultar dia do roteiro de um cliente
+router.get('/cliente/:cliente_id/roteiro', async (req, res) => {
+  try {
+    const { cliente_id } = req.params;
+    const { rep_id } = req.query;
+
+    if (!rep_id) {
+      return res.status(400).json({
+        ok: false,
+        message: 'rep_id é obrigatório'
+      });
+    }
+
+    const sql = `
+      SELECT
+        cli.rot_cliente_codigo AS cliente_id,
+        rc.rot_dia_semana,
+        rc.rot_cidade,
+        rc.rot_ordem_cidade,
+        cli.rot_ordem_visita,
+        rc.rot_cid_id
+      FROM rot_roteiro_cidade rc
+      JOIN rot_roteiro_cliente cli ON cli.rot_cid_id = rc.rot_cid_id
+      WHERE rc.rot_repositor_id = ? AND cli.rot_cliente_codigo = ?
+    `;
+
+    const result = await tursoService.execute(sql, [parseInt(rep_id), cliente_id]);
+
+    if (result.rows.length === 0) {
+      return res.json({
+        ok: true,
+        roteiro: null,
+        message: 'Cliente não encontrado no roteiro'
+      });
+    }
+
+    res.json({
+      ok: true,
+      roteiro: sanitizeForJson(result.rows[0])
+    });
+  } catch (error) {
+    console.error('Erro ao consultar roteiro do cliente:', error);
+    res.status(500).json({
+      ok: false,
+      message: 'Erro ao consultar roteiro',
+      error: error.message
+    });
+  }
+});
+
+// PATCH /api/registro-rota/cliente/:cliente_id/roteiro - Corrigir dia do roteiro de um cliente
+router.patch('/cliente/:cliente_id/roteiro', async (req, res) => {
+  try {
+    const { cliente_id } = req.params;
+    const { rep_id, novo_dia_semana } = req.body;
+
+    if (!rep_id || !novo_dia_semana) {
+      return res.status(400).json({
+        ok: false,
+        message: 'rep_id e novo_dia_semana são obrigatórios'
+      });
+    }
+
+    // Validar dia da semana
+    const diasValidos = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+    const diaLower = String(novo_dia_semana).toLowerCase();
+
+    if (!diasValidos.includes(diaLower)) {
+      return res.status(400).json({
+        ok: false,
+        message: 'novo_dia_semana deve ser: dom, seg, ter, qua, qui, sex ou sab'
+      });
+    }
+
+    // Buscar rot_cid_id do cliente
+    const sqlBuscar = `
+      SELECT rc.rot_cid_id, rc.rot_dia_semana AS dia_atual
+      FROM rot_roteiro_cidade rc
+      JOIN rot_roteiro_cliente cli ON cli.rot_cid_id = rc.rot_cid_id
+      WHERE rc.rot_repositor_id = ? AND cli.rot_cliente_codigo = ?
+    `;
+
+    const resultBuscar = await tursoService.execute(sqlBuscar, [parseInt(rep_id), cliente_id]);
+
+    if (resultBuscar.rows.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        message: 'Cliente não encontrado no roteiro'
+      });
+    }
+
+    const diaAtual = resultBuscar.rows[0].dia_atual;
+    const rotCidId = resultBuscar.rows[0].rot_cid_id;
+
+    // Atualizar dia da semana na tabela rot_roteiro_cidade
+    const sqlAtualizar = `
+      UPDATE rot_roteiro_cidade
+      SET rot_dia_semana = ?
+      WHERE rot_cid_id = ?
+    `;
+
+    await tursoService.execute(sqlAtualizar, [diaLower, rotCidId]);
+
+    console.log(`✅ Dia do roteiro atualizado - Cliente ${cliente_id}: ${diaAtual} → ${diaLower}`);
+
+    res.json({
+      ok: true,
+      message: 'Dia do roteiro atualizado com sucesso',
+      cliente_id,
+      dia_anterior: diaAtual,
+      dia_novo: diaLower
+    });
+  } catch (error) {
+    console.error('Erro ao atualizar roteiro do cliente:', error);
+    res.status(500).json({
+      ok: false,
+      message: 'Erro ao atualizar roteiro',
       error: error.message
     });
   }
