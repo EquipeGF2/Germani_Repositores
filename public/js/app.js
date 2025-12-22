@@ -6268,7 +6268,9 @@ class App {
 
     documentosState = {
         tipos: [],
-        documentosSelecionados: new Set()
+        documentosSelecionados: new Set(),
+        enviando: false,
+        maxUploadBytes: 10 * 1024 * 1024
     };
 
     async inicializarDocumentos() {
@@ -6347,15 +6349,43 @@ class App {
     }
 
     async uploadDocumento() {
+        let btnUpload;
+        let inputArquivo;
+        let textoOriginal = '';
         try {
+            if (this.documentosState.enviando) {
+                this.showNotification('Envio em andamento, aguarde...', 'info');
+                return;
+            }
+
             const repositorId = document.getElementById('uploadRepositor').value;
             const tipoId = document.getElementById('uploadTipo').value;
             const arquivos = document.getElementById('uploadArquivo').files;
             const observacao = document.getElementById('uploadObservacao').value;
+            btnUpload = document.getElementById('btnUploadDocumento');
+            inputArquivo = document.getElementById('uploadArquivo');
 
             if (!repositorId || !tipoId || arquivos.length === 0) {
                 this.showNotification('Preencha todos os campos obrigatórios', 'warning');
                 return;
+            }
+
+            const limite = this.documentosState.maxUploadBytes;
+            for (let i = 0; i < arquivos.length; i++) {
+                if (arquivos[i].size > limite) {
+                    this.showNotification(`Arquivo "${arquivos[i].name}" excede o limite de 10 MB.`, 'warning');
+                    return;
+                }
+            }
+
+            this.documentosState.enviando = true;
+            textoOriginal = btnUpload ? btnUpload.innerHTML : '';
+            if (btnUpload) {
+                btnUpload.disabled = true;
+                btnUpload.innerHTML = '⏳ Carregando / Enviando documento...';
+            }
+            if (inputArquivo) {
+                inputArquivo.disabled = true;
             }
 
             const formData = new FormData();
@@ -6370,7 +6400,7 @@ class App {
             if (observacao) formData.append('observacao', observacao);
 
             const qtdArquivos = arquivos.length;
-            this.showNotification(`Enviando ${qtdArquivos} documento(s)...`, 'info');
+            this.showNotification(`Carregando / enviando ${qtdArquivos} documento(s)...`, 'info');
 
             const response = await fetch(`${API_BASE_URL}/api/documentos/upload-multiplo`, {
                 method: 'POST',
@@ -6421,6 +6451,15 @@ class App {
         } catch (error) {
             console.error('Erro ao fazer upload:', error);
             this.showNotification('Erro ao enviar documento(s): ' + error.message, 'error');
+        } finally {
+            if (btnUpload) {
+                btnUpload.disabled = false;
+                btnUpload.innerHTML = textoOriginal || '📤 Enviar Documento';
+            }
+            if (inputArquivo) {
+                inputArquivo.disabled = false;
+            }
+            this.documentosState.enviando = false;
         }
     }
 
