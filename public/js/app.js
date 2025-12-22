@@ -4917,8 +4917,41 @@ class App {
         resumoVisitas: new Map(),
         tipoRegistro: null,
         cameraErro: null,
-        resizeHandler: null
+        resizeHandler: null,
+        atendimentosAbertos: new Map()
     };
+
+    getAtendimentoStorageKey(repId, clienteId) {
+        return `ATENDIMENTO_ABERTO_${repId}_${clienteId}`;
+    }
+
+    recuperarAtendimentoPersistido(repId, clienteId) {
+        try {
+            const chave = this.getAtendimentoStorageKey(repId, clienteId);
+            const bruto = localStorage.getItem(chave);
+            return bruto ? JSON.parse(bruto) : null;
+        } catch (error) {
+            console.warn('Não foi possível recuperar atendimento salvo localmente', error);
+            return null;
+        }
+    }
+
+    persistirAtendimentoLocal(repId, clienteId, dados) {
+        try {
+            const chave = this.getAtendimentoStorageKey(repId, clienteId);
+            localStorage.setItem(chave, JSON.stringify(dados));
+        } catch (error) {
+            console.warn('Não foi possível persistir atendimento localmente', error);
+        }
+    }
+
+    limparAtendimentoLocal(repId, clienteId) {
+        try {
+            localStorage.removeItem(this.getAtendimentoStorageKey(repId, clienteId));
+        } catch (error) {
+            console.warn('Não foi possível limpar atendimento local', error);
+        }
+    }
 
     async inicializarRegistroRota() {
         const btnCarregarRoteiro = document.getElementById('btnCarregarRoteiro');
@@ -4988,9 +5021,10 @@ class App {
 
         const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
 
-        const [roteiro, resumo] = await Promise.all([
+        const [roteiro, resumo, atendimentosAbertos] = await Promise.all([
             db.carregarRoteiroRepositorDia(repId, diaSemana),
-            this.buscarResumoVisitas(repId, dataVisita)
+            this.buscarResumoVisitas(repId, dataVisita),
+            this.buscarAtendimentosAbertos(repId)
         ]);
 
         if (!roteiro || roteiro.length === 0) {
@@ -5000,6 +5034,46 @@ class App {
         }
 
         const mapaResumo = new Map((resumo || []).map((item) => [normalizeClienteId(item.cliente_id), item]));
+        this.registroRotaState.atendimentosAbertos = new Map((atendimentosAbertos || [])
+            .map((item) => [normalizeClienteId(item.cliente_id), item]));
+
+        (atendimentosAbertos || []).forEach((aberto) => {
+            const cliNorm = normalizeClienteId(aberto.cliente_id);
+            const atual = mapaResumo.get(cliNorm) || {};
+            const atividades = Number(aberto.atividades_count || 0);
+
+            mapaResumo.set(cliNorm, {
+                ...atual,
+                status: 'em_atendimento',
+                checkin_data_hora: aberto.checkin_em || atual.checkin_data_hora,
+                checkout_data_hora: null,
+                rv_id: aberto.rv_id || atual.rv_id,
+                atividades_count: atividades
+            });
+
+            if (aberto.rv_id) {
+                this.persistirAtendimentoLocal(repId, cliNorm, {
+                    rv_id: aberto.rv_id,
+                    atividades_count: atividades
+                });
+            }
+        });
+
+        roteiro.forEach((cliente) => {
+            const cliNorm = normalizeClienteId(cliente.cli_codigo);
+            const salvo = this.recuperarAtendimentoPersistido(repId, cliNorm);
+
+            if (salvo && (!mapaResumo.has(cliNorm) || mapaResumo.get(cliNorm).status !== 'finalizado')) {
+                const atual = mapaResumo.get(cliNorm) || {};
+                mapaResumo.set(cliNorm, {
+                    ...atual,
+                    status: 'em_atendimento',
+                    rv_id: salvo.rv_id || atual.rv_id,
+                    atividades_count: Number(salvo.atividades_count || atual.atividades_count || 0)
+                });
+            }
+        });
+
         this.registroRotaState.resumoVisitas = mapaResumo;
 
         container.innerHTML = '';
@@ -5045,7 +5119,12 @@ class App {
 
             const podeCheckout = statusBase === 'em_atendimento';
             const checkinDisponivel = statusBase !== 'em_atendimento';
-            const estadoDesabilitado = !podeCheckout ? 'disabled title="Faça o check-in primeiro" style="opacity:0.6;cursor:not-allowed;"' : '';
+            const atividadesCount = Number(statusCliente.atividades_count || 0);
+            const textoCheckout = (!podeCheckout || atividadesCount <= 0) && podeCheckout
+                ? 'disabled title="Registre atividades antes do checkout" style="opacity:0.6;cursor:not-allowed;"'
+                : (!podeCheckout
+                    ? 'disabled title="Faça o check-in primeiro" style="opacity:0.6;cursor:not-allowed;"'
+                    : '');
 
             const btnCheckin = checkinDisponivel
                 ? `<button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'checkin', '${cadastroEsc}')" class="btn-small">✅ Check-in</button>`
@@ -5053,8 +5132,12 @@ class App {
             const btnAtividades = podeCheckout
                 ? `<button onclick="app.abrirModalAtividades(${repId}, '${cliId}', '${nomeEsc}', '${dataVisita}')" class="btn-small btn-atividades">📋 Atividades</button>`
                 : '';
-            const btnCheckout = `<button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'checkout', '${cadastroEsc}')" class="btn-small" ${estadoDesabilitado}>🚪 Checkout</button>`;
-            const btnCampanha = `<button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'campanha', '${cadastroEsc}')" class="btn-small" ${estadoDesabilitado}>🎯 Campanha</button>`;
+            const btnCheckout = podeCheckout
+                ? `<button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'checkout', '${cadastroEsc}')" class="btn-small" ${textoCheckout}>🚪 Checkout</button>`
+                : '';
+            const btnCampanha = podeCheckout
+                ? `<button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'campanha', '${cadastroEsc}')" class="btn-small">🎯 Campanha</button>`
+                : '';
 
             const botoes = `${btnCheckin}${btnAtividades}${btnCheckout}${btnCampanha}`;
 
@@ -5106,6 +5189,24 @@ class App {
         }
     }
 
+    async buscarAtendimentosAbertos(repId) {
+        try {
+            const url = `${this.registroRotaState.backendUrl}/api/registro-rota/atendimentos-abertos?repositor_id=${repId}`;
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                console.warn('Erro ao buscar atendimentos abertos:', response.status);
+                return [];
+            }
+
+            const data = await response.json();
+            return data.atendimentos_abertos || [];
+        } catch (error) {
+            console.warn('Erro ao recuperar atendimentos abertos:', error);
+            return [];
+        }
+    }
+
     atualizarStatusClienteLocal(clienteId, novoStatus = {}) {
         const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
         const clienteIdNorm = normalizeClienteId(clienteId);
@@ -5120,6 +5221,16 @@ class App {
 
         mapaResumo.set(clienteIdNorm, combinado);
         this.registroRotaState.resumoVisitas = mapaResumo;
+
+        if (combinado.status === 'em_atendimento' && combinado.rv_id) {
+            this.persistirAtendimentoLocal(combinado.rep_id || this.registroRotaState?.clienteAtual?.repId, clienteIdNorm, {
+                rv_id: combinado.rv_id,
+                atividades_count: Number(combinado.atividades_count || 0)
+            });
+        } else {
+            this.limparAtendimentoLocal(combinado.rep_id || this.registroRotaState?.clienteAtual?.repId, clienteIdNorm);
+        }
+
         this.atualizarCardCliente(clienteIdNorm);
     }
 
@@ -5153,7 +5264,12 @@ class App {
 
         const podeCheckout = statusBase === 'em_atendimento';
         const checkinDisponivel = statusBase !== 'em_atendimento';
-        const estadoDesabilitado = !podeCheckout ? 'disabled title="Faça o check-in primeiro" style="opacity:0.6;cursor:not-allowed;"' : '';
+        const atividadesCount = Number(statusCliente.atividades_count || 0);
+        const estadoCheckout = (!podeCheckout || atividadesCount <= 0) && podeCheckout
+            ? 'disabled title="Registre atividades antes do checkout" style="opacity:0.6;cursor:not-allowed;"'
+            : (!podeCheckout
+                ? 'disabled title="Faça o check-in primeiro" style="opacity:0.6;cursor:not-allowed;"'
+                : '');
 
         const btnCheckin = checkinDisponivel
             ? `<button onclick="app.abrirModalCaptura(${repId}, '${clienteIdNorm}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'checkin', '${cadastroEsc}')" class="btn-small">✅ Check-in</button>`
@@ -5161,8 +5277,12 @@ class App {
         const btnAtividades = podeCheckout
             ? `<button onclick="app.abrirModalAtividades(${repId}, '${clienteIdNorm}', '${nomeEsc}', '${dataVisita}')" class="btn-small btn-atividades">📋 Atividades</button>`
             : '';
-        const btnCheckout = `<button onclick="app.abrirModalCaptura(${repId}, '${clienteIdNorm}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'checkout', '${cadastroEsc}')" class="btn-small" ${estadoDesabilitado}>🚪 Checkout</button>`;
-        const btnCampanha = `<button onclick="app.abrirModalCaptura(${repId}, '${clienteIdNorm}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'campanha', '${cadastroEsc}')" class="btn-small" ${estadoDesabilitado}>🎯 Campanha</button>`;
+        const btnCheckout = podeCheckout
+            ? `<button onclick="app.abrirModalCaptura(${repId}, '${clienteIdNorm}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'checkout', '${cadastroEsc}')" class="btn-small" ${estadoCheckout}>🚪 Checkout</button>`
+            : '';
+        const btnCampanha = podeCheckout
+            ? `<button onclick="app.abrirModalCaptura(${repId}, '${clienteIdNorm}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'campanha', '${cadastroEsc}')" class="btn-small">🎯 Campanha</button>`
+            : '';
 
         const botoes = `${btnCheckin}${btnAtividades}${btnCheckout}${btnCampanha}`;
 
@@ -5788,6 +5908,8 @@ class App {
             const dataVisita = String(atual.dataVisita || '').trim();
             const tipoRegistro = (this.registroRotaState.tipoRegistro || '').toLowerCase();
             const statusCliente = atual.statusCliente;
+            const atendimentoPersistido = this.recuperarAtendimentoPersistido(repId, clienteId) || {};
+            const rvSessaoId = statusCliente?.rv_id || atendimentoPersistido.rv_id || null;
 
             const gpsCoords = this.registroRotaState.gpsCoords;
             const fotos = this.registroRotaState.fotosCapturadas || [];
@@ -5818,6 +5940,11 @@ class App {
 
             if (tipoRegistro === 'checkout' && (!statusCliente || statusCliente.status !== 'em_atendimento')) {
                 this.showNotification('Realize o check-in antes de registrar o checkout.', 'warning');
+                return;
+            }
+
+            if (tipoRegistro === 'checkout' && Number(statusCliente?.atividades_count || atendimentoPersistido.atividades_count || 0) <= 0) {
+                this.showNotification('Registre ao menos 1 atividade antes do checkout.', 'warning');
                 return;
             }
 
@@ -5889,6 +6016,7 @@ class App {
             const enderecoRoteiro = this.registroRotaState.clienteAtual?.clienteEndereco || '';
             formData.append('cliente_endereco', enderecoRoteiro);
             if (dataVisita) formData.append('data_planejada', dataVisita);
+            if (rvSessaoId) formData.append('rv_id', rvSessaoId);
 
             arquivos.forEach((arquivo) => formData.append('fotos[]', arquivo));
 
@@ -5904,12 +6032,16 @@ class App {
 
             const resposta = await response.json();
             const dataRegistro = resposta?.data_hora || new Date().toISOString();
+            const rvResposta = resposta?.rv_id || resposta?.sessao_id || rvSessaoId;
 
             if (tipoRegistro === 'checkin') {
                 this.atualizarStatusClienteLocal(clienteId, {
                     status: 'em_atendimento',
                     checkin_data_hora: dataRegistro,
-                    checkout_data_hora: null
+                    checkout_data_hora: null,
+                    atividades_count: 0,
+                    rv_id: rvResposta,
+                    rep_id: repId
                 });
             }
 
@@ -5917,7 +6049,22 @@ class App {
                 this.atualizarStatusClienteLocal(clienteId, {
                     status: 'finalizado',
                     checkout_data_hora: dataRegistro,
-                    tempo_minutos: resposta?.tempo_trabalho_min ?? statusCliente?.tempo_minutos ?? null
+                    tempo_minutos: resposta?.tempo_trabalho_min ?? statusCliente?.tempo_minutos ?? null,
+                    rv_id: rvResposta,
+                    atividades_count: statusCliente?.atividades_count,
+                    rep_id: repId
+                });
+            }
+
+            if (tipoRegistro === 'campanha') {
+                const atuais = Number(statusCliente?.atividades_count || atendimentoPersistido.atividades_count || 0);
+                const novas = Math.max(1, listaFotos.length || 1);
+
+                this.atualizarStatusClienteLocal(clienteId, {
+                    status: 'em_atendimento',
+                    rv_id: rvResposta,
+                    atividades_count: atuais + novas,
+                    rep_id: repId
                 });
             }
 
@@ -6102,6 +6249,17 @@ class App {
                 const error = await this.extrairMensagemErro(response);
                 throw new Error(error || 'Erro ao salvar atividades');
             }
+
+            const resumoAtual = this.registroRotaState.resumoVisitas.get(sessao.clienteId) || {};
+            const atividadesAtuais = Number(resumoAtual.atividades_count || 0);
+            const novoTotal = Math.max(1, atividadesAtuais || 1);
+
+            this.atualizarStatusClienteLocal(sessao.clienteId, {
+                status: 'em_atendimento',
+                rv_id: sessao.sessaoId,
+                atividades_count: novoTotal,
+                rep_id: sessao.repId
+            });
 
             this.showNotification('Atividades salvas com sucesso!', 'success');
             this.fecharModalAtividades();

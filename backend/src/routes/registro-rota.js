@@ -217,7 +217,8 @@ router.post('/visitas', upload.any(), async (req, res) => {
       cliente_nome,
       cliente_endereco,
       tipo,
-      data_planejada
+      data_planejada,
+      rv_id
     } = req.body;
 
     const arquivos = Array.isArray(req.files) ? req.files : [];
@@ -338,7 +339,14 @@ router.post('/visitas', upload.any(), async (req, res) => {
     }
 
     if (rvTipo === 'checkout') {
-      if (!sessaoEmAndamentoCliente) {
+      const rvSessaoId = rv_id || req.body?.sessao_id || req.body?.rv_sessao_id || null;
+      const sessaoCheckout = rvSessaoId
+        ? await tursoService.obterSessaoPorId(rvSessaoId)
+        : null;
+
+      const sessaoAlvo = sessaoCheckout || sessaoEmAndamentoCliente || sessaoAberta;
+
+      if (!sessaoAlvo) {
         return res.status(400).json({
           ok: false,
           code: 'CHECKIN_NAO_ENCONTRADO',
@@ -346,15 +354,16 @@ router.post('/visitas', upload.any(), async (req, res) => {
         });
       }
       if (sessaoAberta && normalizeClienteId(sessaoAberta.cliente_id) !== clienteIdNorm) {
+        console.info('OPEN_ATTENDANCE_BLOCK', { rv_id: sessaoAberta.sessao_id, rep_id: repIdNumber, cliente_id: clienteIdNorm });
         return res.status(409).json({
           ok: false,
           code: 'CHECKOUT_CLIENTE_DIFERENTE',
           message: `Existe um check-in aberto para o cliente ${sessaoAberta.cliente_id}. Realize o checkout nele antes de finalizar outro cliente.`
         });
       }
-      sessaoId = sessaoEmAndamentoCliente.sessao_id.toString();
-      tempoTrabalhoMin = sessaoEmAndamentoCliente.checkin_at
-        ? Math.round((new Date(dataHoraRegistro).getTime() - new Date(sessaoEmAndamentoCliente.checkin_at).getTime()) / 60000)
+      sessaoId = sessaoAlvo.sessao_id.toString();
+      tempoTrabalhoMin = sessaoAlvo.checkin_at
+        ? Math.round((new Date(dataHoraRegistro).getTime() - new Date(sessaoAlvo.checkin_at).getTime()) / 60000)
         : null;
     }
     if (rvTipo === 'campanha') {
@@ -471,7 +480,18 @@ router.post('/visitas', upload.any(), async (req, res) => {
     }
 
     if (rvTipo === 'checkout') {
+      const atividades = await tursoService.contarAtividadesSessao(sessaoId);
+      if (!atividades.total) {
+        console.info('CHECKOUT_BLOCK_NO_ACTIVITY', { rv_id: sessaoId, rep_id: repIdNumber, cliente_id: clienteIdNorm });
+        return res.status(409).json({
+          ok: false,
+          code: 'ATIVIDADE_OBRIGATORIA',
+          message: 'Registre ao menos 1 atividade antes do checkout.'
+        });
+      }
+
       await tursoService.registrarCheckoutSessao(sessaoId, dataHoraRegistro, tempoTrabalhoMin ?? null, enderecoSnapshot);
+      console.info('CHECKOUT_OK', { rv_id: sessaoId, rep_id: repIdNumber, cliente_id: clienteIdNorm });
     }
 
     const payload = {
@@ -488,8 +508,13 @@ router.post('/visitas', upload.any(), async (req, res) => {
       sessao_id: sessaoId,
       data_planejada: dataReferencia,
       tempo_trabalho_min: tempoTrabalhoMin,
-      rv_endereco_cliente: enderecoCliente || null
+      rv_endereco_cliente: enderecoCliente || null,
+      rv_id: sessaoId
     };
+
+    if (rvTipo === 'checkin') {
+      console.info('CHECKIN_OK', { rv_id: sessaoId, rep_id: repIdNumber, cliente_id: clienteIdNorm });
+    }
 
     return res.status(201).json(sanitizeForJson(payload));
   } catch (error) {
@@ -664,6 +689,40 @@ router.get('/sessao-aberta', async (req, res) => {
 
     console.error('Erro ao buscar sessão aberta:', error?.stack || error);
     return res.status(500).json({ ok: false, code: 'BUSCAR_SESSAO_ERROR', message: 'Erro ao buscar sessão aberta' });
+  }
+});
+
+// ==================== GET /api/registro-rota/atendimentos-abertos ====================
+router.get('/atendimentos-abertos', async (req, res) => {
+  try {
+    const { repositor_id } = req.query;
+
+    if (!repositor_id) {
+      return res.status(400).json({ ok: false, code: 'REP_ID_REQUIRED', message: 'repositor_id é obrigatório' });
+    }
+
+    const repIdNumber = Number(repositor_id);
+    if (Number.isNaN(repIdNumber)) {
+      return res.status(400).json({ ok: false, code: 'INVALID_REP_ID', message: 'repositor_id deve ser numérico' });
+    }
+
+    const sessoes = await tursoService.listarAtendimentosAbertos(repIdNumber);
+
+    const resposta = (sessoes || []).map((sessao) => ({
+      cliente_id: sessao.cliente_id,
+      rv_id: sessao.sessao_id,
+      checkin_em: sessao.checkin_at,
+      atividades_count: sessao.atividades_count || 0
+    }));
+
+    return res.json(sanitizeForJson({ ok: true, atendimentos_abertos: resposta }));
+  } catch (error) {
+    if (error instanceof DatabaseNotConfiguredError) {
+      return res.status(503).json({ ok: false, code: error.code, message: error.message });
+    }
+
+    console.error('Erro ao buscar atendimentos abertos:', error?.stack || error);
+    return res.status(500).json({ ok: false, code: 'ATENDIMENTOS_ABERTOS_ERROR', message: 'Erro ao listar atendimentos abertos' });
   }
 });
 

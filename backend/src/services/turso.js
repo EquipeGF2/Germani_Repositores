@@ -445,26 +445,25 @@ class TursoService {
 
   async buscarSessaoAberta(repId, clienteId, { dataPlanejada, inicioIso, fimIso }) {
     let sql = `
-      SELECT c.*
-      FROM cc_registro_visita c
-      LEFT JOIN cc_registro_visita co ON co.rv_sessao_id = c.rv_sessao_id AND co.rv_tipo = 'checkout'
-      WHERE c.rep_id = ?
-        AND c.cliente_id = ?
-        AND c.rv_tipo = 'checkin'
-        AND c.rv_sessao_id IS NOT NULL
+      SELECT *
+      FROM cc_visita_sessao
+      WHERE rep_id = ?
+        AND cliente_id = ?
+        AND checkin_at IS NOT NULL
+        AND checkout_at IS NULL
     `;
 
-    const args = [repId, clienteId];
+    const args = [repId, normalizeClienteId(clienteId)];
 
     if (dataPlanejada) {
-      sql += ' AND c.rv_data_planejada = ?';
+      sql += ' AND data_planejada = ?';
       args.push(dataPlanejada);
-    } else {
-      sql += ' AND c.data_hora BETWEEN ? AND ?';
+    } else if (inicioIso && fimIso) {
+      sql += ' AND checkin_at BETWEEN ? AND ?';
       args.push(inicioIso, fimIso);
     }
 
-    sql += ' AND co.id IS NULL ORDER BY c.data_hora DESC LIMIT 1';
+    sql += ' ORDER BY checkin_at DESC LIMIT 1';
 
     const result = await this.execute(sql, args);
     return result.rows[0] || null;
@@ -472,25 +471,24 @@ class TursoService {
 
   async buscarSessaoAbertaPorRep(repId, { dataPlanejada, inicioIso, fimIso }) {
     let sql = `
-      SELECT c.*
-      FROM cc_registro_visita c
-      LEFT JOIN cc_registro_visita co ON co.rv_sessao_id = c.rv_sessao_id AND co.rv_tipo = 'checkout'
-      WHERE c.rep_id = ?
-        AND c.rv_tipo = 'checkin'
-        AND c.rv_sessao_id IS NOT NULL
+      SELECT *
+      FROM cc_visita_sessao
+      WHERE rep_id = ?
+        AND checkin_at IS NOT NULL
+        AND checkout_at IS NULL
     `;
 
     const args = [repId];
 
     if (dataPlanejada) {
-      sql += ' AND c.rv_data_planejada = ?';
+      sql += ' AND data_planejada = ?';
       args.push(dataPlanejada);
-    } else {
-      sql += ' AND c.data_hora BETWEEN ? AND ?';
+    } else if (inicioIso && fimIso) {
+      sql += ' AND checkin_at BETWEEN ? AND ?';
       args.push(inicioIso, fimIso);
     }
 
-    sql += ' AND co.id IS NULL ORDER BY c.data_hora DESC LIMIT 1';
+    sql += ' ORDER BY checkin_at DESC LIMIT 1';
 
     const result = await this.execute(sql, args);
     return result.rows[0] || null;
@@ -678,6 +676,59 @@ class TursoService {
     ]);
 
     return this.obterSessaoPorId(sessaoId);
+  }
+
+  async contarAtividadesSessao(sessaoId) {
+    const campanhasQuery = await this.execute(
+      "SELECT COUNT(1) AS total FROM cc_registro_visita WHERE COALESCE(rv_sessao_id, sessao_id) = ? AND lower(rv_tipo) = 'campanha'",
+      [sessaoId]
+    );
+
+    const campanhas = Number(campanhasQuery.rows?.[0]?.total || 0);
+
+    const sessao = await this.obterSessaoPorId(sessaoId);
+    const servicosAtivos = Boolean(
+      sessao
+      && (
+        sessao.serv_abastecimento
+        || sessao.serv_espaco_loja
+        || sessao.serv_ruptura_loja
+        || sessao.serv_pontos_extras
+        || sessao.qtd_pontos_extras
+        || sessao.qtd_frentes
+        || sessao.usou_merchandising
+      )
+    );
+
+    const total = campanhas + (servicosAtivos ? 1 : 0);
+
+    return { total, campanhas, servicosAtivos };
+  }
+
+  async listarAtendimentosAbertos(repId) {
+    const sql = `
+      SELECT *
+      FROM cc_visita_sessao
+      WHERE rep_id = ?
+        AND checkin_at IS NOT NULL
+        AND checkout_at IS NULL
+      ORDER BY checkin_at DESC
+    `;
+
+    const result = await this.execute(sql, [repId]);
+    const sessoes = result.rows || [];
+
+    const comAtividades = await Promise.all(
+      sessoes.map(async (sessao) => {
+        const atividades = await this.contarAtividadesSessao(sessao.sessao_id);
+        return {
+          ...sessao,
+          atividades_count: atividades.total
+        };
+      })
+    );
+
+    return comAtividades;
   }
 
   async ensureRegistroVisitaSchema() {
