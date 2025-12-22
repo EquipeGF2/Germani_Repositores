@@ -1791,10 +1791,17 @@ export const pages = {
 
                             <!-- Merchandising -->
                             <div class="form-group">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="atv_merchandising">
-                                    <span>Usou Merchandising</span>
-                                </label>
+                                <label style="margin-bottom: 12px; display: block; font-weight: 600;">Usou Merchandising? *</label>
+                                <div style="display: flex; gap: 16px;">
+                                    <label class="checkbox-label" style="flex: 0;">
+                                        <input type="radio" name="atv_merchandising" id="atv_merchandising_sim" value="1" required>
+                                        <span>Sim</span>
+                                    </label>
+                                    <label class="checkbox-label" style="flex: 0;">
+                                        <input type="radio" name="atv_merchandising" id="atv_merchandising_nao" value="0" required>
+                                        <span>Não</span>
+                                    </label>
+                                </div>
                             </div>
 
                             <!-- Checklist de Serviços -->

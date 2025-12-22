@@ -5880,7 +5880,18 @@ class App {
 
         // Preencher modal com dados existentes (se houver)
         document.getElementById('atv_qtd_frentes').value = sessaoAberta.qtd_frentes || '';
-        document.getElementById('atv_merchandising').checked = Boolean(sessaoAberta.usou_merchandising);
+
+        // Merchandising - radio buttons
+        const usouMerchandising = Boolean(sessaoAberta.usou_merchandising);
+        const mercSim = document.getElementById('atv_merchandising_sim');
+        const mercNao = document.getElementById('atv_merchandising_nao');
+        if (sessaoAberta.usou_merchandising === 1 || sessaoAberta.usou_merchandising === true) {
+            if (mercSim) mercSim.checked = true;
+        } else if (sessaoAberta.usou_merchandising === 0 || sessaoAberta.usou_merchandising === false) {
+            if (mercNao) mercNao.checked = true;
+        }
+        // Se não tem valor ainda, deixa ambos desmarcados para forçar seleção
+
         document.getElementById('atv_abastecimento').checked = Boolean(sessaoAberta.serv_abastecimento);
         document.getElementById('atv_espaco_loja').checked = Boolean(sessaoAberta.serv_espaco_loja);
         document.getElementById('atv_ruptura_loja').checked = Boolean(sessaoAberta.serv_ruptura_loja);
@@ -5929,7 +5940,15 @@ class App {
             }
 
             const qtdFrentes = parseInt(document.getElementById('atv_qtd_frentes').value);
-            const usouMerchandising = document.getElementById('atv_merchandising').checked;
+
+            // Ler valor do merchandising (radio button)
+            const merchandisingRadio = document.querySelector('input[name="atv_merchandising"]:checked');
+            if (!merchandisingRadio) {
+                this.showNotification('Selecione se usou merchandising (Sim ou Não)', 'warning');
+                return;
+            }
+            const usouMerchandising = parseInt(merchandisingRadio.value) === 1;
+
             const servAbastecimento = document.getElementById('atv_abastecimento').checked;
             const servEspacoLoja = document.getElementById('atv_espaco_loja').checked;
             const servRupturaLoja = document.getElementById('atv_ruptura_loja').checked;
