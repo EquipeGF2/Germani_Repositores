@@ -6790,22 +6790,131 @@ class App {
                 return;
             }
 
-            this.showNotification('Funcionalidade em desenvolvimento', 'info');
+            this.showNotification('Carregando dados...', 'info');
 
-            // TODO: Implementar análise de roteiro quando tivermos dados de roteiro planejado vs executado
-            const container = document.getElementById('roteiroResultados');
-            if (container) {
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">🗺️</div>
-                        <p>Análise de roteiro será implementada quando tivermos dados de roteiro planejado vs executado</p>
-                    </div>
-                `;
-            }
+            // Buscar todas as visitas do período
+            // Usar rep_id do repositor atual se disponível
+            const repId = this.registroRotaState.repositor?.repo_cod || '';
+            const url = `${this.registroRotaState.backendUrl}/api/registro-rota/visitas?data_inicio=${dataInicio}&data_fim=${dataFim}&rep_id=${repId || '28'}`;
+
+            const response = await fetch(url);
+
+            if (!response.ok) throw new Error('Erro ao buscar dados');
+
+            const data = await response.json();
+            const visitas = data.visitas || [];
+
+            // Filtrar visitas fora do dia previsto
+            const visitasForaDoDia = visitas.filter(v => Number(v.fora_do_dia) === 1);
+
+            // Agrupar por cliente
+            const visitasPorCliente = new Map();
+            visitasForaDoDia.forEach(v => {
+                const clienteId = String(v.cliente_id || '').trim();
+                if (!visitasPorCliente.has(clienteId)) {
+                    visitasPorCliente.set(clienteId, []);
+                }
+                visitasPorCliente.get(clienteId).push(v);
+            });
+
+            this.renderizarRoteiro({
+                totalVisitas: visitas.length,
+                visitasForaDoDia: visitasForaDoDia.length,
+                clientesForaDoDia: visitasPorCliente.size,
+                visitasPorCliente
+            });
+
+            this.showNotification(`${visitasForaDoDia.length} visita(s) fora do dia previsto encontrada(s)`, 'success');
         } catch (error) {
             console.error('Erro ao filtrar roteiro:', error);
             this.showNotification('Erro ao carregar dados: ' + error.message, 'error');
         }
+    }
+
+    renderizarRoteiro(dados) {
+        const container = document.getElementById('roteiroResultados');
+        if (!container) return;
+
+        if (dados.visitasForaDoDia === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">✅</div>
+                    <p>Todas as visitas foram realizadas no dia previsto!</p>
+                    <p style="color: #6b7280; font-size: 14px; margin-top: 8px;">Total de visitas: ${dados.totalVisitas}</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Cards de estatísticas
+        const statsHtml = `
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 16px;">
+                    <div style="font-size: 32px; font-weight: 700; color: #dc2626;">${dados.visitasForaDoDia}</div>
+                    <div style="font-size: 14px; color: #991b1b; margin-top: 4px;">Visitas Fora do Dia</div>
+                </div>
+                <div style="background: #fff7ed; border: 1px solid #fed7aa; border-radius: 12px; padding: 16px;">
+                    <div style="font-size: 32px; font-weight: 700; color: #ea580c;">${dados.clientesForaDoDia}</div>
+                    <div style="font-size: 14px; color: #9a3412; margin-top: 4px;">Clientes Afetados</div>
+                </div>
+                <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 16px;">
+                    <div style="font-size: 32px; font-weight: 700; color: #16a34a;">${dados.totalVisitas}</div>
+                    <div style="font-size: 14px; color: #15803d; margin-top: 4px;">Total de Visitas</div>
+                </div>
+            </div>
+        `;
+
+        // Lista de clientes com visitas fora do dia
+        let clientesHtml = '<h4 style="margin: 24px 0 16px; color: #374151; font-weight: 600;">Detalhamento por Cliente</h4>';
+        clientesHtml += '<div style="display: flex; flex-direction: column; gap: 12px;">';
+
+        dados.visitasPorCliente.forEach((visitas, clienteId) => {
+            const primeiraVisita = visitas[0];
+            const cliente_nome = primeiraVisita.rv_cliente_nome || primeiraVisita.cliente_nome || clienteId;
+
+            clientesHtml += `
+                <div style="background: white; border: 1px solid #fca5a5; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+                        <div>
+                            <div style="font-weight: 700; font-size: 16px; color: #111827;">${clienteId} - ${cliente_nome}</div>
+                            <div style="color: #6b7280; font-size: 13px; margin-top: 4px;">${visitas.length} visita(s) fora do dia previsto</div>
+                        </div>
+                        <div style="background: #fee2e2; color: #991b1b; padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 600;">
+                            Fora do Roteiro
+                        </div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        ${visitas.map(v => {
+                            const dataFormatada = v.data_hora ? new Date(v.data_hora).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
+                            const tipo = (v.rv_tipo || v.tipo || 'campanha').toUpperCase();
+                            return `
+                                <div style="background: #fef2f2; border-left: 3px solid #ef4444; padding: 12px; border-radius: 6px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <div>
+                                            <div style="font-size: 13px; color: #374151;">
+                                                <strong>${tipo}</strong> - ${dataFormatada}
+                                            </div>
+                                            <div style="font-size: 12px; color: #991b1b; margin-top: 4px;">
+                                                📅 Previsto: <strong>${v.dia_previsto_label || '-'}</strong> | Realizado: <strong>${v.dia_real_label || '-'}</strong>
+                                            </div>
+                                        </div>
+                                        ${v.drive_file_url ? `
+                                            <a href="${v.drive_file_url}" target="_blank" style="background: #dc2626; color: white; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 12px; white-space: nowrap;">
+                                                🖼️ Ver Foto
+                                            </a>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        });
+
+        clientesHtml += '</div>';
+
+        container.innerHTML = statsHtml + clientesHtml;
     }
 
     async filtrarServicos() {
