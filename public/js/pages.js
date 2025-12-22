@@ -1736,7 +1736,13 @@ export const pages = {
                             </div>
                             <div class="captura-hint" id="capturaHint">Capture uma única foto para este registro. Você pode refazer antes de salvar.</div>
                         </div>
-                        <div id="galeriaCampanha" class="galeria-campanha"></div>
+                        <div id="galeriaCampanhaWrapper" class="captura-thumbs-wrapper" style="display:none;">
+                            <div class="captura-thumbs-header">
+                                <span id="contadorFotosCaptura">Fotos: 0</span>
+                                <span id="statusEnvioCaptura" class="captura-status" aria-live="polite"></span>
+                            </div>
+                            <div id="galeriaCampanha" class="camera-thumbs"></div>
+                        </div>
                     </div>
                     <div class="modal-footer captura-footer">
                         <div class="captura-actions-left">

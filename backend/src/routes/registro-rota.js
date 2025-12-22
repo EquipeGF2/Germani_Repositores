@@ -241,7 +241,7 @@ router.post('/visitas', upload.any(), async (req, res) => {
     const latitudeNumber = Number(latitude);
     const longitudeNumber = Number(longitude);
     if (!Number.isFinite(latitudeNumber) || !Number.isFinite(longitudeNumber)) {
-      return res.status(400).json({ ok: false, message: 'Latitude e longitude são obrigatórias', code: 'LOCATION_REQUIRED' });
+      return res.status(400).json({ ok: false, message: 'Localização obrigatória', code: 'LOCATION_REQUIRED' });
     }
 
     const enderecoSnapshot = String(endereco_resolvido || '').trim();

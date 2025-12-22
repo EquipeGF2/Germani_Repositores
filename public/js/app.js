@@ -6,6 +6,7 @@
 import { db } from './db.js';
 import { pages, pageTitles } from './pages.js';
 import { ACL_RECURSOS } from './acl-resources.js';
+import { geoService } from './geo.js';
 import { formatarDataISO, normalizarDataISO, normalizarSupervisor, normalizarTextoCadastro, formatarGrupo, documentoParaBusca, documentoParaExibicao } from './utils.js';
 
 const AUTH_STORAGE_KEY = 'GERMANI_AUTH_USER';
@@ -123,6 +124,10 @@ class App {
                 campanhaAgrupar: 'sessao'
             }
         };
+        this.geoState = {
+            ultimaCaptura: geoService.lastLocation || null,
+            overlay: null
+        };
         this.init();
     }
 
@@ -143,6 +148,9 @@ class App {
         // Inicializa banco de dados
         await this.initializeDatabase();
 
+        const geoLiberado = await this.exigirLocalizacaoInicial();
+        if (!geoLiberado) return;
+
         const temSessao = await this.ensureUsuarioLogado();
         if (!temSessao) return;
 
@@ -158,6 +166,118 @@ class App {
 
         // Carrega a página inicial
         await this.navigateTo(this.currentPage);
+    }
+
+    exibirOverlayGeoCarregando(texto = 'Obtendo localização...') {
+        if (this.geoState.overlay) return;
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay geo-overlay';
+        overlay.innerHTML = `
+            <div class="modal-content geo-modal">
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <div class="spinner"></div>
+                    <div>
+                        <p style="margin:0; font-weight:700; color:#111827;">${texto}</p>
+                        <small style="color:#6b7280;">Precisamos da localização para liberar o acesso.</small>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        document.body.classList.add('modal-open');
+        this.geoState.overlay = overlay;
+    }
+
+    ocultarOverlayGeoCarregando() {
+        if (this.geoState.overlay) {
+            this.geoState.overlay.remove();
+            this.geoState.overlay = null;
+        }
+        document.body.classList.remove('modal-open');
+    }
+
+    mostrarModalGeoObrigatoria(erro, onRetry) {
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay geo-overlay';
+        const textoErro = typeof erro === 'string' ? erro : (erro?.message || 'Não foi possível capturar a latitude/longitude.');
+        modal.innerHTML = `
+            <div class="modal-content geo-modal" role="dialog" aria-labelledby="geoTitulo">
+                <div class="modal-header">
+                    <div>
+                        <h3 id="geoTitulo" style="margin:0;">Ative a localização para continuar</h3>
+                        <p style="margin:4px 0 0; color:#6b7280;">${textoErro}</p>
+                    </div>
+                    <button class="modal-close" aria-label="Fechar">&times;</button>
+                </div>
+                <div class="modal-body" style="display:flex; flex-direction:column; gap:10px;">
+                    <div class="alert warning" style="margin:0;">
+                        <strong>Obrigatório:</strong> habilite o GPS/Localização do navegador ou dispositivo.
+                    </div>
+                    <div class="geo-tips">
+                        <strong>Dicas rápidas:</strong>
+                        <ul>
+                            <li><span>Chrome:</span> Clique no cadeado ➜ Permissões ➜ Localização ➜ Permitir.</li>
+                            <li><span>Android:</span> Verifique se o GPS está ativo e permita o acesso quando solicitado.</li>
+                            <li><span>Windows:</span> Configurações ➜ Privacidade ➜ Localização ➜ Ativar para o navegador.</li>
+                        </ul>
+                    </div>
+                    <div style="display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap;">
+                        <button class="btn btn-secondary" type="button" data-geo-close>Fechar</button>
+                        <button class="btn btn-primary" type="button" data-geo-retry>Tentar novamente</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+        document.body.classList.add('modal-open');
+
+        const close = () => {
+            modal.remove();
+            document.body.classList.remove('modal-open');
+        };
+
+        modal.querySelector('.modal-close')?.addEventListener('click', close);
+        modal.querySelector('[data-geo-close]')?.addEventListener('click', close);
+        modal.querySelector('[data-geo-retry]')?.addEventListener('click', () => {
+            close();
+            if (typeof onRetry === 'function') onRetry();
+        });
+    }
+
+    async exigirLocalizacaoInicial() {
+        try {
+            this.exibirOverlayGeoCarregando();
+            const posicao = await geoService.getRequiredLocation();
+            this.geoState.ultimaCaptura = posicao;
+            this.registroRotaState.gpsCoords = {
+                latitude: posicao.lat,
+                longitude: posicao.lng,
+                accuracy: posicao.accuracy,
+                ts: posicao.ts
+            };
+            this.ocultarOverlayGeoCarregando();
+            return true;
+        } catch (error) {
+            console.error('Localização não liberada:', error);
+            this.ocultarOverlayGeoCarregando();
+            this.mostrarModalGeoObrigatoria(error, () => this.exigirLocalizacaoInicial());
+            return false;
+        }
+    }
+
+    async capturarLocalizacaoObrigatoria(contextoDescricao, onRetry) {
+        try {
+            const posicao = await geoService.getRequiredLocation();
+            this.geoState.ultimaCaptura = posicao;
+            return posicao;
+        } catch (error) {
+            const mensagem = contextoDescricao
+                ? `${contextoDescricao}: ${error?.message || 'Habilite o GPS para continuar.'}`
+                : error;
+            this.mostrarModalGeoObrigatoria(mensagem, onRetry);
+            return null;
+        }
     }
 
     setupEventListeners() {
@@ -5399,6 +5519,20 @@ class App {
         this.registroRotaState.enderecoResolvido = null;
         this.registroRotaState.cameraErro = null;
 
+        const posicao = await this.capturarLocalizacaoObrigatoria(
+            'Localização necessária para iniciar o registro',
+            () => this.abrirModalCaptura(repId, clienteId, clienteNome, enderecoLinha, dataVisitaParam, tipoRegistro, enderecoCadastro)
+        );
+        if (!posicao) {
+            return;
+        }
+        this.registroRotaState.gpsCoords = {
+            latitude: posicao.lat,
+            longitude: posicao.lng,
+            accuracy: posicao.accuracy,
+            ts: posicao.ts
+        };
+
         const tituloModal = document.getElementById('modalCapturaTitulo');
         if (tituloModal) {
             tituloModal.textContent = this.registroRotaState.clienteAtual.clienteNome || 'Registrar Visita';
@@ -5541,67 +5675,58 @@ class App {
     }
 
 
-    iniciarCapturaGPS() {
-        if (!navigator.geolocation) {
-            const gpsStatus = document.getElementById('gpsStatus');
+    async iniciarCapturaGPS() {
+        const gpsStatus = document.getElementById('gpsStatus');
+        if (gpsStatus) {
+            gpsStatus.innerHTML = '<p style="margin: 0; color: #6b7280;">⏳ Obtendo localização...</p>';
+        }
+
+        const posicao = await this.capturarLocalizacaoObrigatoria(
+            'Localização obrigatória para registrar',
+            () => this.iniciarCapturaGPS()
+        );
+
+        if (!posicao) {
             if (gpsStatus) {
-                gpsStatus.innerHTML = '<p style="margin: 0; color: #dc2626;">❌ GPS não disponível no dispositivo</p>';
+                gpsStatus.innerHTML = '<p style="margin: 0; color: #dc2626;">❌ Não foi possível capturar o GPS.</p>';
             }
             return;
         }
 
-        navigator.geolocation.getCurrentPosition(
-            async (position) => {
-                this.registroRotaState.gpsCoords = {
-                    latitude: position.coords.latitude,
-                    longitude: position.coords.longitude
-                };
+        this.registroRotaState.gpsCoords = {
+            latitude: posicao.lat,
+            longitude: posicao.lng,
+            accuracy: posicao.accuracy,
+            ts: posicao.ts
+        };
+        this.atualizarGaleriaCaptura();
 
-                this.atualizarGaleriaCaptura();
+        const lat = posicao.lat.toFixed(6);
+        const lon = posicao.lng.toFixed(6);
 
-                const lat = position.coords.latitude.toFixed(6);
-                const lon = position.coords.longitude.toFixed(6);
+        if (gpsStatus) {
+            gpsStatus.innerHTML = `
+                <p style="margin: 0; color: #16a34a;">
+                    ✅ Coordenadas: ${lat}, ${lon}<br>
+                    <span style="font-size: 0.85em; color: #666;">📍 Carregando endereço...</span>
+                </p>
+            `;
+        }
 
-                const gpsStatus = document.getElementById('gpsStatus');
-                if (gpsStatus) {
-                    gpsStatus.innerHTML = `
-                        <p style="margin: 0; color: #16a34a;">
-                            ✅ Coordenadas: ${lat}, ${lon}<br>
-                            <span style="font-size: 0.85em; color: #666;">📍 Carregando endereço...</span>
-                        </p>
-                    `;
-                }
-
-                // Buscar endereço via geocoding reverso
-                try {
-                    const endereco = await this.obterEnderecoPorCoordenadas(position.coords.latitude, position.coords.longitude);
-                    this.registroRotaState.enderecoResolvido = endereco;
-                    if (gpsStatus && endereco) {
-                        gpsStatus.innerHTML = `
-                            <p style="margin: 0; color: #16a34a;">
-                                ✅ Coordenadas: ${lat}, ${lon}<br>
-                                <span style="font-size: 0.9em; color: #374151;">📍 ${endereco}</span>
-                            </p>
-                        `;
-                    }
-                } catch (error) {
-                    console.warn('Erro ao buscar endereço:', error);
-                    // Mantém apenas as coordenadas se falhar
-                }
-            },
-            (error) => {
-                console.error('Erro GPS:', error);
-                const gpsStatus = document.getElementById('gpsStatus');
-                if (gpsStatus) {
-                    gpsStatus.innerHTML = '<p style="margin: 0; color: #dc2626;">❌ Erro ao capturar GPS. Verifique as permissões.</p>';
-                }
-            },
-            {
-                enableHighAccuracy: true,
-                timeout: 20000, // 20 segundos
-                maximumAge: 0
+        try {
+            const endereco = await this.obterEnderecoPorCoordenadas(posicao.lat, posicao.lng);
+            this.registroRotaState.enderecoResolvido = endereco;
+            if (gpsStatus && endereco) {
+                gpsStatus.innerHTML = `
+                    <p style="margin: 0; color: #16a34a;">
+                        ✅ Coordenadas: ${lat}, ${lon}<br>
+                        <span style="font-size: 0.9em; color: #374151;">📍 ${endereco}</span>
+                    </p>
+                `;
             }
-        );
+        } catch (error) {
+            console.warn('Erro ao buscar endereço:', error);
+        }
     }
 
     async obterEnderecoPorCoordenadas(lat, lon) {
@@ -5671,19 +5796,28 @@ class App {
     atualizarGaleriaCaptura() {
         const tipo = (this.registroRotaState.tipoRegistro || '').toLowerCase();
         const galeria = document.getElementById('galeriaCampanha');
+        const galeriaWrapper = document.getElementById('galeriaCampanhaWrapper');
+        const contador = document.getElementById('contadorFotosCaptura');
         const btnSalvar = document.getElementById('btnSalvarVisita');
         const btnCapturar = document.getElementById('btnCapturarFoto');
         const btnNova = document.getElementById('btnNovaFoto');
 
         const total = this.registroRotaState.fotosCapturadas.length;
 
+        if (contador) {
+            contador.textContent = `Fotos: ${total}`;
+        }
+
+        if (galeriaWrapper) {
+            galeriaWrapper.style.display = tipo === 'campanha' ? 'flex' : 'none';
+        }
+
         if (galeria) {
+            galeria.innerHTML = '';
             if (tipo === 'campanha') {
-                galeria.style.display = 'grid';
-                galeria.innerHTML = '';
                 this.registroRotaState.fotosCapturadas.forEach((foto, index) => {
                     const thumb = document.createElement('div');
-                    thumb.className = 'galeria-item';
+                    thumb.className = 'camera-thumb';
                     thumb.innerHTML = `
                         <img src="${foto.url}" alt="Foto ${index + 1}">
                         <button type="button" data-index="${index}" class="btn-remover-foto">✖</button>
@@ -5697,9 +5831,6 @@ class App {
                         this.removerFotoIndice(idx);
                     };
                 });
-            } else {
-                galeria.style.display = 'none';
-                galeria.innerHTML = '';
             }
         }
 
@@ -5787,9 +5918,8 @@ class App {
                 const tipo = (this.registroRotaState.tipoRegistro || '').toLowerCase();
                 if (tipo !== 'campanha') {
                     canvas.style.display = 'block';
-                    video.style.display = 'none';
+                    video.style.display = 'block';
                     if (placeholder) placeholder.style.display = 'none';
-                    this.pararStreamVideo();
                 } else {
                     canvas.style.display = 'none';
                 }
@@ -5848,6 +5978,20 @@ class App {
         const btnSalvar = document.getElementById('btnSalvarVisita');
         const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
         const pad2 = (n) => String(n).padStart(2, '0');
+
+        if (!this.registroRotaState.gpsCoords) {
+            const posicao = await this.capturarLocalizacaoObrigatoria(
+                'Localização obrigatória para salvar',
+                () => this.iniciarCapturaGPS()
+            );
+            if (!posicao) return;
+            this.registroRotaState.gpsCoords = {
+                latitude: posicao.lat,
+                longitude: posicao.lng,
+                accuracy: posicao.accuracy,
+                ts: posicao.ts
+            };
+        }
 
         const stampOnBlob = async (blob, linhasTexto) => {
             const img = await new Promise((resolve, reject) => {
@@ -6445,7 +6589,8 @@ class App {
         maxUploadMb: MAX_UPLOAD_MB,
         filaUploads: [],
         cameraStream: null,
-        cameraModal: null
+        cameraModal: null,
+        cameraCapturas: []
     };
 
     async inicializarDocumentos() {
@@ -6564,6 +6709,7 @@ class App {
         this.documentosState.filaUploads = [...this.documentosState.filaUploads, ...novosItens];
         this.renderizarFilaUploads();
         this.showNotification(`${novosItens.length} item(ns) adicionado(s) à fila`, 'success');
+        return novosItens;
     }
 
     removerItemFila(id) {
@@ -6571,8 +6717,10 @@ class App {
         if (item?.preview) {
             URL.revokeObjectURL(item.preview);
         }
+        this.documentosState.cameraCapturas = this.documentosState.cameraCapturas.filter(cap => cap.id !== id);
         this.documentosState.filaUploads = this.documentosState.filaUploads.filter(i => i.id !== id);
         this.renderizarFilaUploads();
+        this.atualizarThumbsCameraDocumentos();
     }
 
     renderizarFilaUploads() {
@@ -6582,12 +6730,14 @@ class App {
         if (!container) return;
 
         if (this.documentosState.filaUploads.length === 0) {
+            this.documentosState.cameraCapturas = [];
             container.classList.add('empty');
             container.innerHTML = `
                 <div class="upload-queue-title">📁 Fila de anexos</div>
                 <div style="font-size: 13px; color: #6b7280;">Nenhum arquivo ou foto selecionado</div>
             `;
             if (contador) contador.textContent = '';
+            this.atualizarThumbsCameraDocumentos();
             return;
         }
 
@@ -6659,26 +6809,47 @@ class App {
 
     async abrirCameraDocumentos() {
         try {
+            const posicao = await this.capturarLocalizacaoObrigatoria(
+                'Localização obrigatória para anexar por foto',
+                () => this.abrirCameraDocumentos()
+            );
+            if (!posicao) return;
+
+            if (this.documentosState.cameraModal) {
+                this.fecharCameraDocumentos();
+            }
+
             const modal = document.createElement('div');
-            modal.className = 'modal-overlay';
+            modal.className = 'modal-overlay camera-overlay';
             modal.id = 'modalCameraDocumentos';
-            modal.style.display = 'flex';
             modal.innerHTML = `
-                <div class="modal-content" style="max-width: 720px; width: 100%;">
+                <div class="modal-content captura-modal" style="max-width: 760px; width: 100%;">
                     <div class="modal-header">
                         <div>
                             <h3 style="margin: 0;">Anexar por foto</h3>
-                            <p style="margin: 4px 0 0; color: #6b7280;">Use a câmera para capturar o documento</p>
+                            <p style="margin: 4px 0 0; color: #6b7280;">Use a câmera para capturar e manter a fila ativa.</p>
                         </div>
-                        <button class="modal-close" aria-label="Fechar" onclick="app.fecharCameraDocumentos()">&times;</button>
+                        <button class="modal-close" aria-label="Fechar">&times;</button>
                     </div>
                     <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
-                        <div style="background: #0f172a; border-radius: 12px; overflow: hidden; position: relative; min-height: 260px;">
-                            <video id="videoCameraDocumento" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: cover; display: block;"></video>
-                            <div id="cameraDocumentoErro" style="display:none; position:absolute; inset:0; background: rgba(255,255,255,0.95); color:#b91c1c; display:flex; align-items:center; justify-content:center; padding:16px; text-align:center; font-weight:700;"></div>
+                        <div class="camera-area">
+                            <video id="videoCameraDocumento" autoplay playsinline muted class="camera-video" style="display:block;"></video>
+                            <canvas id="canvasCameraDocumento" class="camera-canvas" style="display:none;"></canvas>
+                            <div id="cameraDocumentoErro" class="camera-erro" style="display:none;"></div>
                         </div>
-                        <div style="display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap;">
-                            <button class="btn btn-secondary" type="button" onclick="app.fecharCameraDocumentos()">Cancelar</button>
+                        <div class="captura-hint">Câmera fica ativa para capturar várias fotos sem reiniciar.</div>
+                        <div id="cameraDocumentoThumbs" class="captura-thumbs-wrapper" style="display:none;">
+                            <div class="captura-thumbs-header">
+                                <span id="contadorFotosDocumento">Fotos: 0</span>
+                                <span class="captura-status" id="statusCapturaDocumento"></span>
+                            </div>
+                            <div class="camera-thumbs" id="documentoThumbList"></div>
+                        </div>
+                    </div>
+                    <div class="modal-footer captura-footer">
+                        <div class="captura-actions-left"></div>
+                        <div class="captura-actions-right">
+                            <button class="btn btn-secondary" type="button" data-camera-close>Cancelar</button>
                             <button class="btn btn-primary" type="button" id="btnCapturarFotoDocumento">📸 Capturar foto</button>
                         </div>
                     </div>
@@ -6686,11 +6857,18 @@ class App {
             `;
 
             document.body.appendChild(modal);
+            document.body.classList.add('modal-open');
             this.documentosState.cameraModal = modal;
 
+            modal.addEventListener('click', (event) => {
+                if (event.target === modal) this.fecharCameraDocumentos();
+            });
+            modal.querySelector('.modal-close')?.addEventListener('click', () => this.fecharCameraDocumentos());
+            modal.querySelector('[data-camera-close]')?.addEventListener('click', () => this.fecharCameraDocumentos());
+
             const video = document.getElementById('videoCameraDocumento');
-            const btnCapturar = document.getElementById('btnCapturarFotoDocumento');
             const erroBox = document.getElementById('cameraDocumentoErro');
+            const btnCapturar = document.getElementById('btnCapturarFotoDocumento');
 
             if (btnCapturar) {
                 btnCapturar.onclick = () => this.capturarFotoDocumento();
@@ -6707,9 +6885,11 @@ class App {
                 console.error('Erro ao abrir câmera:', error);
                 if (erroBox) {
                     erroBox.style.display = 'flex';
-                    erroBox.textContent = 'Não foi possível acessar a câmera. Verifique permissões ou conecte um dispositivo de captura.';
+                    erroBox.textContent = 'Não foi possível acessar a câmera. Verifique permissões ou conecte um dispositivo.';
                 }
             }
+
+            this.atualizarThumbsCameraDocumentos();
         } catch (error) {
             console.error('Erro ao abrir captura por foto:', error);
             this.showNotification('Não foi possível abrir a câmera', 'error');
@@ -6726,18 +6906,20 @@ class App {
             modal.remove();
         }
         this.documentosState.cameraModal = null;
+        document.body.classList.remove('modal-open');
     }
 
     capturarFotoDocumento() {
         try {
             const video = document.getElementById('videoCameraDocumento');
+            const canvas = document.getElementById('canvasCameraDocumento');
+            const status = document.getElementById('statusCapturaDocumento');
 
-            if (!video || !video.videoWidth) {
+            if (!video || !video.videoWidth || !canvas) {
                 this.showNotification('Câmera não está pronta para capturar', 'warning');
                 return;
             }
 
-            const canvas = document.createElement('canvas');
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             const ctx = canvas.getContext('2d');
@@ -6753,14 +6935,54 @@ class App {
                 const nomeFoto = `foto_${agora.getFullYear()}${String(agora.getMonth() + 1).padStart(2, '0')}${String(agora.getDate()).padStart(2, '0')}_${String(agora.getHours()).padStart(2, '0')}${String(agora.getMinutes()).padStart(2, '0')}${String(agora.getSeconds()).padStart(2, '0')}.jpg`;
                 const arquivo = new File([blob], nomeFoto, { type: 'image/jpeg' });
 
-                this.adicionarArquivosFila([arquivo], 'camera');
+                const novos = this.adicionarArquivosFila([arquivo], 'camera') || [];
+                const [novo] = novos;
+                if (novo) {
+                    this.documentosState.cameraCapturas.push({ id: novo.id, url: novo.preview || URL.createObjectURL(blob) });
+                    this.atualizarThumbsCameraDocumentos();
+                }
+
+                if (status) status.textContent = 'Foto adicionada à fila de envio';
                 this.showNotification('Foto adicionada à fila de envio', 'success');
-                this.fecharCameraDocumentos();
             }, 'image/jpeg', 0.92);
         } catch (error) {
             console.error('Erro ao capturar foto:', error);
             this.showNotification('Erro ao capturar foto', 'error');
         }
+    }
+
+    atualizarThumbsCameraDocumentos() {
+        const wrapper = document.getElementById('cameraDocumentoThumbs');
+        const lista = document.getElementById('documentoThumbList');
+        const contador = document.getElementById('contadorFotosDocumento');
+
+        if (!wrapper || !lista) return;
+
+        const capturas = this.documentosState.cameraCapturas || [];
+        if (capturas.length === 0) {
+            wrapper.style.display = 'none';
+            lista.innerHTML = '';
+            if (contador) contador.textContent = 'Fotos: 0';
+            return;
+        }
+
+        wrapper.style.display = 'flex';
+        lista.innerHTML = '';
+        capturas.forEach((cap) => {
+            const thumb = document.createElement('div');
+            thumb.className = 'camera-thumb';
+            thumb.innerHTML = `
+                <img src="${cap.url}" alt="Foto capturada">
+                <button type="button" class="btn-remover-foto" data-remove-id="${cap.id}">✖</button>
+            `;
+            lista.appendChild(thumb);
+        });
+
+        lista.querySelectorAll('[data-remove-id]').forEach(btn => {
+            btn.onclick = () => this.removerItemFila(btn.dataset.removeId);
+        });
+
+        if (contador) contador.textContent = `Fotos: ${capturas.length}`;
     }
 
     async uploadDocumento() {
@@ -7424,6 +7646,7 @@ class App {
         const modalDiv = document.createElement('div');
         modalDiv.innerHTML = modalHtml;
         document.body.appendChild(modalDiv.firstElementChild);
+        document.body.classList.add('modal-open');
 
         this.aplicarEstadoCampanha();
         this.renderizarGaleriaCampanha();
@@ -7439,6 +7662,7 @@ class App {
     fecharModalImagensCampanha() {
         const modal = document.getElementById('modalImagensCampanha');
         if (modal) modal.remove();
+        document.body.classList.remove('modal-open');
         this.fecharViewerCampanha();
         if (this.campanhaModalEscHandler) {
             document.removeEventListener('keydown', this.campanhaModalEscHandler);
