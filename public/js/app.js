@@ -5636,12 +5636,31 @@ class App {
                 image.src = url;
             });
 
+            // Otimização: redimensionar imagem se for muito grande
+            const MAX_WIDTH = 1920;
+            const MAX_HEIGHT = 1920;
+            let targetWidth = img.width;
+            let targetHeight = img.height;
+
+            // Calcular dimensões mantendo aspect ratio
+            if (img.width > MAX_WIDTH || img.height > MAX_HEIGHT) {
+                const aspectRatio = img.width / img.height;
+                if (img.width > img.height) {
+                    targetWidth = MAX_WIDTH;
+                    targetHeight = Math.round(MAX_WIDTH / aspectRatio);
+                } else {
+                    targetHeight = MAX_HEIGHT;
+                    targetWidth = Math.round(MAX_HEIGHT * aspectRatio);
+                }
+            }
+
             const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
             const ctx = canvas.getContext('2d');
 
-            ctx.drawImage(img, 0, 0);
+            // Desenhar imagem redimensionada
+            ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
 
             const margin = Math.round(canvas.width * 0.02);
             const fontSize = Math.max(14, Math.round(canvas.width * 0.028));
@@ -5661,8 +5680,9 @@ class App {
                 y += lineH;
             }
 
+            // Otimização: reduzir qualidade JPEG para 0.75 (ainda boa, mas menor)
             const stampedBlob = await new Promise((resolve) => {
-                canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.9);
+                canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.75);
             });
 
             return stampedBlob || blob;
@@ -5749,10 +5769,21 @@ class App {
             ].filter(Boolean);
 
             const arquivos = [];
-            for (let i = 0; i < listaFotos.length; i += 1) {
+            const totalFotos = listaFotos.length;
+
+            // Processar fotos com indicador de progresso
+            for (let i = 0; i < totalFotos; i += 1) {
+                if (btnSalvar && totalFotos > 1) {
+                    btnSalvar.textContent = `Processando ${i + 1}/${totalFotos}...`;
+                }
+
                 const carimbada = await stampOnBlob(listaFotos[i].blob, linhasCarimboBase);
                 const arquivo = new File([carimbada], `captura-${pad2(i + 1)}.jpg`, { type: 'image/jpeg' });
                 arquivos.push(arquivo);
+            }
+
+            if (btnSalvar) {
+                btnSalvar.textContent = 'Enviando...';
             }
 
             const formData = new FormData();
