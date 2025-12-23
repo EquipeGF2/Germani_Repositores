@@ -804,8 +804,16 @@ router.get('/sessao-aberta', async (req, res) => {
     const { inicioIso, fimIso } = buildUtcRangeFromLocalDates(dataReferencia, dataReferencia);
 
     const sessao = await tursoService.buscarSessaoAbertaPorRep(repIdNumber, { dataPlanejada: data_planejada, inicioIso, fimIso });
+    const atividadesCount = sessao ? await tursoService.contarAtividadesSessao(sessao.sessao_id) : null;
 
-    return res.json(sanitizeForJson({ ok: true, sessao_aberta: sessao || null }));
+    const sessaoResposta = sessao
+      ? {
+          ...sessao,
+          atividades_count: atividadesCount?.total || 0
+        }
+      : null;
+
+    return res.json(sanitizeForJson({ ok: true, sessao_aberta: sessaoResposta }));
   } catch (error) {
     if (error instanceof DatabaseNotConfiguredError) {
       return res.status(503).json({ ok: false, code: error.code, message: error.message });
@@ -833,11 +841,13 @@ router.get('/atendimentos-abertos', async (req, res) => {
     const sessoes = await tursoService.listarAtendimentosAbertos(repIdNumber);
 
     const resposta = (sessoes || []).map((sessao) => ({
-      cliente_id: sessao.cliente_id,
+      cliente_id: normalizeClienteId(sessao.cliente_id),
       rv_id: sessao.sessao_id,
       checkin_em: sessao.checkin_at,
       checkout_em: sessao.checkout_at || null,
-      atividades_count: sessao.atividades_count || 0
+      atividades_count: sessao.atividades_count || 0,
+      data_roteiro: sessao.data_roteiro || sessao.data_planejada || null,
+      dia_previsto: sessao.dia_previsto || null
     }));
 
     return res.json(sanitizeForJson({ ok: true, atendimentos_abertos: resposta }));
@@ -848,6 +858,44 @@ router.get('/atendimentos-abertos', async (req, res) => {
 
     console.error('Erro ao buscar atendimentos abertos:', error?.stack || error);
     return res.status(500).json({ ok: false, code: 'ATENDIMENTOS_ABERTOS_ERROR', message: 'Erro ao listar atendimentos abertos' });
+  }
+});
+
+// ==================== POST /api/registro-rota/cancelar-atendimento ====================
+router.post('/cancelar-atendimento', async (req, res) => {
+  try {
+    const { rv_id, motivo } = req.body || {};
+
+    if (!rv_id) {
+      return res.status(400).json({ ok: false, code: 'RV_ID_REQUIRED', message: 'rv_id é obrigatório' });
+    }
+
+    const sessao = await tursoService.obterSessaoPorId(rv_id);
+
+    if (!sessao) {
+      return res.status(404).json({ ok: false, code: 'ATENDIMENTO_NAO_ENCONTRADO', message: 'Atendimento não encontrado' });
+    }
+
+    if (sessao.checkout_at) {
+      return res.status(409).json({ ok: false, code: 'ATENDIMENTO_FINALIZADO', message: 'Atendimento já finalizado com checkout' });
+    }
+
+    if (sessao.cancelado_em) {
+      return res.status(409).json({ ok: false, code: 'ATENDIMENTO_JA_CANCELADO', message: 'Atendimento já foi cancelado' });
+    }
+
+    await tursoService.cancelarAtendimento(rv_id, motivo?.toString().slice(0, 500));
+
+    console.info('ATENDIMENTO_CANCELADO', { rv_id, motivo, rep_id: sessao.rep_id, cliente_id: sessao.cliente_id });
+
+    return res.json({ ok: true, message: 'Atendimento cancelado com sucesso' });
+  } catch (error) {
+    if (error instanceof DatabaseNotConfiguredError) {
+      return res.status(503).json({ ok: false, code: error.code, message: error.message });
+    }
+
+    console.error('Erro ao cancelar atendimento:', error?.stack || error);
+    return res.status(500).json({ ok: false, code: 'CANCELAR_ATENDIMENTO_ERROR', message: 'Erro ao cancelar atendimento' });
   }
 });
 

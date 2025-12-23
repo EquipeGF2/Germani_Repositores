@@ -1712,10 +1712,16 @@ export const pages = {
                 <div class="modal-content captura-modal">
                     <div class="modal-header captura-header">
                         <div class="captura-titulos">
-                            <span id="capturaTipoBadge" class="captura-badge">CHECKIN</span>
-                            <h3 id="modalCapturaTitulo">Registrar Visita</h3>
+                            <div class="captura-title-row">
+                                <span id="capturaTipoBadge" class="captura-badge">CHECKIN</span>
+                                <h3 id="modalCapturaTitulo">Registrar Visita</h3>
+                            </div>
                             <p id="capturaClienteInfo" class="captura-cliente-info"></p>
                         </div>
+                        <button class="modal-close" onclick="window.app.fecharModalCaptura()" aria-label="Fechar" title="Fechar">&times;</button>
+                    </div>
+
+                    <div class="captura-localizacao">
                         <div class="gps-chip" id="gpsChip">
                             <div class="gps-chip-main">
                                 <span class="gps-chip-icon">📍</span>
@@ -1726,7 +1732,6 @@ export const pages = {
                                 <div id="gpsStatus" class="gps-status-detalhe">Aguardando geolocalização...</div>
                             </div>
                         </div>
-                        <button class="modal-close" onclick="window.app.fecharModalCaptura()">&times;</button>
                     </div>
 
                     <!-- Resumo de Atividades (aparece apenas no checkout) -->
@@ -1742,32 +1747,34 @@ export const pages = {
                     </div>
 
                     <div class="modal-body captura-body">
-                        <div class="camera-wrapper">
-                            <div id="cameraArea" class="camera-area">
-                                <video id="videoPreview" class="camera-video" autoplay playsinline muted></video>
-                                <canvas id="canvasCaptura" class="camera-canvas"></canvas>
-                                <div id="cameraPlaceholder" class="camera-placeholder">📷 Preparando câmera...</div>
-                                <div id="cameraErro" class="camera-erro" style="display:none;"></div>
+                        <div class="captura-main">
+                            <div class="camera-wrapper">
+                                <div id="cameraArea" class="camera-area">
+                                    <video id="videoPreview" class="camera-video" autoplay playsinline muted></video>
+                                    <canvas id="canvasCaptura" class="camera-canvas"></canvas>
+                                    <div id="cameraPlaceholder" class="camera-placeholder">📷 Preparando câmera...</div>
+                                    <div id="cameraErro" class="camera-erro" style="display:none;"></div>
+                                </div>
+                                <div class="captura-hint" id="capturaHint">Capture uma única foto para este registro. Você pode refazer antes de salvar.</div>
                             </div>
-                            <div class="captura-hint" id="capturaHint">Capture uma única foto para este registro. Você pode refazer antes de salvar.</div>
-                        </div>
-                        <div id="galeriaCampanhaWrapper" class="captura-thumbs-wrapper" style="display:none;">
-                            <div class="captura-thumbs-header">
-                                <span id="contadorFotosCaptura">Fotos: 0</span>
-                                <span id="statusEnvioCaptura" class="captura-status" aria-live="polite"></span>
+                            <div id="galeriaCampanhaWrapper" class="captura-thumbs-wrapper" style="display:none;">
+                                <div class="captura-thumbs-header">
+                                    <span id="contadorFotosCaptura">Fotos: 0</span>
+                                    <span id="statusEnvioCaptura" class="captura-status" aria-live="polite"></span>
+                                </div>
+                                <div id="galeriaCampanha" class="camera-thumbs"></div>
                             </div>
-                            <div id="galeriaCampanha" class="camera-thumbs"></div>
                         </div>
                     </div>
                     <div class="modal-footer captura-footer">
                         <div class="captura-actions-left">
-                            <button class="btn btn-secondary" id="btnPermitirCamera" style="display:none;">Permitir câmera</button>
+                            <button class="btn btn-secondary" id="btnPermitirCamera" style="display:none;" aria-label="Permitir câmera" title="Permitir câmera">📷 <span class="btn-text">Permitir câmera</span></button>
                         </div>
                         <div class="captura-actions-right">
-                            <button class="btn btn-secondary" onclick="window.app.fecharModalCaptura()">Cancelar</button>
-                            <button class="btn btn-primary" id="btnCapturarFoto">📸 Capturar Foto</button>
-                            <button class="btn btn-secondary" id="btnNovaFoto" style="display: none;">🔄 Nova Foto</button>
-                            <button class="btn btn-primary" id="btnSalvarVisita" disabled>💾 Salvar Visita</button>
+                            <button class="btn btn-secondary" onclick="window.app.fecharModalCaptura()" aria-label="Cancelar captura" title="Cancelar captura"><span aria-hidden="true">✖️</span> <span class="btn-text">Cancelar</span></button>
+                            <button class="btn btn-primary" id="btnCapturarFoto" aria-label="Capturar foto" title="Capturar foto">📸 <span class="btn-text">Capturar Foto</span></button>
+                            <button class="btn btn-secondary" id="btnNovaFoto" style="display: none;" aria-label="Nova foto" title="Nova foto">🔄 <span class="btn-text">Nova Foto</span></button>
+                            <button class="btn btn-primary" id="btnSalvarVisita" disabled aria-label="Salvar registro" title="Salvar registro">💾 <span class="btn-text">Salvar Visita</span></button>
                         </div>
                     </div>
                 </div>

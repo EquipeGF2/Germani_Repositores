@@ -508,6 +508,7 @@ class TursoService {
       WHERE rep_id = ?
         AND checkin_at IS NOT NULL
         AND checkout_at IS NULL
+        AND (cancelado_em IS NULL)
     `;
 
     const args = [repId];
@@ -533,6 +534,7 @@ class TursoService {
       WHERE rep_id = ?
         AND cliente_id = ?
         AND date(checkin_at) = date(?)
+        AND (cancelado_em IS NULL)
       ORDER BY checkin_at DESC
       LIMIT 1
     `;
@@ -549,6 +551,7 @@ class TursoService {
         AND cliente_id = ?
         AND checkin_at IS NOT NULL
         AND checkout_at IS NULL
+        AND (cancelado_em IS NULL)
       ORDER BY checkin_at DESC
       LIMIT 1
     `;
@@ -622,7 +625,7 @@ class TursoService {
     const sql = `
       SELECT *
       FROM cc_visita_sessao
-      WHERE rep_id = ? AND cliente_id = ? AND data_planejada = ?
+      WHERE rep_id = ? AND cliente_id = ? AND data_planejada = ? AND (cancelado_em IS NULL)
       ORDER BY checkin_at DESC
       LIMIT 1
     `;
@@ -744,7 +747,8 @@ class TursoService {
       WHERE rep_id = ?
         AND checkin_at IS NOT NULL
         AND checkout_at IS NULL
-      ORDER BY checkin_at DESC
+        AND (cancelado_em IS NULL)
+      ORDER BY COALESCE(cliente_nome, cliente_id) ASC, cliente_id ASC, checkin_at DESC
     `;
 
     const result = await this.execute(sql, [repId]);
@@ -755,12 +759,29 @@ class TursoService {
         const atividades = await this.contarAtividadesSessao(sessao.sessao_id);
         return {
           ...sessao,
-          atividades_count: atividades.total
+          atividades_count: atividades.total,
+          data_roteiro: sessao.data_planejada,
+          dia_previsto: sessao.dia_previsto
         };
       })
     );
 
     return comAtividades;
+  }
+
+  async cancelarAtendimento(sessaoId, motivo) {
+    const agora = new Date().toISOString();
+
+    await this.execute(
+      `
+        UPDATE cc_visita_sessao
+        SET cancelado_em = ?, cancelado_motivo = ?, status = 'CANCELADO'
+        WHERE sessao_id = ?
+      `,
+      [agora, motivo || null, sessaoId]
+    );
+
+    return this.obterSessaoPorId(sessaoId);
   }
 
   async ensureRegistroVisitaSchema() {
@@ -794,7 +815,9 @@ class TursoService {
       "ALTER TABLE cc_visita_sessao ADD COLUMN endereco_checkin TEXT",
       "ALTER TABLE cc_visita_sessao ADD COLUMN endereco_checkout TEXT",
       "ALTER TABLE cc_visita_sessao ADD COLUMN dia_previsto TEXT",
-      "ALTER TABLE cc_visita_sessao ADD COLUMN roteiro_id TEXT"
+      "ALTER TABLE cc_visita_sessao ADD COLUMN roteiro_id TEXT",
+      "ALTER TABLE cc_visita_sessao ADD COLUMN cancelado_em TEXT",
+      "ALTER TABLE cc_visita_sessao ADD COLUMN cancelado_motivo TEXT"
     ];
 
     for (const sql of alteracoes) {
@@ -858,6 +881,8 @@ class TursoService {
           checkout_at TEXT,
           tempo_minutos INTEGER,
           status TEXT NOT NULL DEFAULT 'ABERTA',
+          dia_previsto TEXT,
+          roteiro_id TEXT,
           serv_abastecimento INTEGER DEFAULT 0,
           serv_espaco_loja INTEGER DEFAULT 0,
           serv_ruptura_loja INTEGER DEFAULT 0,
@@ -865,6 +890,8 @@ class TursoService {
           qtd_pontos_extras INTEGER,
           qtd_frentes INTEGER,
           usou_merchandising INTEGER DEFAULT 0,
+          cancelado_em TEXT,
+          cancelado_motivo TEXT,
           criado_em TEXT DEFAULT (datetime('now'))
         )
       `,
