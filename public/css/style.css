@@ -1042,23 +1042,25 @@ tbody td {
 
 .captura-header {
     display: flex;
-    align-items: center;
-    gap: 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
     padding: 14px 16px;
     border-bottom: 1px solid var(--gray-200);
 }
 
 .captura-title-row {
     display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
 }
 
-.captura-titulos {
+.captura-title-group {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
+    align-items: center;
+    gap: 10px;
     min-width: 0;
 }
 
@@ -1071,6 +1073,9 @@ tbody td {
     margin: 0;
     color: var(--gray-600);
     font-size: 0.95rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .captura-body {
@@ -1103,25 +1108,32 @@ tbody td {
     width: fit-content;
 }
 
-.captura-localizacao {
-    padding: 8px 16px 0 16px;
-    border-bottom: 1px solid var(--gray-200);
-    background: var(--white);
+.captura-close {
+    align-self: flex-start;
+    margin-left: auto;
 }
 
-.gps-chip {
-    margin-left: auto;
-    background: #f8fafc;
-    border: 1px dashed #e5e7eb;
-    color: #334155;
-    padding: 8px 10px;
-    border-radius: 12px;
-    font-weight: 600;
-    font-size: 0.9rem;
-    max-width: 100%;
+.captura-localizacao {
+    padding: 10px 16px 8px 16px;
+    border-bottom: 1px solid var(--gray-200);
+    background: var(--white);
     display: flex;
     flex-direction: column;
     gap: 6px;
+}
+
+.gps-chip {
+    background: #f8fafc;
+    border: 1px dashed #e5e7eb;
+    color: #334155;
+    padding: 8px 12px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 0.9rem;
+    max-width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .gps-chip[data-status="ok"] {
@@ -1147,8 +1159,12 @@ tbody td {
 }
 
 .gps-details {
-    font-size: 0.85rem;
+    font-size: 0.9rem;
     color: #475569;
+    background: #f9fafb;
+    border: 1px dashed #e5e7eb;
+    border-radius: 10px;
+    padding: 8px 10px;
 }
 
 .gps-details-btn {
@@ -1923,26 +1939,29 @@ tbody td {
     }
 
     .captura-footer {
-        flex-direction: column;
-        align-items: stretch;
+        flex-direction: row;
+        align-items: center;
         gap: 10px;
+        flex-wrap: wrap;
     }
 
     .captura-actions-left {
-        width: 100%;
+        width: auto;
         justify-content: flex-start;
     }
 
     .captura-actions-right {
         width: 100%;
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
         gap: 8px;
     }
 
     .captura-actions-right .btn {
-        width: 100%;
-        padding: 10px;
+        flex: 1 1 30%;
+        min-width: 0;
+        padding: 10px 12px;
         font-size: 0.95rem;
     }
 
@@ -1977,18 +1996,30 @@ tbody td {
     }
 
     .camera-area {
-        height: min(52vh, 320px);
+        height: min(65vh, 400px);
+    }
+
+    .captura-footer {
+        flex-wrap: nowrap;
     }
 
     .captura-actions-right {
-        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        flex-wrap: nowrap;
+        gap: 6px;
     }
 
     .btn-camera,
     .captura-actions-right .btn,
     .captura-actions-left .btn {
-        padding: 9px 12px;
-        font-size: 0.9rem;
+        padding: 9px 8px;
+        font-size: 0.95rem;
+        min-width: 0;
+        flex: 1 1 0;
+        justify-content: center;
+    }
+
+    .captura-footer .btn-text {
+        display: none;
     }
 
     .gps-chip-text {

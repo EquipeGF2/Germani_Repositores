@@ -1,5 +1,6 @@
 import express from 'express';
 import { googleDriveService } from '../services/googleDrive.js';
+import archiver from 'archiver';
 
 const router = express.Router();
 
@@ -48,7 +49,6 @@ router.post('/download-zip', async (req, res) => {
       return res.status(400).json({ ok: false, message: 'Limite de 100 fotos por download' });
     }
 
-    const archiver = (await import('archiver')).default;
     const archive = archiver('zip', { zlib: { level: 9 } });
     const arquivosParaZip = [];
 
@@ -92,7 +92,7 @@ router.post('/download-zip', async (req, res) => {
       archive.append(stream, { name: nome });
     });
 
-    archive.finalize();
+    await archive.finalize();
   } catch (error) {
     console.error('Erro ao gerar ZIP de campanha:', error);
     res.status(500).json({ ok: false, message: 'Erro ao gerar ZIP de campanha' });

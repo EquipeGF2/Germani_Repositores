@@ -5129,6 +5129,7 @@ class App {
         enderecoResolvido: null,
         resumoVisitas: new Map(),
         tipoRegistro: null,
+        novaVisita: false,
         cameraErro: null,
         resizeHandler: null,
         atendimentosAbertos: new Map(),
@@ -5385,6 +5386,8 @@ class App {
             const statusCliente = mapaResumo.get(cliId) || { status: 'sem_checkin' };
             const statusBase = statusCliente.status || 'sem_checkin';
 
+            const podeNovaVisita = statusBase === 'finalizado';
+
             const statusClasse = statusBase === 'finalizado'
                 ? 'status-visited'
                 : statusBase === 'em_atendimento'
@@ -5412,7 +5415,7 @@ class App {
                 : '';
 
             const podeCheckout = statusBase === 'em_atendimento';
-            const checkinDisponivel = statusBase !== 'em_atendimento';
+            const checkinDisponivel = statusBase !== 'em_atendimento' && !podeNovaVisita;
             const atividadesCount = Number(statusCliente.atividades_count || 0);
             const textoCheckout = (!podeCheckout || atividadesCount <= 0) && podeCheckout
                 ? 'disabled title="Registre atividades antes do checkout" style="opacity:0.6;cursor:not-allowed;"'
@@ -5432,11 +5435,14 @@ class App {
             const btnCampanha = podeCheckout
                 ? `<button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'campanha', '${cadastroEsc}')" class="btn-small">🎯 Campanha</button>`
                 : '';
+            const btnNovaVisita = podeNovaVisita
+                ? `<button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'checkin', '${cadastroEsc}', true)" class="btn-small">🆕 Nova visita</button>`
+                : '';
             const btnCancelar = statusBase === 'em_atendimento'
                 ? `<button onclick="app.confirmarCancelarAtendimento(${repId}, '${cliId}', '${nomeEsc}')" class="btn-small btn-danger" title="Cancelar atendimento em aberto">🛑 Cancelar</button>`
                 : '';
 
-            const botoes = `${btnCheckin}${btnAtividades}${btnCheckout}${btnCampanha}${btnCancelar}`;
+            const botoes = `${btnNovaVisita}${btnCheckin}${btnAtividades}${btnCheckout}${btnCampanha}${btnCancelar}`;
             const avisoAtraso = checkinBloqueadoPorAtraso
                 ? '<span style="display:block;color:#b91c1c;font-size:12px;margin-top:6px;">Atraso superior a 7 dias. Check-in bloqueado.</span>'
                 : '';
@@ -5613,6 +5619,8 @@ class App {
                 ? 'status-visited'
                 : 'status-pending';
 
+        const podeNovaVisita = statusBase === 'finalizado';
+
         const statusTexto = statusBase === 'em_atendimento'
             ? 'Em atendimento'
             : statusBase === 'finalizado'
@@ -5632,7 +5640,7 @@ class App {
             : '';
 
         const podeCheckout = statusBase === 'em_atendimento';
-        const checkinDisponivel = statusBase !== 'em_atendimento';
+        const checkinDisponivel = statusBase !== 'em_atendimento' && !podeNovaVisita;
         const atividadesCount = Number(statusCliente.atividades_count || 0);
         const estadoCheckout = (!podeCheckout || atividadesCount <= 0) && podeCheckout
             ? 'disabled title="Registre atividades antes do checkout" style="opacity:0.6;cursor:not-allowed;"'
@@ -5652,8 +5660,11 @@ class App {
         const btnCampanha = podeCheckout
             ? `<button onclick="app.abrirModalCaptura(${repId}, '${clienteIdNorm}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'campanha', '${cadastroEsc}')" class="btn-small">🎯 Campanha</button>`
             : '';
+        const btnNovaVisita = podeNovaVisita
+            ? `<button onclick="app.abrirModalCaptura(${repId}, '${clienteIdNorm}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'checkin', '${cadastroEsc}', true)" class="btn-small">🆕 Nova visita</button>`
+            : '';
 
-        const botoes = `${btnCheckin}${btnAtividades}${btnCheckout}${btnCampanha}`;
+        const botoes = `${btnNovaVisita}${btnCheckin}${btnAtividades}${btnCheckout}${btnCampanha}`;
         const avisoAtraso = checkinBloqueadoPorAtraso
             ? '<span style="display:block;color:#b91c1c;font-size:12px;margin-top:6px;">Atraso superior a 7 dias. Check-in bloqueado.</span>'
             : '';
@@ -5768,7 +5779,11 @@ class App {
 
         if (resumoEl) resumoEl.textContent = resumo;
         if (detalheEl) detalheEl.innerHTML = detalhe;
-        if (chip) chip.dataset.status = statusClasse;
+        if (chip) {
+            chip.dataset.status = statusClasse || 'neutro';
+            chip.setAttribute('aria-label', resumo);
+            chip.title = resumo;
+        }
     }
 
     configurarResumoAtividadesToggle() {
@@ -5796,7 +5811,7 @@ class App {
         }
     }
 
-    async abrirModalCaptura(repId, clienteId, clienteNome, enderecoLinha = null, dataVisitaParam = null, tipoRegistro = 'campanha', enderecoCadastro = '') {
+    async abrirModalCaptura(repId, clienteId, clienteNome, enderecoLinha = null, dataVisitaParam = null, tipoRegistro = 'campanha', enderecoCadastro = '', novaVisita = false) {
         const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
 
         const clienteIdNorm = normalizeClienteId(clienteId);
@@ -5805,6 +5820,12 @@ class App {
         let statusCliente = this.registroRotaState.resumoVisitas.get(clienteIdNorm);
 
         let tipoPadrao = tipoRegistro || (statusCliente?.status === 'em_atendimento' ? 'checkout' : 'checkin');
+        this.registroRotaState.novaVisita = Boolean(novaVisita);
+
+        if (this.registroRotaState.novaVisita) {
+            tipoPadrao = 'checkin';
+        }
+
         this.registroRotaState.tipoRegistro = tipoPadrao;
 
         const atrasoInfo = this.calcularAtrasoRoteiro(dataVisita);
@@ -5887,7 +5908,7 @@ class App {
 
         const clienteInfo = document.getElementById('capturaClienteInfo');
         if (clienteInfo) {
-            clienteInfo.textContent = `${clienteIdNorm} • ${clienteNome}`;
+            clienteInfo.textContent = `${clienteIdNorm} - ${clienteNome}`;
         }
 
         const capturaHint = document.getElementById('capturaHint');
@@ -5899,7 +5920,7 @@ class App {
 
         this.configurarToggleGps();
         this.configurarResumoAtividadesToggle();
-        this.atualizarGpsUI('Aguardando GPS', '<p style="margin: 0; color: #6b7280;">Aguardando geolocalização...</p>');
+        this.atualizarGpsUI('GPS aguardando', '<p style="margin: 0; color: #6b7280;">Aguardando geolocalização...</p>');
 
         const canvas = document.getElementById('canvasCaptura');
         if (canvas) {
@@ -6022,7 +6043,7 @@ class App {
 
 
     async iniciarCapturaGPS() {
-        this.atualizarGpsUI('Obtendo GPS...', '<p style="margin: 0; color: #6b7280;">⏳ Obtendo localização...</p>', 'neutro');
+        this.atualizarGpsUI('GPS buscando', '<p style="margin: 0; color: #6b7280;">⏳ Obtendo localização...</p>', 'neutro');
 
         const posicao = await this.capturarLocalizacaoObrigatoria(
             'Localização obrigatória para registrar',
@@ -6030,7 +6051,7 @@ class App {
         );
 
         if (!posicao) {
-            this.atualizarGpsUI('Sem GPS', '<p style="margin: 0; color: #dc2626;">❌ Não foi possível capturar o GPS.</p>', 'erro');
+            this.atualizarGpsUI('GPS erro', '<p style="margin: 0; color: #dc2626;">❌ Não foi possível capturar o GPS.</p>', 'erro');
             return;
         }
 
@@ -6045,7 +6066,7 @@ class App {
         const lat = posicao.lat.toFixed(6);
         const lon = posicao.lng.toFixed(6);
 
-        this.atualizarGpsUI('Local OK', `
+        this.atualizarGpsUI('GPS OK', `
             <p style="margin: 0; color: #16a34a;">
                 ✅ Coordenadas: ${lat}, ${lon}<br>
                 <span style="font-size: 0.85em; color: #666;">📍 Carregando endereço...</span>
@@ -6056,7 +6077,7 @@ class App {
             const endereco = await this.obterEnderecoPorCoordenadas(posicao.lat, posicao.lng);
             this.registroRotaState.enderecoResolvido = endereco;
             if (endereco) {
-                this.atualizarGpsUI('Local OK', `
+                this.atualizarGpsUI('GPS OK', `
                     <p style="margin: 0; color: #16a34a;">
                         ✅ Coordenadas: ${lat}, ${lon}<br>
                         <span style="font-size: 0.9em; color: #374151;">📍 ${endereco}</span>
@@ -6402,7 +6423,8 @@ class App {
             const tipoRegistro = (this.registroRotaState.tipoRegistro || '').toLowerCase();
             const statusCliente = atual.statusCliente;
             const atendimentoPersistido = this.recuperarAtendimentoPersistido(repId, clienteId) || {};
-            const rvSessaoId = statusCliente?.rv_id || atendimentoPersistido.rv_id || null;
+            const novaVisitaFlag = Boolean(this.registroRotaState.novaVisita && tipoRegistro === 'checkin');
+            const rvSessaoId = novaVisitaFlag ? null : (statusCliente?.rv_id || atendimentoPersistido.rv_id || null);
 
             const gpsCoords = this.registroRotaState.gpsCoords;
             const fotos = this.registroRotaState.fotosCapturadas || [];
@@ -6509,6 +6531,9 @@ class App {
             const enderecoRoteiro = this.registroRotaState.clienteAtual?.clienteEndereco || '';
             formData.append('cliente_endereco', enderecoRoteiro);
             if (dataVisita) formData.append('data_planejada', dataVisita);
+            if (novaVisitaFlag) {
+                formData.append('allow_nova_visita', 'true');
+            }
             if (rvSessaoId) formData.append('rv_id', rvSessaoId);
 
             arquivos.forEach((arquivo) => formData.append('fotos[]', arquivo));
@@ -6579,6 +6604,8 @@ class App {
 
     fecharModalCaptura() {
         this.pararStreamVideo();
+
+        this.registroRotaState.novaVisita = false;
 
         const video = document.getElementById('videoPreview');
         if (video) {
@@ -8214,7 +8241,7 @@ class App {
     obterLayoutsCampanhaPermitidos(sizeMode = 'md') {
         const mapa = {
             sm: ['lista'],
-            md: ['lista', 'detalhes', 'blocos'],
+            md: ['lista', 'blocos'],
             lg: ['lista', 'blocos']
         };
 
@@ -8235,10 +8262,17 @@ class App {
     }
 
     obterIdImagemCampanha(imagem, index = 0) {
-        return imagem?.rv_id
+        const idBase = imagem?.rv_id
             || imagem?.drive_file_id
             || imagem?.rv_drive_file_id
             || `${imagem?.rv_sessao_id || 'sessao'}-${index}`;
+
+        return this.normalizarCampanhaId(idBase);
+    }
+
+    normalizarCampanhaId(idValor) {
+        if (idValor === undefined || idValor === null) return '';
+        return String(idValor);
     }
 
     gerarNomeArquivoCampanha(imagem, index = 0) {
@@ -8266,6 +8300,7 @@ class App {
     atualizarSelecaoCampanhaUI() {
         const contador = document.getElementById('campanhaSelecionadasCount');
         const btnDownload = document.getElementById('btnCampanhaDownloadSelecionadas');
+        const btnLimpar = document.getElementById('btnCampanhaLimparSelecao');
         const total = this.campanhaSelecaoState?.selecionados?.size || 0;
         const baixando = Boolean(this.campanhaSelecaoState?.baixando);
 
@@ -8273,6 +8308,9 @@ class App {
         if (btnDownload) {
             btnDownload.disabled = total === 0 || baixando;
             btnDownload.textContent = baixando ? '⏳ Preparando download...' : '⬇️ Baixar selecionadas';
+        }
+        if (btnLimpar) {
+            btnLimpar.disabled = total === 0 || baixando;
         }
     }
 
@@ -8283,7 +8321,7 @@ class App {
         if (!grupo?.imagens?.length) return [];
 
         return grupo.imagens
-            .map((imagem, index) => ({ imagem, index, id: this.obterIdImagemCampanha(imagem, index) }))
+            .map((imagem, index) => ({ imagem, index, id: this.normalizarCampanhaId(this.obterIdImagemCampanha(imagem, index)) }))
             .filter(({ id }) => selecionados.has(id));
     }
 
@@ -8293,13 +8331,17 @@ class App {
         }
 
         const selecionados = this.campanhaSelecaoState.selecionados;
-        const estaSelecionado = selecionados.has(fotoId);
+        const chave = this.normalizarCampanhaId(fotoId);
+
+        if (!chave) return;
+
+        const estaSelecionado = selecionados.has(chave);
         const deveSelecionar = selecionar !== null ? selecionar : !estaSelecionado;
 
         if (deveSelecionar) {
-            selecionados.add(fotoId);
+            selecionados.add(chave);
         } else {
-            selecionados.delete(fotoId);
+            selecionados.delete(chave);
         }
 
         this.atualizarSelecaoCampanhaUI();
@@ -8426,6 +8468,7 @@ class App {
                             </div>
                             <div class="campanha-selecao-bar">
                                 <span class="campanha-contador">Selecionadas: <strong id="campanhaSelecionadasCount">0</strong></span>
+                                <button id="btnCampanhaLimparSelecao" class="btn btn-secondary" disabled>🧹 Limpar seleção</button>
                                 <button id="btnCampanhaDownloadSelecionadas" class="btn btn-primary" disabled>⬇️ Baixar selecionadas</button>
                             </div>
                         </div>
@@ -8449,6 +8492,11 @@ class App {
         const btnDownload = document.getElementById('btnCampanhaDownloadSelecionadas');
         if (btnDownload) {
             btnDownload.onclick = () => this.downloadImagensCampanha();
+        }
+
+        const btnLimpar = document.getElementById('btnCampanhaLimparSelecao');
+        if (btnLimpar) {
+            btnLimpar.onclick = () => this.resetarSelecaoCampanha();
         }
 
         this.campanhaModalEscHandler = (event) => {
@@ -8532,7 +8580,7 @@ class App {
                 const tipoFoto = (img.rv_tipo || img.tipo || 'campanha').toUpperCase();
                 const dataPrevista = img.rv_data_planejada || grupo.data_planejada || '-';
                 const observacao = img.rv_observacao || img.observacao || '—';
-                const fotoId = this.obterIdImagemCampanha(img, imgIndex);
+                const fotoId = this.normalizarCampanhaId(this.obterIdImagemCampanha(img, imgIndex));
                 const estaSelecionado = selecionados.has(fotoId);
 
                 const detalhes = layoutMode === 'detalhes'

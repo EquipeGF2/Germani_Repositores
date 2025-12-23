@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import { tursoService } from '../services/turso.js';
 import { googleDriveService } from '../services/googleDrive.js';
+import archiver from 'archiver';
 
 const router = express.Router();
 const MAX_UPLOAD_MB = 10;
@@ -682,8 +683,6 @@ router.post('/download-zip', async (req, res) => {
       return res.status(404).json({ ok: false, message: 'Nenhum documento encontrado' });
     }
 
-    // Importar archiver dinamicamente
-    const archiver = (await import('archiver')).default;
     const archive = archiver('zip', { zlib: { level: 9 } });
 
     const agora = new Date();
@@ -692,6 +691,15 @@ router.post('/download-zip', async (req, res) => {
 
     res.setHeader('Content-Disposition', `attachment; filename="${nomeZip}"`);
     res.setHeader('Content-Type', 'application/zip');
+
+    archive.on('error', (err) => {
+      console.error('Erro no stream do ZIP de documentos:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ ok: false, message: 'Erro ao gerar ZIP de documentos' });
+      } else {
+        res.end();
+      }
+    });
 
     archive.pipe(res);
 
@@ -707,7 +715,7 @@ router.post('/download-zip', async (req, res) => {
       }
     }
 
-    archive.finalize();
+    await archive.finalize();
   } catch (error) {
     console.error('Erro ao gerar ZIP de documentos:', error);
     res.status(500).json({ ok: false, message: 'Erro ao gerar ZIP de documentos' });

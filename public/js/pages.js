@@ -1711,26 +1711,24 @@ export const pages = {
             <div class="modal modal-captura" id="modalCapturarVisita">
                 <div class="modal-content captura-modal">
                     <div class="modal-header captura-header">
-                        <div class="captura-titulos">
-                            <div class="captura-title-row">
+                        <div class="captura-title-row">
+                            <div class="captura-title-group">
                                 <span id="capturaTipoBadge" class="captura-badge">CHECKIN</span>
                                 <h3 id="modalCapturaTitulo">Registrar Visita</h3>
                             </div>
-                            <p id="capturaClienteInfo" class="captura-cliente-info"></p>
+                            <button class="modal-close captura-close" onclick="window.app.fecharModalCaptura()" aria-label="Fechar" title="Fechar">&times;</button>
                         </div>
-                        <button class="modal-close" onclick="window.app.fecharModalCaptura()" aria-label="Fechar" title="Fechar">&times;</button>
+                        <p id="capturaClienteInfo" class="captura-cliente-info"></p>
                     </div>
 
                     <div class="captura-localizacao">
                         <div class="gps-chip" id="gpsChip">
-                            <div class="gps-chip-main">
-                                <span class="gps-chip-icon">📍</span>
-                                <span id="gpsStatusResumo" class="gps-chip-text">Aguardando GPS</span>
-                                <button type="button" id="gpsDetalhesToggle" class="gps-details-btn" aria-expanded="false">Detalhes</button>
-                            </div>
-                            <div id="gpsDetalhes" class="gps-details" hidden>
-                                <div id="gpsStatus" class="gps-status-detalhe">Aguardando geolocalização...</div>
-                            </div>
+                            <span class="gps-chip-icon">📍</span>
+                            <span id="gpsStatusResumo" class="gps-chip-text">GPS aguardando</span>
+                            <button type="button" id="gpsDetalhesToggle" class="gps-details-btn" aria-expanded="false">Detalhes</button>
+                        </div>
+                        <div id="gpsDetalhes" class="gps-details" hidden>
+                            <div id="gpsStatus" class="gps-status-detalhe">Aguardando geolocalização...</div>
                         </div>
                     </div>
 
