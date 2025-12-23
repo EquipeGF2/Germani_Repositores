@@ -347,6 +347,31 @@ class GoogleDriveService {
       throw error;
     }
   }
+
+  async downloadArquivoComInfo(fileId) {
+    await this.authenticate();
+
+    try {
+      const metadata = await this.drive.files.get({
+        fileId,
+        fields: 'id, name, mimeType'
+      });
+
+      const streamResponse = await this.drive.files.get(
+        { fileId, alt: 'media' },
+        { responseType: 'stream' }
+      );
+
+      return {
+        stream: streamResponse.data,
+        mimeType: metadata?.data?.mimeType,
+        filename: metadata?.data?.name
+      };
+    } catch (error) {
+      console.error('❌ Erro ao fazer download do Drive:', error.message);
+      throw error;
+    }
+  }
 }
 
 export const googleDriveService = new GoogleDriveService();
