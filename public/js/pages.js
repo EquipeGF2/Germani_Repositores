@@ -2130,6 +2130,12 @@ export const pages = {
                                 </select>
                             </div>
                             <div class="filter-group">
+                                <label for="consultaCliente">Cliente</label>
+                                <select id="consultaCliente" disabled>
+                                    <option value="">Selecione o repositor</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
                                 <label for="consultaStatus">Status</label>
                                 <select id="consultaStatus">
                                     <option value="todos">Todos</option>

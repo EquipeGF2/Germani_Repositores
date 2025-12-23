@@ -709,6 +709,8 @@ router.get('/visitas', async (req, res) => {
 
       return {
         ...visita,
+        data_prevista: visita.rv_data_planejada || visita.data_planejada || null,
+        data_checkout: visita.checkout_at || visita.checkout_data_hora || null,
         fora_do_dia: foraDoDia ? 1 : 0,
         dia_previsto_label: diaPrevistoLabel,
         dia_real_label: diaRealLabel,
@@ -1197,6 +1199,40 @@ router.get('/cliente/:cliente_id/roteiro', async (req, res) => {
       ok: false,
       message: 'Erro ao consultar roteiro',
       error: error.message
+    });
+  }
+});
+
+router.get('/roteiro/clientes', async (req, res) => {
+  try {
+    const { repositor_id } = req.query;
+
+    if (!repositor_id) {
+      return res.status(400).json({
+        ok: false,
+        message: 'repositor_id é obrigatório'
+      });
+    }
+
+    const repIdNumber = Number(repositor_id);
+    if (Number.isNaN(repIdNumber)) {
+      return res.status(400).json({
+        ok: false,
+        message: 'repositor_id deve ser numérico'
+      });
+    }
+
+    const clientes = await tursoService.listarClientesPorRepositor(repIdNumber);
+
+    return res.json({
+      ok: true,
+      clientes: sanitizeForJson(clientes)
+    });
+  } catch (error) {
+    console.error('Erro ao listar clientes do roteiro:', error);
+    return res.status(500).json({
+      ok: false,
+      message: 'Erro ao listar clientes do roteiro'
     });
   }
 });

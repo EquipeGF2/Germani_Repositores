@@ -125,6 +125,10 @@ class App {
                 campanhaAgrupar: 'sessao'
             }
         };
+        this.consultaVisitasState = {
+            clientesRoteiro: [],
+            repositorSelecionado: ''
+        };
         this.geoState = {
             ultimaCaptura: geoService.lastLocation || null,
             overlay: null
@@ -6600,9 +6604,53 @@ class App {
 
     // ==================== CONSULTA DE VISITAS ====================
 
+    async carregarClientesRoteiroPorRep(repositorId) {
+        const selectCliente = document.getElementById('consultaCliente');
+        if (!selectCliente) return;
+
+        if (!repositorId) {
+            selectCliente.innerHTML = '<option value="">Selecione o repositor</option>';
+            selectCliente.disabled = true;
+            this.consultaVisitasState.clientesRoteiro = [];
+            this.consultaVisitasState.repositorSelecionado = '';
+            return;
+        }
+
+        try {
+            selectCliente.disabled = true;
+            selectCliente.innerHTML = '<option value="">Carregando clientes...</option>';
+
+            const url = new URL(`${this.registroRotaState.backendUrl}/api/roteiro/clientes`);
+            url.searchParams.set('repositor_id', repositorId);
+
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error('Não foi possível carregar os clientes do roteiro');
+            }
+
+            const data = await response.json();
+            const clientes = data.clientes || [];
+
+            this.consultaVisitasState.clientesRoteiro = clientes;
+            this.consultaVisitasState.repositorSelecionado = repositorId;
+
+            const options = ['<option value="">Todos</option>'].concat(
+                clientes.map(cli => `<option value="${cli.cliente_codigo || cli.cliente_id}">${cli.cliente_codigo || cli.cliente_id} - ${cli.cliente_nome || cli.cliente_codigo}</option>`)
+            );
+
+            selectCliente.innerHTML = options.join('');
+            selectCliente.disabled = false;
+        } catch (error) {
+            console.error('Erro ao carregar clientes do roteiro:', error);
+            selectCliente.innerHTML = '<option value="">Erro ao carregar clientes</option>';
+            this.showNotification('Não foi possível carregar a lista de clientes para o repositor selecionado.', 'warning');
+        }
+    }
+
     async inicializarConsultaVisitas() {
         const btnConsultar = document.getElementById('btnConsultarVisitas');
         const btnLimpar = document.getElementById('btnLimparConsulta');
+        const selectRepositor = document.getElementById('consultaRepositor');
 
         if (btnConsultar) {
             btnConsultar.onclick = () => this.consultarVisitas();
@@ -6615,10 +6663,16 @@ class App {
                 umMesAtras.setMonth(umMesAtras.getMonth() - 1);
 
                 document.getElementById('consultaRepositor').value = '';
+                this.carregarClientesRoteiroPorRep('');
                 document.getElementById('consultaStatus').value = 'todos';
                 document.getElementById('consultaDataInicio').value = umMesAtras.toISOString().split('T')[0];
                 document.getElementById('consultaDataFim').value = hoje;
             };
+        }
+
+        if (selectRepositor) {
+            selectRepositor.onchange = (event) => this.carregarClientesRoteiroPorRep(event.target.value);
+            this.carregarClientesRoteiroPorRep(selectRepositor.value || '');
         }
     }
 
@@ -6801,6 +6855,7 @@ class App {
     async consultarVisitas() {
         try {
             const repId = document.getElementById('consultaRepositor')?.value;
+            const clienteFiltro = document.getElementById('consultaCliente')?.value;
             const dataInicio = document.getElementById('consultaDataInicio')?.value;
             const dataFim = document.getElementById('consultaDataFim')?.value;
             const status = document.getElementById('consultaStatus')?.value || 'todos';
@@ -6829,7 +6884,11 @@ class App {
             }
 
             const result = await response.json();
-            const sessoes = result.sessoes || [];
+            let sessoes = result.sessoes || [];
+
+            if (clienteFiltro) {
+                sessoes = sessoes.filter((sessao) => String(sessao.cliente_id) === String(clienteFiltro));
+            }
 
             // Filtrar apenas sessões com checkin (não mostrar campanhas isoladas)
             const sessoesComCheckin = sessoes.filter(s => s.checkin_at);
@@ -6854,23 +6913,43 @@ class App {
             sessoesComCheckin.forEach(sessao => {
                 const item = document.createElement('div');
 
+                const normalizarData = (valor) => {
+                    if (!valor) return null;
+                    if (typeof valor === 'string' && valor.includes('T')) {
+                        return valor.split('T')[0];
+                    }
+                    if (/^\d{4}-\d{2}-\d{2}$/.test(valor)) return valor;
+                    const data = new Date(valor);
+                    return Number.isNaN(data.getTime()) ? null : data.toISOString().split('T')[0];
+                };
+
+                const dataPrevista = normalizarData(sessao.data_prevista || sessao.data_planejada || sessao.rv_data_planejada);
+                const dataRealizada = normalizarData(sessao.data_checkout || sessao.checkout_at || sessao.checkout_data_hora);
+                let statusPlanejamento = null;
+                if (dataPrevista && dataRealizada) {
+                    if (dataRealizada > dataPrevista) statusPlanejamento = 'ATRASADA';
+                    else if (dataRealizada < dataPrevista) statusPlanejamento = 'ADIANTADA';
+                }
+
                 // Verificar se está fora do dia previsto
-                const foraDia = Boolean(sessao.fora_do_dia);
+                const foraDia = Boolean(statusPlanejamento || sessao.fora_do_dia);
                 item.className = `visit-item${foraDia ? ' fora-dia' : ''}`;
 
                 // Calcular tempo de atendimento
                 let tempoAtendimento = null;
-                if (sessao.checkin_at && sessao.checkout_at) {
-                    const checkinTime = new Date(sessao.checkin_at).getTime();
-                    const checkoutTime = new Date(sessao.checkout_at).getTime();
+                const checkinRef = sessao.checkin_at || sessao.checkin_data_hora;
+                const checkoutRef = sessao.checkout_at || sessao.checkout_data_hora;
+                if (checkinRef && checkoutRef) {
+                    const checkinTime = new Date(checkinRef).getTime();
+                    const checkoutTime = new Date(checkoutRef).getTime();
                     tempoAtendimento = Math.max(0, Math.round((checkoutTime - checkinTime) / 60000));
                 }
 
                 const tempoTexto = tempoAtendimento != null ? `⏱️ ${tempoAtendimento} min` : '';
 
                 // Formatar datas
-                const checkinFormatado = sessao.checkin_at ? new Date(sessao.checkin_at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
-                const checkoutFormatado = sessao.checkout_at ? new Date(sessao.checkout_at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : 'Não finalizado';
+                const checkinFormatado = checkinRef ? new Date(checkinRef).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
+                const checkoutFormatado = checkoutRef ? new Date(checkoutRef).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : 'Não finalizado';
 
                 // Status badge
                 const statusBadge = sessao.checkout_at
@@ -6878,9 +6957,9 @@ class App {
                     : '<span style="background: #fef3c7; color: #92400e; padding: 4px 8px; border-radius: 6px; font-size: 0.85em; font-weight: 600;">EM ATENDIMENTO</span>';
 
                 // Alerta de dia previsto
-                const alertaDia = foraDia
-                    ? `<div class="fora-dia-badge">Realizado fora do dia previsto<br>Dia previsto: ${sessao.dia_previsto_label || '-'} | Realizado: ${sessao.dia_real_label || '-'}</div>`
-                    : '';
+                const alertaDia = statusPlanejamento
+                    ? `<div class="fora-dia-badge">${statusPlanejamento} · Previsto: ${dataPrevista || '-'} · Realizado: ${dataRealizada || '-'}</div>`
+                    : (foraDia ? `<div class="fora-dia-badge">Realizado fora do dia previsto<br>Dia previsto: ${sessao.dia_previsto_label || '-'} | Realizado: ${sessao.dia_real_label || '-'}</div>` : '');
 
                 // Endereços com fallbacks claros
                 const enderecoRoteiro = sessao.cliente_endereco_roteiro || sessao.endereco_cliente_roteiro || sessao.endereco_cliente || 'Não informado';
@@ -7805,6 +7884,7 @@ class App {
             // Filtrar por tempo
             const sessoesFiltradas = sessoes.filter(s => {
                 if (!s.tempo_minutos) return false;
+                if (!s.checkout_at && !s.checkout_data_hora) return false;
 
                 const minutos = s.tempo_minutos;
                 if (tempoFiltro === '0-15') return minutos < 15;
@@ -8086,6 +8166,25 @@ class App {
                 const linkOrigem = originalUrl || downloadUrl || urlImagem || '#';
                 const thumbFallbackClass = urlImagem ? '' : 'thumb-fallback-visible';
                 const imagemVisivel = urlImagem ? '' : 'style="display:none;"';
+                const tipoFoto = (img.rv_tipo || img.tipo || 'campanha').toUpperCase();
+                const dataPrevista = img.rv_data_planejada || grupo.data_planejada || '-';
+                const observacao = img.rv_observacao || img.observacao || '—';
+
+                const detalhes = layoutMode === 'detalhes'
+                    ? `
+                        <div class="card-meta" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+                            <div><strong>Data prevista:</strong> ${dataPrevista || '-'}</div>
+                            <div><strong>Registro:</strong> ${dataRegistro}</div>
+                            <div><strong>Tipo:</strong> ${tipoFoto}</div>
+                            <div><strong>Observação:</strong> ${observacao}</div>
+                        </div>
+                    `
+                    : `
+                        <div class="card-meta">
+                            <span>📅 ${dataPrevista || '-'}</span>
+                            <span>⏱️ ${dataRegistro}</span>
+                        </div>
+                    `;
 
                 return `
                     <div class="campanha-card layout-${layoutMode}" data-campanha-index="${imgIndex}">
@@ -8095,10 +8194,7 @@ class App {
                         </div>
                         <div class="card-info">
                             <div style="font-weight:700; color:#111827;">Foto ${imgIndex + 1}</div>
-                            <div class="card-meta">
-                                <span>📅 ${grupo.data_planejada || '-'}</span>
-                                <span>⏱️ ${dataRegistro}</span>
-                            </div>
+                            ${detalhes}
                             <a href="${linkOrigem}" target="_blank" class="btn btn-secondary" style="text-align:center; padding:8px 10px;">🔗 Ver origem</a>
                         </div>
                     </div>
@@ -8362,7 +8458,15 @@ class App {
             const sessoes = data.sessoes || [];
 
             // Filtrar apenas sessões com checkout (finalizadas)
-            const sessoesFinalizadas = sessoes.filter(s => s.checkout_at);
+            const sessoesFinalizadas = sessoes.filter(s => s.checkout_at || s.checkout_data_hora);
+
+            const normalizarData = (valor) => {
+                if (!valor) return null;
+                if (typeof valor === 'string' && valor.includes('T')) return valor.split('T')[0];
+                if (/^\d{4}-\d{2}-\d{2}$/.test(valor)) return valor;
+                const dt = new Date(valor);
+                return Number.isNaN(dt.getTime()) ? null : dt.toISOString().split('T')[0];
+            };
 
             // Calcular estatísticas
             const stats = {
@@ -8389,18 +8493,37 @@ class App {
                 // Por tipo de serviço
                 abastecimento: sessoesFinalizadas.filter(s => s.serv_abastecimento).length,
                 espaco_loja: sessoesFinalizadas.filter(s => s.serv_espaco_loja).length,
-                ruptura_loja: sessoesFinalizadas.filter(s => s.serv_ruptura_loja).length
+                ruptura_loja: sessoesFinalizadas.filter(s => s.serv_ruptura_loja).length,
+
+                visitas_adiantadas: 0,
+                visitas_atrasadas: 0,
+                media_visitas_por_cliente: '0.0'
             };
+
+            const totaisPlanejamento = { adiantadas: 0, atrasadas: 0 };
+
+            sessoesFinalizadas.forEach((sessao) => {
+                const prevista = normalizarData(sessao.data_prevista || sessao.data_planejada || sessao.rv_data_planejada);
+                const checkoutData = normalizarData(sessao.data_checkout || sessao.checkout_at || sessao.checkout_data_hora);
+                if (prevista && checkoutData) {
+                    if (checkoutData > prevista) totaisPlanejamento.atrasadas += 1;
+                    else if (checkoutData < prevista) totaisPlanejamento.adiantadas += 1;
+                }
+            });
 
             // Calcular médias e percentuais
             if (stats.total_clientes > 0) {
                 stats.media_frentes_por_cliente = (stats.total_frentes / stats.total_clientes).toFixed(1);
                 stats.perc_clientes_pontos_extras = ((stats.clientes_com_pontos_extras / stats.total_clientes) * 100).toFixed(1);
+                stats.media_visitas_por_cliente = (stats.total_visitas / stats.total_clientes).toFixed(1);
             }
 
             if (stats.total_visitas > 0) {
                 stats.perc_merchandising = ((stats.visitas_com_merchandising / stats.total_visitas) * 100).toFixed(1);
             }
+
+            stats.visitas_adiantadas = totaisPlanejamento.adiantadas;
+            stats.visitas_atrasadas = totaisPlanejamento.atrasadas;
 
             this.renderizarServicos(stats);
         } catch (error) {
@@ -8425,6 +8548,22 @@ class App {
                     <div class="performance-stat">
                         <span class="performance-stat-label">Total de Clientes Atendidos</span>
                         <span class="performance-stat-value">${stats.total_clientes}</span>
+                    </div>
+                    <div class="performance-stat">
+                        <span class="performance-stat-label">Média de Visitas por Cliente</span>
+                        <span class="performance-stat-value">${stats.media_visitas_por_cliente}</span>
+                    </div>
+                </div>
+
+                <div class="performance-card">
+                    <h5 style="margin-bottom: 12px; color: #ef4444; font-size: 14px; font-weight: 700; text-transform: uppercase;">⏱️ Pontualidade</h5>
+                    <div class="performance-stat">
+                        <span class="performance-stat-label">Visitas Adiantadas</span>
+                        <span class="performance-stat-value">${stats.visitas_adiantadas}</span>
+                    </div>
+                    <div class="performance-stat">
+                        <span class="performance-stat-label">Visitas Atrasadas</span>
+                        <span class="performance-stat-value">${stats.visitas_atrasadas}</span>
                     </div>
                 </div>
 
