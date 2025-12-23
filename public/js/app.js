@@ -12,6 +12,31 @@ import { formatarDataISO, normalizarDataISO, normalizarSupervisor, normalizarTex
 const AUTH_STORAGE_KEY = 'GERMANI_AUTH_USER';
 const API_BASE_URL = (typeof window !== 'undefined' && window.API_BASE_URL) || 'https://repositor-backend.onrender.com';
 const MAX_UPLOAD_MB = 10;
+const DOCUMENTOS_EXTENSOES_PERMITIDAS = [
+    'pdf', 'xls', 'xlsx', 'xlsm', 'xlsb', 'xlt', 'xltx', 'xltm',
+    'doc', 'docx', 'docm', 'dot', 'dotx', 'dotm',
+    'jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'
+];
+const DOCUMENTOS_MIMES_PERMITIDOS = [
+    'application/pdf',
+    'application/msword',
+    'application/vnd.ms-word.document.macroEnabled.12',
+    'application/vnd.ms-word.template.macroEnabled.12',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.template',
+    'application/vnd.ms-excel',
+    'application/vnd.ms-excel.sheet.macroEnabled.12',
+    'application/vnd.ms-excel.sheet.binary.macroEnabled.12',
+    'application/vnd.ms-excel.template.macroEnabled.12',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.template',
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/heic',
+    'image/heif',
+    'image/jpg'
+];
 
 function exibirErroGlobal(mensagem, detalhe = '') {
     let banner = document.getElementById('erroGlobalBanner');
@@ -110,6 +135,7 @@ class App {
             'consulta-alteracoes': 'mod_repositores',
             'consulta-roteiro': 'mod_repositores',
             'cadastro-rateio': 'mod_repositores',
+            'consulta-campanha': 'mod_repositores',
             'estrutura-banco-comercial': 'mod_repositores',
             'controle-acessos': 'mod_configuracoes',
             'roteiro-repositor': 'mod_repositores'
@@ -726,6 +752,8 @@ class App {
                 await this.inicializarConsultaDocumentos();
             } else if (pageName === 'analise-performance') {
                 await this.inicializarAnalisePerformance();
+            } else if (pageName === 'consulta-campanha') {
+                await this.inicializarConsultaCampanha();
             }
         } catch (error) {
             console.error('Erro ao carregar página:', error);
@@ -7338,7 +7366,8 @@ class App {
         filaUploads: [],
         cameraStream: null,
         cameraModal: null,
-        cameraCapturas: []
+        cameraCapturas: [],
+        rejeicoes: []
     };
 
     async fetchTiposDocumentos({ silencioso = false } = {}) {
@@ -7372,7 +7401,9 @@ class App {
 
             // Resetar fila de uploads
             this.documentosState.filaUploads = [];
+            this.documentosState.rejeicoes = [];
             this.renderizarFilaUploads();
+            this.renderizarRejeicoesUploads();
 
             // Configurar event listeners
             const btnUpload = document.getElementById('btnUploadDocumento');
@@ -7441,13 +7472,79 @@ class App {
         return `${(tamanho / 1024 / 1024).toFixed(2)} MB`;
     }
 
+    normalizarExtensaoArquivo(nome = '') {
+        if (!nome.includes('.')) return '';
+        return nome.substring(nome.lastIndexOf('.') + 1).toLowerCase();
+    }
+
+    mimePermitido(mime = '', ext = '') {
+        if (!mime) return true;
+        const mimeNormalizado = mime.toLowerCase();
+
+        if (mimeNormalizado.startsWith('image/') && ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'].includes(ext)) {
+            return true;
+        }
+
+        return DOCUMENTOS_MIMES_PERMITIDOS.includes(mimeNormalizado);
+    }
+
+    validarArquivoDocumento(arquivo) {
+        const extensao = this.normalizarExtensaoArquivo(arquivo.name);
+
+        if (!DOCUMENTOS_EXTENSOES_PERMITIDAS.includes(extensao)) {
+            return { ok: false, motivo: 'Formato não permitido' };
+        }
+
+        if (!this.mimePermitido(arquivo.type, extensao)) {
+            return { ok: false, motivo: 'Tipo de arquivo não permitido' };
+        }
+
+        return { ok: true, extensao };
+    }
+
+    registrarRejeicaoUpload(nome, motivo) {
+        this.documentosState.rejeicoes = [
+            ...this.documentosState.rejeicoes,
+            { nome, motivo }
+        ];
+        this.renderizarRejeicoesUploads();
+    }
+
+    renderizarRejeicoesUploads() {
+        const container = document.getElementById('arquivosRejeitados');
+        const lista = container?.querySelector('.upload-rejected-list');
+
+        if (!container || !lista) return;
+
+        if (!this.documentosState.rejeicoes.length) {
+            container.style.display = 'none';
+            lista.innerHTML = '';
+            return;
+        }
+
+        container.style.display = 'block';
+        lista.innerHTML = this.documentosState.rejeicoes
+            .map(rej => `<li><strong>${rej.nome}</strong> — ${rej.motivo}</li>`)
+            .join('');
+    }
+
     adicionarArquivosFila(arquivos = [], origem = 'upload') {
         const limite = this.documentosState.maxUploadBytes;
         const novosItens = [];
 
         arquivos.forEach(arquivo => {
+            const validacao = this.validarArquivoDocumento(arquivo);
+            if (!validacao.ok) {
+                const motivo = validacao.motivo || 'Formato não permitido';
+                this.registrarRejeicaoUpload(arquivo.name, motivo);
+                this.showNotification(`Arquivo "${arquivo.name}" rejeitado: ${motivo}`, 'warning');
+                return;
+            }
+
             if (arquivo.size > limite) {
-                this.showNotification(`Arquivo "${arquivo.name}" excede o limite de ${this.documentosState.maxUploadMb} MB.`, 'warning');
+                const motivo = `Arquivo "${arquivo.name}" excede o limite de ${this.documentosState.maxUploadMb} MB.`;
+                this.registrarRejeicaoUpload(arquivo.name, `Tamanho acima de ${this.documentosState.maxUploadMb} MB`);
+                this.showNotification(motivo, 'warning');
                 return;
             }
 
@@ -7465,11 +7562,15 @@ class App {
             });
         });
 
-        if (novosItens.length === 0) return;
+        if (novosItens.length === 0) {
+            this.renderizarRejeicoesUploads();
+            return;
+        }
 
         this.documentosState.filaUploads = [...this.documentosState.filaUploads, ...novosItens];
         this.renderizarFilaUploads();
         this.showNotification(`${novosItens.length} item(ns) adicionado(s) à fila`, 'success');
+        this.renderizarRejeicoesUploads();
         return novosItens;
     }
 
@@ -7489,6 +7590,8 @@ class App {
         const contador = document.getElementById('arquivosSelecionados');
 
         if (!container) return;
+
+        this.renderizarRejeicoesUploads();
 
         if (this.documentosState.filaUploads.length === 0) {
             this.documentosState.cameraCapturas = [];
@@ -8040,6 +8143,12 @@ class App {
                 };
             });
 
+            const hashAtual = window.location.hash || '';
+            if (hashAtual.toLowerCase().includes('campanha')) {
+                this.navigateTo('consulta-campanha');
+                return;
+            }
+
             // Definir datas padrão (último mês)
             const hoje = new Date().toISOString().split('T')[0];
             const umMesAtras = new Date();
@@ -8053,6 +8162,8 @@ class App {
                 repositor: this.performanceState.filtros.repositor || ''
             };
 
+            this.performanceState.tabAtiva = 'tempo';
+
             this.sincronizarCamposPerformance();
 
             const btnAplicar = document.getElementById('btnAplicarPerformance');
@@ -8061,7 +8172,7 @@ class App {
             if (btnAplicar) btnAplicar.onclick = () => this.aplicarFiltrosPerformance();
             if (btnLimpar) btnLimpar.onclick = () => this.limparFiltrosPerformance();
 
-            ['perfRepositor', 'perfDataInicio', 'perfDataFim', 'perfTempoFiltro', 'perfCampanhaAgrupar'].forEach((id) => {
+            ['perfRepositor', 'perfDataInicio', 'perfDataFim', 'perfTempoFiltro'].forEach((id) => {
                 const el = document.getElementById(id);
                 if (el) {
                     el.onchange = () => this.atualizarPerformanceStateFromInputs();
@@ -8074,7 +8185,50 @@ class App {
         }
     }
 
+    async inicializarConsultaCampanha() {
+        try {
+            const hoje = new Date().toISOString().split('T')[0];
+            const umMesAtras = new Date();
+            umMesAtras.setMonth(umMesAtras.getMonth() - 1);
+            const dataInicio = umMesAtras.toISOString().split('T')[0];
+
+            this.performanceState.tabAtiva = 'campanha';
+            this.performanceState.filtros = {
+                ...this.performanceState.filtros,
+                dataInicio,
+                dataFim: hoje,
+                repositor: this.performanceState.filtros.repositor || '',
+                campanhaAgrupar: this.performanceState.filtros.campanhaAgrupar || 'sessao'
+            };
+
+            this.sincronizarCamposPerformance();
+
+            const btnAplicar = document.getElementById('btnAplicarPerformance');
+            const btnLimpar = document.getElementById('btnLimparPerformance');
+
+            if (btnAplicar) btnAplicar.onclick = () => this.aplicarFiltrosPerformance('campanha');
+            if (btnLimpar) btnLimpar.onclick = () => this.limparFiltrosPerformance();
+
+            ['perfRepositor', 'perfDataInicio', 'perfDataFim', 'perfCampanhaAgrupar'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.onchange = () => this.atualizarPerformanceStateFromInputs();
+                }
+            });
+
+            this.aplicarFiltrosPerformance('campanha', false);
+        } catch (error) {
+            console.error('Erro ao inicializar consulta de campanha:', error);
+            this.showNotification('Não foi possível carregar a consulta de campanha.', 'warning');
+        }
+    }
+
     trocarTabPerformance(tabName) {
+        if (tabName === 'campanha') {
+            this.navigateTo('consulta-campanha');
+            return;
+        }
+
         // Atualizar tabs
         document.querySelectorAll('.performance-tab').forEach(tab => {
             tab.classList.remove('active');
@@ -8145,6 +8299,10 @@ class App {
         this.performanceState.tabAtiva = tabName;
 
         if (tabName === 'campanha') {
+            if (this.currentPage !== 'consulta-campanha') {
+                this.navigateTo('consulta-campanha');
+                return;
+            }
             this.filtrarCampanha(mostrarAviso);
         } else if (tabName === 'servicos') {
             this.filtrarServicos(mostrarAviso);
