@@ -2231,7 +2231,7 @@ export const pages = {
             <style>
                 .visit-item {
                     display: flex;
-                    align-items: center;
+                    align-items: stretch;
                     justify-content: space-between;
                     padding: 16px;
                     background: white;
@@ -2246,20 +2246,62 @@ export const pages = {
                     box-shadow: 0 4px 6px rgba(0,0,0,0.05);
                 }
 
-                .visit-item .cliente-header {
+                .visit-content {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                    min-width: 0;
+                    width: 100%;
+                }
+
+                .visit-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    gap: 12px;
+                    flex-wrap: wrap;
+                    width: 100%;
+                }
+
+                .cliente-header {
                     display: flex;
                     align-items: center;
                     gap: 8px;
                     min-width: 0;
+                    flex: 1;
                 }
 
                 .visit-item .cliente-titulo {
                     font-size: 1.1em;
                     font-weight: 700;
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
                     max-width: 100%;
+                }
+
+                .visit-status-group {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    flex-wrap: wrap;
+                }
+
+                .visit-status-badge {
+                    padding: 4px 8px;
+                    border-radius: 6px;
+                    font-size: 0.85em;
+                    font-weight: 600;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    white-space: nowrap;
+                }
+
+                .visit-status-finalizado { background: #dcfce7; color: #166534; }
+                .visit-status-andamento { background: #fef3c7; color: #92400e; }
+
+                .visit-duration {
+                    color: #6b7280;
+                    font-size: 0.9em;
+                    white-space: nowrap;
                 }
 
                 .visit-item.fora-dia {
@@ -2278,17 +2320,43 @@ export const pages = {
                     display: inline-block;
                 }
 
+                .visit-times {
+                    font-size: 0.9em;
+                    color: #374151;
+                    background: #f9fafb;
+                    padding: 8px;
+                    border-radius: 6px;
+                }
+
+                .visit-address {
+                    font-size: 0.9em;
+                    margin-top: 2px;
+                    padding: 8px;
+                    background: #f0fdf4;
+                    border-radius: 6px;
+                    border-left: 3px solid #22c55e;
+                }
+
+                .address-row {
+                    display: flex;
+                    align-items: flex-start;
+                    gap: 8px;
+                    padding: 4px 0;
+                    min-width: 0;
+                }
+
+                .address-icon { flex-shrink: 0; }
+
+                .address-text {
+                    min-width: 0;
+                    color: #374151;
+                }
+
                 .visit-actions {
                     display: flex;
                     gap: 8px;
                     flex-wrap: wrap;
                     margin-top: 12px;
-                }
-
-                @media (max-width: 640px) {
-                    .visit-item .cliente-titulo {
-                        max-width: 180px;
-                    }
                 }
 
                 .visit-action-btn {
@@ -2303,6 +2371,7 @@ export const pages = {
                     font-weight: 600;
                     cursor: pointer;
                     transition: all 0.2s ease;
+                    min-width: 0;
                 }
 
                 .visit-action-btn:hover:not(:disabled) {
@@ -2315,6 +2384,36 @@ export const pages = {
                 .visit-action-btn:disabled {
                     opacity: 0.6;
                     cursor: not-allowed;
+                }
+
+                @media (max-width: 480px) {
+                    .visit-header {
+                        flex-direction: column;
+                        align-items: flex-start;
+                    }
+
+                    .visit-status-group {
+                        width: 100%;
+                        justify-content: flex-start;
+                    }
+
+                    .visit-duration {
+                        font-size: 0.85em;
+                    }
+
+                    .visit-actions {
+                        gap: 8px;
+                    }
+
+                    .visit-action-btn {
+                        padding: 8px 10px;
+                        font-size: 0.95em;
+                        flex: 1 1 45%;
+                    }
+
+                    .visit-address {
+                        padding: 8px;
+                    }
                 }
             </style>
         `;
@@ -2585,8 +2684,7 @@ export const pages = {
                 }
 
                 .upload-item {
-                    display: grid;
-                    grid-template-columns: auto 1fr auto;
+                    display: flex;
                     align-items: center;
                     gap: 12px;
                     padding: 12px;
@@ -2594,10 +2692,19 @@ export const pages = {
                     border-radius: 10px;
                     margin-bottom: 10px;
                     border: 1px solid #e5e7eb;
+                    max-width: 100%;
                 }
 
                 .upload-item:last-child {
                     margin-bottom: 0;
+                }
+
+                .upload-main {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    flex: 1;
+                    min-width: 0;
                 }
 
                 .upload-thumb {
@@ -2611,6 +2718,7 @@ export const pages = {
                     font-size: 20px;
                     color: #6b7280;
                     overflow: hidden;
+                    flex-shrink: 0;
                 }
 
                 .upload-thumb img {
@@ -2623,18 +2731,21 @@ export const pages = {
                     display: flex;
                     flex-direction: column;
                     gap: 4px;
+                    min-width: 0;
                 }
 
                 .upload-nome {
                     font-weight: 600;
                     color: #111827;
+                    min-width: 0;
                 }
 
                 .upload-meta {
                     font-size: 13px;
                     color: #6b7280;
                     display: flex;
-                    gap: 10px;
+                    flex-wrap: wrap;
+                    gap: 8px;
                     align-items: center;
                 }
 
@@ -2652,9 +2763,9 @@ export const pages = {
 
                 .upload-actions {
                     display: flex;
-                    flex-direction: column;
                     gap: 6px;
-                    align-items: flex-end;
+                    align-items: center;
+                    justify-content: flex-end;
                 }
 
                 .btn-remover-upload {
@@ -2665,6 +2776,9 @@ export const pages = {
                     border-radius: 8px;
                     cursor: pointer;
                     font-weight: 600;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
                 }
 
                 .btn-remover-upload:hover {
@@ -2694,6 +2808,24 @@ export const pages = {
 
                     .doc-form-grid {
                         grid-template-columns: 1fr;
+                    }
+                }
+
+                @media (max-width: 480px) {
+                    .upload-item {
+                        align-items: flex-start;
+                    }
+
+                    .upload-actions {
+                        align-self: stretch;
+                    }
+
+                    .btn-remover-upload {
+                        padding: 8px;
+                    }
+
+                    .btn-remover-upload .btn-text {
+                        display: none;
                     }
                 }
             </style>
@@ -2804,9 +2936,10 @@ export const pages = {
                 }
 
                 .doc-item {
-                    display: flex;
-                    align-items: center;
-                    gap: 16px;
+                    display: grid;
+                    grid-template-columns: 1fr auto;
+                    align-items: start;
+                    gap: 12px;
                     padding: 16px;
                     background: white;
                     border: 1px solid #e5e7eb;
@@ -2825,29 +2958,67 @@ export const pages = {
                     border-color: #ef4444;
                 }
 
+                .doc-main {
+                    display: grid;
+                    grid-template-columns: auto 1fr;
+                    gap: 12px;
+                    align-items: flex-start;
+                    min-width: 0;
+                }
+
                 .doc-checkbox {
                     width: 20px;
                     height: 20px;
                     cursor: pointer;
                     accent-color: #ef4444;
+                    margin-top: 4px;
                 }
 
                 .doc-info {
-                    flex: 1;
                     display: flex;
                     flex-direction: column;
-                    gap: 4px;
+                    gap: 6px;
+                    min-width: 0;
                 }
+
+                .doc-line {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    min-width: 0;
+                    flex-wrap: nowrap;
+                }
+
+                .doc-icon { flex-shrink: 0; }
 
                 .doc-nome {
                     font-weight: 600;
                     font-size: 15px;
                     color: #111827;
+                    min-width: 0;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+
+                .doc-text {
+                    font-size: 13px;
+                    color: #6b7280;
+                    min-width: 0;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+
+                .doc-text.break-any {
+                    white-space: normal;
                 }
 
                 .doc-meta {
-                    font-size: 13px;
-                    color: #6b7280;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                    min-width: 0;
                 }
 
                 .doc-tipo-badge {
@@ -2864,6 +3035,10 @@ export const pages = {
                 .doc-actions {
                     display: flex;
                     gap: 8px;
+                    align-items: center;
+                    justify-content: flex-end;
+                    flex-wrap: wrap;
+                    min-width: 0;
                 }
 
                 .btn-doc-download {
@@ -2902,10 +3077,21 @@ export const pages = {
                     .doc-form-grid {
                         grid-template-columns: 1fr;
                     }
+                }
 
+                @media (max-width: 480px) {
                     .doc-item {
-                        flex-direction: column;
-                        align-items: flex-start;
+                        grid-template-columns: 1fr;
+                    }
+
+                    .doc-actions {
+                        width: 100%;
+                        justify-content: flex-start;
+                    }
+
+                    .doc-main {
+                        grid-template-columns: auto 1fr;
+                        gap: 10px;
                     }
                 }
             </style>
@@ -3010,6 +3196,12 @@ export const pages = {
                     margin-bottom: 24px;
                     border-bottom: 2px solid #e5e7eb;
                     padding-bottom: 0;
+                    overflow-x: auto;
+                    -webkit-overflow-scrolling: touch;
+                }
+
+                .performance-tabs::-webkit-scrollbar {
+                    height: 6px;
                 }
 
                 .performance-tab {
@@ -3023,6 +3215,7 @@ export const pages = {
                     cursor: pointer;
                     transition: all 0.2s ease;
                     margin-bottom: -2px;
+                    white-space: nowrap;
                 }
 
                 .performance-tab:hover {
@@ -3056,11 +3249,21 @@ export const pages = {
                     padding: 16px;
                     margin-bottom: 12px;
                     transition: all 0.2s ease;
+                    max-width: 100%;
+                    overflow: hidden;
                 }
 
                 .performance-card:hover {
                     border-color: #ef4444;
                     box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+                }
+
+                .performance-card-row {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    gap: 10px;
+                    flex-wrap: wrap;
                 }
 
                 .performance-stat {
@@ -3069,6 +3272,12 @@ export const pages = {
                     align-items: center;
                     padding: 8px 0;
                     border-bottom: 1px solid #f3f4f6;
+                    gap: 8px;
+                    flex-wrap: wrap;
+                }
+
+                .performance-stat span:last-child {
+                    min-width: 0;
                 }
 
                 .performance-stat:last-child {
@@ -3085,6 +3294,8 @@ export const pages = {
                     font-size: 16px;
                     font-weight: 700;
                     color: #ef4444;
+                    word-break: break-word;
+                    text-align: right;
                 }
 
                 .badge-tempo {
@@ -3093,11 +3304,51 @@ export const pages = {
                     border-radius: 12px;
                     font-size: 12px;
                     font-weight: 600;
+                    white-space: nowrap;
                 }
 
                 .badge-rapido { background: #fee2e2; color: #991b1b; }
                 .badge-medio { background: #fef3c7; color: #92400e; }
                 .badge-longo { background: #dbeafe; color: #1e40af; }
+
+                .performance-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                    gap: 16px;
+                }
+
+                @media (max-width: 480px) {
+                    .performance-tabs {
+                        flex-wrap: wrap;
+                        gap: 6px;
+                        padding-bottom: 6px;
+                    }
+
+                    .performance-tab {
+                        padding: 10px 12px;
+                        font-size: 14px;
+                        flex: 1 1 140px;
+                        text-align: center;
+                    }
+
+                    .performance-card {
+                        padding: 12px;
+                    }
+
+                    .performance-stat {
+                        flex-direction: column;
+                        align-items: flex-start;
+                    }
+
+                    .performance-stat-value {
+                        text-align: left;
+                        width: 100%;
+                    }
+
+                    .performance-grid {
+                        grid-template-columns: 1fr;
+                    }
+                }
             </style>
         `;
     },
@@ -3171,6 +3422,12 @@ export const pages = {
                     margin-bottom: 24px;
                     border-bottom: 2px solid #e5e7eb;
                     padding-bottom: 0;
+                    overflow-x: auto;
+                    -webkit-overflow-scrolling: touch;
+                }
+
+                .performance-tabs::-webkit-scrollbar {
+                    height: 6px;
                 }
 
                 .performance-tab {
@@ -3184,6 +3441,7 @@ export const pages = {
                     cursor: pointer;
                     transition: all 0.2s ease;
                     margin-bottom: -2px;
+                    white-space: nowrap;
                 }
 
                 .performance-tab:hover {
@@ -3217,6 +3475,8 @@ export const pages = {
                     padding: 16px;
                     margin-bottom: 12px;
                     transition: all 0.2s ease;
+                    max-width: 100%;
+                    overflow: hidden;
                 }
 
                 .performance-card:hover {
@@ -3230,6 +3490,8 @@ export const pages = {
                     align-items: center;
                     padding: 8px 0;
                     border-bottom: 1px solid #f3f4f6;
+                    gap: 8px;
+                    flex-wrap: wrap;
                 }
 
                 .performance-stat:last-child {
@@ -3246,6 +3508,8 @@ export const pages = {
                     font-size: 16px;
                     font-weight: 700;
                     color: #ef4444;
+                    word-break: break-word;
+                    text-align: right;
                 }
 
                 .badge-tempo {
@@ -3254,11 +3518,51 @@ export const pages = {
                     border-radius: 12px;
                     font-size: 12px;
                     font-weight: 600;
+                    white-space: nowrap;
                 }
 
                 .badge-rapido { background: #fee2e2; color: #991b1b; }
                 .badge-medio { background: #fef3c7; color: #92400e; }
                 .badge-longo { background: #dbeafe; color: #1e40af; }
+
+                .performance-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                    gap: 16px;
+                }
+
+                @media (max-width: 480px) {
+                    .performance-tabs {
+                        flex-wrap: wrap;
+                        gap: 6px;
+                        padding-bottom: 6px;
+                    }
+
+                    .performance-tab {
+                        padding: 10px 12px;
+                        font-size: 14px;
+                        flex: 1 1 140px;
+                        text-align: center;
+                    }
+
+                    .performance-card {
+                        padding: 12px;
+                    }
+
+                    .performance-stat {
+                        flex-direction: column;
+                        align-items: flex-start;
+                    }
+
+                    .performance-stat-value {
+                        text-align: left;
+                        width: 100%;
+                    }
+
+                    .performance-grid {
+                        grid-template-columns: 1fr;
+                    }
+                }
             </style>
         `;
     }
