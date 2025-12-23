@@ -5133,7 +5133,7 @@ class App {
         cameraErro: null,
         resizeHandler: null,
         atendimentosAbertos: new Map(),
-        resumoColapsado: false
+        resumoColapsado: true
     };
 
     getAtendimentoStorageKey(repId, clienteId) {
@@ -5788,14 +5788,17 @@ class App {
 
     configurarResumoAtividadesToggle() {
         const toggle = document.getElementById('toggleResumoAtividades');
-        if (toggle) {
-            toggle.onclick = () => {
-                const conteudo = document.getElementById('resumoAtividadesConteudo');
-                const novoEstado = !(conteudo?.hidden ?? false);
-                this.registroRotaState.resumoColapsado = novoEstado;
-                this.aplicarEstadoResumoAtividades(novoEstado);
-            };
-        }
+        if (!toggle) return;
+
+        toggle.onclick = () => {
+            const conteudo = document.getElementById('resumoAtividadesConteudo');
+            const novoEstado = !(conteudo?.hidden ?? false);
+            this.registroRotaState.resumoColapsado = novoEstado;
+            this.aplicarEstadoResumoAtividades(novoEstado);
+        };
+
+        // Garante estado inicial oculto independentemente de re-renderizações
+        this.aplicarEstadoResumoAtividades(this.registroRotaState.resumoColapsado);
     }
 
     aplicarEstadoResumoAtividades(colapsado) {
@@ -5880,7 +5883,7 @@ class App {
         this.registroRotaState.fotosCapturadas = [];
         this.registroRotaState.enderecoResolvido = null;
         this.registroRotaState.cameraErro = null;
-        this.registroRotaState.resumoColapsado = window.matchMedia('(max-width: 768px)').matches;
+        this.registroRotaState.resumoColapsado = true;
 
         const posicao = await this.capturarLocalizacaoObrigatoria(
             'Localização necessária para iniciar o registro',
@@ -5959,6 +5962,8 @@ class App {
 
         // Carregar e exibir resumo de atividades se for checkout
         if (tipoPadrao === 'checkout') {
+            // Sempre iniciar colapsado ao abrir o checkout para liberar espaço
+            this.registroRotaState.resumoColapsado = true;
             await this.carregarResumoAtividades(repId, clienteIdNorm, dataVisita);
         } else {
             // Esconder resumo se não for checkout
