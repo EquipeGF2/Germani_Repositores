@@ -290,6 +290,13 @@ class TursoService {
       ORDER BY COALESCE(rv.rv_data_hora_registro, rv.data_hora) ASC
       LIMIT 1
     )`;
+    const checkoutDataExpr = `(
+      SELECT COALESCE(rv_data_hora_registro, data_hora)
+      FROM cc_registro_visita rv
+      WHERE COALESCE(rv.rv_sessao_id, rv.sessao_id) = ${sessaoRefExpr} AND rv.rv_tipo = 'checkout'
+      ORDER BY COALESCE(rv.rv_data_hora_registro, rv.data_hora) DESC
+      LIMIT 1
+    )`;
 
     const filtros = ['v.rep_id = ?', `date(${checkinDataExpr}) BETWEEN date(?) AND date(?)`];
     const args = [repId, inicioIso, fimIso];
@@ -323,8 +330,9 @@ class TursoService {
              v.sessao_id, v.tipo, v.data_hora_registro, v.endereco_registro, v.latitude AS lat_base, v.longitude AS long_base,
              s.cliente_nome AS sessao_cliente_nome, s.endereco_cliente AS sessao_endereco_cliente, s.checkin_at, s.checkout_at,
              s.tempo_minutos, s.status, s.serv_abastecimento, s.serv_espaco_loja, s.serv_ruptura_loja, s.serv_pontos_extras,
-             s.qtd_pontos_extras, s.qtd_frentes, s.usou_merchandising,
+             s.qtd_pontos_extras, s.qtd_frentes, s.usou_merchandising, s.data_planejada,
              ${checkinDataExpr} AS checkin_data_hora,
+             ${checkoutDataExpr} AS checkout_data_hora,
              COALESCE(s.dia_previsto, (
                SELECT rv_dia_previsto
                FROM cc_registro_visita rv
@@ -434,6 +442,7 @@ class TursoService {
           checkin_data_hora: row.checkin_data_ref || row.checkin_at,
           checkout_data_hora: row.checkout_data_hora || row.checkout_at,
           checkout_at: row.checkout_at,
+          data_planejada: row.data_planejada,
           status: statusFinal,
           tempo_minutos: row.tempo_minutos,
           endereco_cliente: row.endereco_cliente,
@@ -441,6 +450,29 @@ class TursoService {
           sessao_id: row.sessao_id
         };
     });
+  }
+
+  async listarClientesPorRepositor(repId) {
+    const sql = `
+      SELECT
+        cli.rot_cliente_codigo AS cliente_id,
+        cli.rot_cliente_codigo AS cliente_codigo,
+        COALESCE(MAX(s.cliente_nome), MAX(rv.rv_cliente_nome), cli.rot_cliente_codigo) AS cliente_nome
+      FROM rot_roteiro_cidade rc
+      JOIN rot_roteiro_cliente cli ON cli.rot_cid_id = rc.rot_cid_id
+      LEFT JOIN cc_visita_sessao s ON s.rep_id = rc.rot_repositor_id AND s.cliente_id = cli.rot_cliente_codigo
+      LEFT JOIN cc_registro_visita rv ON rv.rep_id = rc.rot_repositor_id AND rv.cliente_id = cli.rot_cliente_codigo
+      WHERE rc.rot_repositor_id = ?
+      GROUP BY cli.rot_cliente_codigo
+      ORDER BY cli.rot_cliente_codigo
+    `;
+
+    const result = await this.execute(sql, [repId]);
+    return result.rows.map((row) => ({
+      cliente_id: normalizeClienteId(row.cliente_id),
+      cliente_codigo: normalizeClienteId(row.cliente_codigo),
+      cliente_nome: row.cliente_nome
+    }));
   }
 
   async buscarSessaoAberta(repId, clienteId, { dataPlanejada, inicioIso, fimIso }) {
