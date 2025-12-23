@@ -67,6 +67,43 @@ body {
     line-height: 1.6;
 }
 
+/* Utilitários gerais */
+.truncate-1 {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.break-any {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.card-safe {
+    max-width: 100%;
+    overflow: hidden;
+}
+
+@media (max-width: 480px) {
+    .mobile-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: flex-start;
+    }
+
+    .mobile-wrap {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: flex-start;
+    }
+
+    .mobile-wrap > * {
+        min-width: 0;
+    }
+}
+
 /* Container principal */
 .app-container {
     display: flex;

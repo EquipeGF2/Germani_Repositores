@@ -7280,8 +7280,9 @@ class App {
 
                 // Status badge
                 const statusBadge = sessao.checkout_at
-                    ? '<span style="background: #dcfce7; color: #166534; padding: 4px 8px; border-radius: 6px; font-size: 0.85em; font-weight: 600;">FINALIZADO</span>'
-                    : '<span style="background: #fef3c7; color: #92400e; padding: 4px 8px; border-radius: 6px; font-size: 0.85em; font-weight: 600;">EM ATENDIMENTO</span>';
+                    ? '<span class="visit-status-badge visit-status-finalizado">FINALIZADO</span>'
+                    : '<span class="visit-status-badge visit-status-andamento">EM ATENDIMENTO</span>';
+                const tempoElemento = tempoTexto ? `<span class="visit-duration">${tempoTexto}</span>` : '';
 
                 // Alerta de dia previsto
                 const alertaDia = statusPlanejamento
@@ -7316,24 +7317,37 @@ class App {
                     : '<div style="font-size: 0.9em; color: #6b7280; margin-top: 6px; font-style: italic;">Nenhum serviço registrado</div>';
 
                 item.innerHTML = `
-                    <div style="flex: 1;">
-                        <div class="cliente-header" style="margin-bottom: 8px;">
-                            <strong class="cliente-titulo" title="${clienteTitulo}">${clienteTitulo}</strong>
-                            ${statusBadge}
-                            <span style="color: #6b7280; font-size: 0.9em;">${tempoTexto}</span>
+                    <div class="visit-content card-safe">
+                        <div class="visit-header">
+                            <div class="cliente-header">
+                                <strong class="cliente-titulo truncate-1" title="${clienteTitulo}">${clienteTitulo}</strong>
+                            </div>
+                            <div class="visit-status-group">
+                                ${statusBadge}
+                                ${tempoElemento}
+                            </div>
                         </div>
                         ${alertaDia}
-                        <div style="font-size: 0.9em; color: #374151; margin-top: 6px; background: #f9fafb; padding: 8px; border-radius: 6px;">
+                        <div class="visit-times card-safe">
                             <div><strong>Check-in:</strong> ${checkinFormatado}</div>
                             <div style="margin-top: 4px;"><strong>Checkout:</strong> ${checkoutFormatado}</div>
                         </div>
-                        <div style="font-size: 0.9em; margin-top: 8px; padding: 8px; background: #f0fdf4; border-radius: 6px; border-left: 3px solid #22c55e;">
-                            <div style="margin-bottom: 6px;"><strong>🏘️ Endereço do Cliente (Roteiro):</strong><br>${enderecoRoteiro}</div>
-                            <div><strong>📍 Endereço GPS (Check-in):</strong><br>${enderecoGpsCheckin}</div>
-                            ${enderecoGpsCheckout ? `<div style="margin-top: 6px;"><strong>📍 Endereço GPS (Checkout):</strong><br>${enderecoGpsCheckout}</div>` : '<div style="margin-top: 6px;"><strong>📍 Endereço GPS (Checkout):</strong><br>Não capturado</div>'}
+                        <div class="visit-address card-safe">
+                            <div class="address-row">
+                                <span class="address-icon">🏘️</span>
+                                <div class="address-text break-any"><strong>Endereço do Cliente (Roteiro):</strong> ${enderecoRoteiro}</div>
+                            </div>
+                            <div class="address-row">
+                                <span class="address-icon">📍</span>
+                                <div class="address-text break-any"><strong>Endereço GPS (Check-in):</strong> ${enderecoGpsCheckin}</div>
+                            </div>
+                            <div class="address-row">
+                                <span class="address-icon">📍</span>
+                                <div class="address-text break-any"><strong>Endereço GPS (Checkout):</strong> ${enderecoGpsCheckout || 'Não capturado'}</div>
+                            </div>
                         </div>
                         ${servicosTexto}
-                        <div class="visit-actions">
+                        <div class="visit-actions mobile-wrap">
                             <button class="visit-action-btn" data-action="foto-checkin" ${fotoCheckinDisponivel ? '' : 'disabled'}>📷 Foto Check-in</button>
                             <button class="visit-action-btn" data-action="foto-checkout" ${fotoCheckoutDisponivel ? '' : 'disabled'}>📷 Foto Check-out</button>
                             <button class="visit-action-btn" data-action="maps" ${mapsDisponivel ? '' : 'disabled'}>🗺️ Maps</button>
@@ -7614,28 +7628,32 @@ class App {
             erro: 'Erro'
         };
 
-        const itensHtml = this.documentosState.filaUploads.map(item => {
-            const icone = item.preview
-                ? `<img src="${item.preview}" alt="Pré-visualização">`
-                : '📎';
-            const statusClasse = item.status || 'pendente';
-            const legendaStatus = statusLabel[statusClasse] || 'Pendente';
+            const itensHtml = this.documentosState.filaUploads.map(item => {
+                const icone = item.preview
+                    ? `<img src="${item.preview}" alt="Pré-visualização">`
+                    : '📎';
+                const statusClasse = item.status || 'pendente';
+                const legendaStatus = statusLabel[statusClasse] || 'Pendente';
 
-            return `
-                <div class="upload-item" data-upload-id="${item.id}">
-                    <div class="upload-thumb">${icone}</div>
-                    <div class="upload-info">
-                        <div class="upload-nome">${item.nome}</div>
-                        <div class="upload-meta">
-                            <span>${this.formatarBytes(item.tamanho)}</span>
-                            <span class="upload-status ${statusClasse}">${legendaStatus}</span>
-                            <span style="color: #6b7280;">${item.origem === 'camera' ? '📸 Foto' : '📎 Arquivo'}</span>
+                return `
+                    <div class="upload-item" data-upload-id="${item.id}">
+                        <div class="upload-main">
+                            <div class="upload-thumb">${icone}</div>
+                            <div class="upload-info">
+                                <div class="upload-nome truncate-1" title="${item.nome}">${item.nome}</div>
+                                <div class="upload-meta">
+                                    <span>${this.formatarBytes(item.tamanho)}</span>
+                                    <span class="upload-status ${statusClasse}">${legendaStatus}</span>
+                                    <span style="color: #6b7280;">${item.origem === 'camera' ? '📸 Foto' : '📎 Arquivo'}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="upload-actions">
+                            <button class="btn-remover-upload" data-remove-id="${item.id}" title="Remover ${item.nome}" aria-label="Remover ${item.nome}">🗑️ <span class="btn-text">Remover</span></button>
                         </div>
                     </div>
-                    <button class="btn-remover-upload" data-remove-id="${item.id}">Remover</button>
-                </div>
-            `;
-        }).join('');
+                `;
+            }).join('');
 
         container.innerHTML = `
             <div class="upload-queue-title">📁 Fila de anexos</div>
@@ -8018,16 +8036,27 @@ class App {
                 new Date(doc.doc_data_ref + 'T12:00:00').toLocaleDateString('pt-BR') : '-';
 
             item.innerHTML = `
-                <input type="checkbox" class="doc-checkbox" data-doc-id="${doc.doc_id}">
-                <div class="doc-info">
-                    <div class="doc-nome">${doc.doc_nome_drive}</div>
-                    <div class="doc-meta">
-                        <span class="doc-tipo-badge">${doc.dct_nome || 'Sem tipo'}</span>
-                        <span style="margin-left: 12px;">📅 ${dataFormatada}</span>
-                        ${doc.doc_observacao ? `<span style="margin-left: 12px;">💬 ${doc.doc_observacao}</span>` : ''}
+                <div class="doc-main">
+                    <input type="checkbox" class="doc-checkbox" data-doc-id="${doc.doc_id}">
+                    <div class="doc-info card-safe">
+                        <div class="doc-line">
+                            <span class="doc-icon">📄</span>
+                            <span class="doc-nome truncate-1" title="${doc.doc_nome_drive}">${doc.doc_nome_drive}</span>
+                        </div>
+                        <div class="doc-meta">
+                            <div class="doc-line">
+                                <span class="doc-icon">🏷️</span>
+                                <span class="doc-text"><span class="doc-tipo-badge">${doc.dct_nome || 'Sem tipo'}</span></span>
+                            </div>
+                            <div class="doc-line">
+                                <span class="doc-icon">📅</span>
+                                <span class="doc-text truncate-1" title="${dataFormatada}">${dataFormatada}</span>
+                            </div>
+                            ${doc.doc_observacao ? `<div class="doc-line"><span class="doc-icon">💬</span><span class="doc-text break-any">${doc.doc_observacao}</span></div>` : ''}
+                        </div>
                     </div>
                 </div>
-                <div class="doc-actions">
+                <div class="doc-actions mobile-wrap">
                     <button class="btn-doc-download" onclick="app.downloadDocumento('${doc.doc_id}')">
                         📥 Download
                     </button>
@@ -8379,10 +8408,10 @@ class App {
             return;
         }
 
-        const html = sessoes.map(s => {
-            const minutos = s.tempo_minutos || 0;
-            let badgeClass = 'badge-medio';
-            let faixaTempo = '';
+            const html = sessoes.map(s => {
+                const minutos = s.tempo_minutos || 0;
+                let badgeClass = 'badge-medio';
+                let faixaTempo = '';
 
             if (minutos < 15) {
                 badgeClass = 'badge-rapido';
@@ -8405,11 +8434,11 @@ class App {
                 <div class="performance-card">
                     <div class="performance-stat">
                         <span class="performance-stat-label">Cliente</span>
-                        <span>${s.cliente_nome || s.cliente_id}</span>
+                        <span class="break-any">${s.cliente_nome || s.cliente_id}</span>
                     </div>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Data</span>
-                        <span>${s.data_planejada}</span>
+                        <span class="break-any">${s.data_planejada}</span>
                     </div>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Tempo em Loja</span>
@@ -8417,7 +8446,7 @@ class App {
                     </div>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Repositor</span>
-                        <span>${s.rep_id}</span>
+                        <span class="break-any">${s.rep_id}</span>
                     </div>
                 </div>
             `;
@@ -8492,29 +8521,29 @@ class App {
             return;
         }
 
-        const html = grupos.map((grupo, index) => {
-            const titulo = agruparPor === 'cliente'
-                ? `${grupo.cliente_nome || grupo.cliente_id}`
-                : `Visita - ${grupo.cliente_nome || grupo.cliente_id}`;
+            const html = grupos.map((grupo, index) => {
+                const titulo = agruparPor === 'cliente'
+                    ? `${grupo.cliente_nome || grupo.cliente_id}`
+                    : `Visita - ${grupo.cliente_nome || grupo.cliente_id}`;
 
-            const subtitulo = agruparPor === 'cliente'
-                ? `${grupo.imagens.length} foto(s)`
-                : `${grupo.data_planejada} - ${grupo.imagens.length} foto(s)`;
+                const subtitulo = agruparPor === 'cliente'
+                    ? `${grupo.imagens.length} foto(s)`
+                    : `${grupo.data_planejada} - ${grupo.imagens.length} foto(s)`;
 
-            return `
-                <div class="performance-card" style="cursor: pointer;" onclick="app.visualizarImagensCampanha(${index})">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <div>
-                            <div style="font-weight: 700; font-size: 16px; margin-bottom: 4px;">${titulo}</div>
-                            <div style="color: #6b7280; font-size: 14px;">${subtitulo}</div>
+                return `
+                    <div class="performance-card" style="cursor: pointer;" onclick="app.visualizarImagensCampanha(${index})">
+                        <div class="performance-card-row">
+                            <div class="card-safe">
+                                <div class="truncate-1 break-any" style="font-weight: 700; font-size: 16px; margin-bottom: 4px;">${titulo}</div>
+                                <div class="break-any" style="color: #6b7280; font-size: 14px;">${subtitulo}</div>
+                            </div>
+                            <button class="btn btn-secondary" style="padding: 8px 16px;">
+                                📷 Ver Fotos
+                            </button>
                         </div>
-                        <button class="btn btn-secondary" style="padding: 8px 16px;">
-                            📷 Ver Fotos
-                        </button>
                     </div>
-                </div>
-            `;
-        }).join('');
+                `;
+            }).join('');
 
         container.innerHTML = `
             <div style="margin-bottom: 16px; padding: 12px; background: #f9fafb; border-radius: 8px;">
@@ -9375,21 +9404,21 @@ class App {
         if (!container) return;
 
         const html = `
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px;">
+            <div class="performance-grid">
                 <!-- Card: Geral -->
                 <div class="performance-card">
                     <h5 style="margin-bottom: 12px; color: #ef4444; font-size: 14px; font-weight: 700; text-transform: uppercase;">📊 Visão Geral</h5>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Total de Visitas Realizadas</span>
-                        <span class="performance-stat-value">${stats.total_visitas}</span>
+                        <span class="performance-stat-value break-any">${stats.total_visitas}</span>
                     </div>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Total de Clientes Atendidos</span>
-                        <span class="performance-stat-value">${stats.total_clientes}</span>
+                        <span class="performance-stat-value break-any">${stats.total_clientes}</span>
                     </div>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Média de Visitas por Cliente</span>
-                        <span class="performance-stat-value">${stats.media_visitas_por_cliente}</span>
+                        <span class="performance-stat-value break-any">${stats.media_visitas_por_cliente}</span>
                     </div>
                 </div>
 
@@ -9397,15 +9426,15 @@ class App {
                     <h5 style="margin-bottom: 12px; color: #ef4444; font-size: 14px; font-weight: 700; text-transform: uppercase;">⏱️ Pontualidade</h5>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Total de Checkouts</span>
-                        <span class="performance-stat-value">${stats.total_checkouts}</span>
+                        <span class="performance-stat-value break-any">${stats.total_checkouts}</span>
                     </div>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Adiantadas</span>
-                        <span class="performance-stat-value">${stats.percent_adiantadas}% (${stats.visitas_adiantadas})</span>
+                        <span class="performance-stat-value break-any">${stats.percent_adiantadas}% (${stats.visitas_adiantadas})</span>
                     </div>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Atrasadas</span>
-                        <span class="performance-stat-value">${stats.percent_atrasadas}% (${stats.visitas_atrasadas})</span>
+                        <span class="performance-stat-value break-any">${stats.percent_atrasadas}% (${stats.visitas_atrasadas})</span>
                     </div>
                 </div>
 
@@ -9414,15 +9443,15 @@ class App {
                     <h5 style="margin-bottom: 12px; color: #ef4444; font-size: 14px; font-weight: 700; text-transform: uppercase;">📦 Frentes</h5>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Total de Frentes</span>
-                        <span class="performance-stat-value">${stats.total_frentes}</span>
+                        <span class="performance-stat-value break-any">${stats.total_frentes}</span>
                     </div>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Visitas com Frentes</span>
-                        <span class="performance-stat-value">${stats.visitas_com_frentes}</span>
+                        <span class="performance-stat-value break-any">${stats.visitas_com_frentes}</span>
                     </div>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Média por Cliente</span>
-                        <span class="performance-stat-value">${stats.media_frentes_por_cliente}</span>
+                        <span class="performance-stat-value break-any">${stats.media_frentes_por_cliente}</span>
                     </div>
                 </div>
 
@@ -9431,15 +9460,15 @@ class App {
                     <h5 style="margin-bottom: 12px; color: #ef4444; font-size: 14px; font-weight: 700; text-transform: uppercase;">🎨 Merchandising</h5>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Visitas com Merchandising</span>
-                        <span class="performance-stat-value">${stats.visitas_com_merchandising}</span>
+                        <span class="performance-stat-value break-any">${stats.visitas_com_merchandising}</span>
                     </div>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Total de Visitas</span>
-                        <span class="performance-stat-value">${stats.total_visitas}</span>
+                        <span class="performance-stat-value break-any">${stats.total_visitas}</span>
                     </div>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Percentual de Uso</span>
-                        <span class="performance-stat-value">${stats.perc_merchandising}%</span>
+                        <span class="performance-stat-value break-any">${stats.perc_merchandising}%</span>
                     </div>
                 </div>
 
@@ -9448,19 +9477,19 @@ class App {
                     <h5 style="margin-bottom: 12px; color: #ef4444; font-size: 14px; font-weight: 700; text-transform: uppercase;">⭐ Pontos Extras</h5>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Total de Pontos Extras</span>
-                        <span class="performance-stat-value">${stats.total_pontos_extras}</span>
+                        <span class="performance-stat-value break-any">${stats.total_pontos_extras}</span>
                     </div>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Visitas com Pontos Extras</span>
-                        <span class="performance-stat-value">${stats.visitas_com_pontos_extras}</span>
+                        <span class="performance-stat-value break-any">${stats.visitas_com_pontos_extras}</span>
                     </div>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Clientes com Pontos Extras</span>
-                        <span class="performance-stat-value">${stats.clientes_com_pontos_extras}</span>
+                        <span class="performance-stat-value break-any">${stats.clientes_com_pontos_extras}</span>
                     </div>
                     <div class="performance-stat">
                         <span class="performance-stat-label">% Clientes (vs Total)</span>
-                        <span class="performance-stat-value">${stats.perc_clientes_pontos_extras}%</span>
+                        <span class="performance-stat-value break-any">${stats.perc_clientes_pontos_extras}%</span>
                     </div>
                 </div>
 
@@ -9469,19 +9498,19 @@ class App {
                     <h5 style="margin-bottom: 12px; color: #ef4444; font-size: 14px; font-weight: 700; text-transform: uppercase;">🔧 Tipos de Serviços</h5>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Abastecimento</span>
-                        <span class="performance-stat-value">${stats.abastecimento}</span>
+                        <span class="performance-stat-value break-any">${stats.abastecimento}</span>
                     </div>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Espaço Loja</span>
-                        <span class="performance-stat-value">${stats.espaco_loja}</span>
+                        <span class="performance-stat-value break-any">${stats.espaco_loja}</span>
                     </div>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Ruptura Loja</span>
-                        <span class="performance-stat-value">${stats.ruptura_loja}</span>
+                        <span class="performance-stat-value break-any">${stats.ruptura_loja}</span>
                     </div>
                     <div class="performance-stat">
                         <span class="performance-stat-label">Pontos Extras</span>
-                        <span class="performance-stat-value">${stats.visitas_com_pontos_extras}</span>
+                        <span class="performance-stat-value break-any">${stats.visitas_com_pontos_extras}</span>
                     </div>
                 </div>
             </div>
