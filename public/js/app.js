@@ -6683,21 +6683,30 @@ class App {
         return { fechar, backdrop };
     }
 
-    resolverUrlFotoVisita(url, fileId) {
-        const baseUrl = url || (fileId ? `${this.registroRotaState.backendUrl}/api/registro-rota/fotos/${fileId}` : null);
-        const downloadUrl = fileId ? `${this.registroRotaState.backendUrl}/api/registro-rota/fotos/${fileId}?download=1` : baseUrl;
+    resolverUrlFotoVisita(url, fileId, { modoThumb = false } = {}) {
+        const previewBase = fileId
+            ? `${this.registroRotaState.backendUrl}/api/arquivos/preview/${fileId}`
+            : (url || null);
+
+        const previewUrl = modoThumb && previewBase
+            ? `${previewBase}${previewBase.includes('?') ? '&' : '?'}mode=thumb`
+            : previewBase;
+
+        const downloadUrl = fileId
+            ? `${this.registroRotaState.backendUrl}/api/registro-rota/fotos/${fileId}?download=1`
+            : (url || null);
 
         return {
-            previewUrl: baseUrl,
+            previewUrl,
             downloadUrl,
             originalUrl: url || downloadUrl || null
         };
     }
 
-    resolverUrlImagemCampanha(imagem) {
+    resolverUrlImagemCampanha(imagem, { modoThumb = false } = {}) {
         const fileId = imagem?.drive_file_id || imagem?.rv_drive_file_id;
         const url = imagem?.rv_drive_file_url || imagem?.drive_file_url || imagem?.url || '';
-        const { previewUrl, downloadUrl, originalUrl } = this.resolverUrlFotoVisita(url, fileId);
+        const { previewUrl, downloadUrl, originalUrl } = this.resolverUrlFotoVisita(url, fileId, { modoThumb });
 
         return {
             previewUrl,
@@ -6720,12 +6729,24 @@ class App {
         const wrapper = document.createElement('div');
         wrapper.className = 'photo-modal-wrapper';
         wrapper.innerHTML = `
-            <img src="${previewUrl}" alt="Foto de ${isCheckin ? 'check-in' : 'check-out'}" loading="lazy">
+            <div class="photo-modal-image">
+                <img src="${previewUrl}" alt="Foto de ${isCheckin ? 'check-in' : 'check-out'}" loading="lazy">
+                <div class="photo-modal-fallback" aria-hidden="true">🖼️ Prévia indisponível</div>
+            </div>
             <div class="modal-action-links">
                 <a class="btn btn-secondary" target="_blank" rel="noopener noreferrer" ${originalUrl ? `href="${originalUrl}"` : 'disabled'}>Abrir original</a>
                 <a class="btn btn-light" ${downloadUrl ? `href="${downloadUrl}" download` : 'disabled'}>Baixar</a>
             </div>
         `;
+
+        const imgEl = wrapper.querySelector('img');
+        const fallbackEl = wrapper.querySelector('.photo-modal-fallback');
+        if (imgEl && fallbackEl) {
+            imgEl.onerror = () => {
+                imgEl.classList.add('hidden');
+                fallbackEl.classList.add('visible');
+            };
+        }
 
         this.criarModalOverlay({
             titulo: `📷 Foto ${isCheckin ? 'Check-in' : 'Check-out'}`,
@@ -8059,7 +8080,7 @@ class App {
 
         setTimeout(() => {
             const itens = grupo.imagens.map((img, imgIndex) => {
-                const { previewUrl, originalUrl, downloadUrl } = this.resolverUrlImagemCampanha(img);
+                const { previewUrl, originalUrl, downloadUrl } = this.resolverUrlImagemCampanha(img, { modoThumb: true });
                 const urlImagem = previewUrl || originalUrl || '';
                 const dataRegistro = img.data_hora_registro ? new Date(img.data_hora_registro).toLocaleString('pt-BR') : '-';
                 const linkOrigem = originalUrl || downloadUrl || urlImagem || '#';

@@ -6,6 +6,7 @@ import { tursoService } from './services/turso.js';
 import registroRotaRoutes from './routes/registro-rota.js';
 import googleOAuthRoutes from './routes/google-oauth.js';
 import documentosRoutes from './routes/documentos.js';
+import arquivosRoutes from './routes/arquivos.js';
 
 const app = express();
 
@@ -61,6 +62,7 @@ app.get('/api/health', async (req, res) => {
 app.use('/api/registro-rota', registroRotaRoutes);
 app.use('/api/google/oauth', googleOAuthRoutes);
 app.use('/api/documentos', documentosRoutes);
+app.use('/api/arquivos', arquivosRoutes);
 
 // Rota 404
 app.use((req, res) => {

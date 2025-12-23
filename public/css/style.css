@@ -3151,12 +3151,43 @@ tbody td {
     gap: 12px;
 }
 
+.photo-modal-image {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    overflow: hidden;
+    min-height: 180px;
+}
+
 .photo-modal-wrapper img {
     width: 100%;
     border-radius: 10px;
-    border: 1px solid #e5e7eb;
     object-fit: contain;
     background: #f9fafb;
+    border: none;
+}
+
+.photo-modal-wrapper img.hidden {
+    display: none;
+}
+
+.photo-modal-fallback {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    color: #6b7280;
+    font-size: 18px;
+    gap: 8px;
+}
+
+.photo-modal-fallback.visible {
+    display: flex;
 }
 
 .modal-action-links {
