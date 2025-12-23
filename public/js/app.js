@@ -8786,6 +8786,65 @@ class App {
         }
     }
 
+    obterStatusPontualidadeVisita(visita) {
+        const statusApi = (visita.status_pontualidade || '').toString().trim();
+        if (statusApi) return statusApi;
+
+        const parseData = (valor) => {
+            if (!valor) return null;
+            const data = new Date(valor);
+            if (Number.isNaN(data.getTime())) return null;
+            return new Date(data.getFullYear(), data.getMonth(), data.getDate());
+        };
+
+        const dataReal = parseData(
+            visita.checkout_em
+            || visita.data_checkout
+            || visita.dia_real_data
+        );
+        const dataPrevista = parseData(
+            visita.data_prevista
+            || visita.rv_data_roteiro
+            || visita.rv_data_planejada
+            || visita.data_planejada
+        );
+
+        if (!dataReal || !dataPrevista) return null;
+
+        if (dataReal > dataPrevista) return 'ATRASADA';
+        if (dataReal < dataPrevista) return 'ADIANTADA';
+        return 'NO_PRAZO';
+    }
+
+    formatarBadgePontualidade(status) {
+        if (!status) return '';
+
+        const statusNormalizado = status.toUpperCase();
+        const estilos = {
+            ATRASADA: {
+                cor: '#991b1b',
+                fundo: '#fee2e2'
+            },
+            ADIANTADA: {
+                cor: '#166534',
+                fundo: '#dcfce7'
+            },
+            NO_PRAZO: {
+                cor: '#1f2937',
+                fundo: '#e5e7eb'
+            }
+        };
+
+        const estilo = estilos[statusNormalizado] || estilos.NO_PRAZO;
+
+        return `
+            <span style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; font-weight:700; font-size:12px; color:${estilo.cor}; background:${estilo.fundo}; white-space:nowrap;">
+                <span style="width:8px; height:8px; border-radius:50%; background:${estilo.cor}; display:inline-block;"></span>
+                ${statusNormalizado.replace('_', ' ')}
+            </span>
+        `;
+    }
+
     renderizarRoteiro(dados) {
         const container = document.getElementById('roteiroResultados');
         if (!container) return;
@@ -8844,6 +8903,8 @@ class App {
                                 const referenciaData = v.dia_real_data || v.checkout_at || v.data_hora;
                                 const dataFormatada = referenciaData ? new Date(referenciaData).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
                                 const tipo = (v.rv_tipo || v.tipo || 'checkout').toUpperCase();
+                                const statusPontualidade = this.obterStatusPontualidadeVisita(v);
+                                const badgePontualidade = this.formatarBadgePontualidade(statusPontualidade);
                                 return `
                                     <div style="background: #fef2f2; border-left: 3px solid #ef4444; padding: 12px; border-radius: 6px;">
                                         <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -8853,6 +8914,10 @@ class App {
                                                 </div>
                                                 <div style="font-size: 12px; color: #991b1b; margin-top: 4px;">
                                                     📅 Previsto: <strong>${v.dia_previsto_label || '-'}</strong> | Realizado: <strong>${v.dia_real_label || '-'}</strong>
+                                                </div>
+                                                <div style="margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                                                    <span style="font-size: 12px; color: #4b5563; font-weight: 600;">Pontualidade:</span>
+                                                    ${badgePontualidade || '<span style="font-size: 12px; color: #9ca3af;">N/D</span>'}
                                                 </div>
                                             </div>
                                             ${v.drive_file_url ? `

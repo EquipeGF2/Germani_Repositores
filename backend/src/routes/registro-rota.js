@@ -68,6 +68,24 @@ function validarDatasObrigatorias(inicio, fim) {
   return { ok: true };
 }
 
+function normalizarDataSomenteDia(valor) {
+  if (!valor) return null;
+  const data = new Date(valor);
+  if (Number.isNaN(data.getTime())) return null;
+  return new Date(data.getFullYear(), data.getMonth(), data.getDate());
+}
+
+function calcularStatusPontualidade(checkoutEm, dataPrevista) {
+  const dataReal = normalizarDataSomenteDia(checkoutEm);
+  const prevista = normalizarDataSomenteDia(dataPrevista);
+
+  if (!dataReal || !prevista) return null;
+
+  if (dataReal > prevista) return 'ATRASADA';
+  if (dataReal < prevista) return 'ADIANTADA';
+  return 'NO_PRAZO';
+}
+
 async function gerarNomeCampanha({ parentFolderId, clienteIdNorm, nomeClienteSanitizado, partesData }) {
   const base = `${clienteIdNorm}_${nomeClienteSanitizado}_${partesData.ddmmaa}`;
   const arquivos = await googleDriveService.listarArquivosPorPasta(parentFolderId);
@@ -727,6 +745,16 @@ router.get('/visitas', async (req, res) => {
         || visita.checkin_at
         || visita.data_hora
         || null;
+      const checkoutEm = visita.checkout_em
+        || visita.checkout_data_hora
+        || visita.checkout_at
+        || visita.rv_data_hora_registro
+        || visita.data_hora_registro
+        || null;
+      const dataPrevistaContexto = visita.rv_data_roteiro
+        || visita.rv_data_planejada
+        || visita.data_planejada
+        || null;
       const diaRealNumero = referenciaAtendimento ? new Date(referenciaAtendimento).getDay() : null;
       const diaPrevistoLabel = diaPrevistoCodigo
         ? obterDiaSemanaLabel(String(diaPrevistoCodigo).toLowerCase())
@@ -739,14 +767,21 @@ router.get('/visitas', async (req, res) => {
           && obterDiaSemanaLabel(String(diaPrevistoCodigo).toLowerCase()) !== diaRealLabel
       );
 
+      const ehCheckout = String(visita.rv_tipo || visita.tipo || '').toLowerCase() === 'checkout';
+      const statusPontualidade = ehCheckout
+        ? calcularStatusPontualidade(checkoutEm || referenciaAtendimento, dataPrevistaContexto)
+        : null;
+
       return {
         ...visita,
-        data_prevista: visita.rv_data_planejada || visita.data_planejada || null,
-        data_checkout: visita.checkout_at || visita.checkout_data_hora || null,
+        data_prevista: dataPrevistaContexto,
+        data_checkout: checkoutEm,
+        checkout_em: checkoutEm,
         fora_do_dia: foraDoDia ? 1 : 0,
         dia_previsto_label: diaPrevistoLabel,
         dia_real_label: diaRealLabel,
-        dia_real_data: referenciaAtendimento
+        dia_real_data: referenciaAtendimento,
+        status_pontualidade: statusPontualidade
       };
     });
 
