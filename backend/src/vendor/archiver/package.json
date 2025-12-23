@@ -1,0 +1,8 @@
+{
+  "name": "archiver",
+  "version": "6.0.2-local",
+  "type": "module",
+  "main": "index.js",
+  "description": "Implementação local simplificada de geração de ZIP via CLI",
+  "license": "MIT"
+}

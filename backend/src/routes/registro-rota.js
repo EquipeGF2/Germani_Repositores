@@ -273,6 +273,8 @@ router.post('/visitas', upload.any(), async (req, res) => {
       rv_id
     } = req.body;
 
+    const allowNovaVisita = String(req.body?.allow_nova_visita ?? '').toLowerCase() === 'true';
+
     const arquivos = Array.isArray(req.files) ? req.files : [];
 
     const enderecoCliente = cliente_endereco || req.body.endereco_cliente || '';
@@ -374,8 +376,18 @@ router.post('/visitas', upload.any(), async (req, res) => {
           message: 'Já existe um atendimento em andamento para este cliente. Finalize o checkout primeiro.'
         });
       }
-      if (sessaoDiaOperacional?.checkin_at) {
+      const atendimentoFechadoHoje = Boolean(sessaoDiaOperacional?.checkin_at && sessaoDiaOperacional?.checkout_at);
+
+      if (sessaoDiaOperacional?.checkin_at && !atendimentoFechadoHoje) {
         return res.status(409).json({ ok: false, code: 'CHECKIN_EXISTENTE', message: 'Já existe check-in para este cliente no dia.' });
+      }
+
+      if (atendimentoFechadoHoje && !allowNovaVisita) {
+        return res.status(409).json({
+          ok: false,
+          code: 'CHECKIN_DIA_FINALIZADO',
+          message: "Cliente já atendido hoje. Use 'Nova visita' para registrar novo atendimento."
+        });
       }
       if (sessaoAberta && normalizeClienteId(sessaoAberta.cliente_id) !== clienteIdNorm) {
         return res.status(409).json({
@@ -384,7 +396,7 @@ router.post('/visitas', upload.any(), async (req, res) => {
           message: `Há um atendimento em aberto para o cliente ${sessaoAberta.cliente_id}. Finalize o checkout antes de iniciar outro check-in.`
         });
       }
-      const sessaoBase = sessaoExistente && !sessaoExistente.checkin_at ? sessaoExistente : null;
+      const sessaoBase = !allowNovaVisita && sessaoExistente && !sessaoExistente.checkin_at ? sessaoExistente : null;
       sessaoId = sessaoBase?.sessao_id || crypto.randomUUID();
       if (!sessaoBase) {
         await tursoService.criarSessaoVisita({
