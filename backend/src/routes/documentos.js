@@ -14,8 +14,31 @@ const upload = multer({
 });
 
 const EXTENSOES_PERMITIDAS = [
-  '.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx',
-  '.xls', '.xlsx', '.txt', '.zip'
+  '.pdf',
+  '.xls', '.xlsx', '.xlsm', '.xlsb', '.xlt', '.xltx', '.xltm',
+  '.doc', '.docx', '.docm', '.dot', '.dotx', '.dotm',
+  '.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'
+];
+
+const MIMES_PERMITIDOS = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.ms-word.document.macroEnabled.12',
+  'application/vnd.ms-word.template.macroEnabled.12',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.template',
+  'application/vnd.ms-excel',
+  'application/vnd.ms-excel.sheet.macroEnabled.12',
+  'application/vnd.ms-excel.sheet.binary.macroEnabled.12',
+  'application/vnd.ms-excel.template.macroEnabled.12',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.template',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+  'image/jpg'
 ];
 
 function obterReferenciaAtual(dataBase = new Date()) {
@@ -102,6 +125,43 @@ function registrarFalhaBanco(contexto, detalhe, payload = {}) {
     detalhe: detalhe?.message || detalhe,
     ...payload
   }));
+}
+
+function registrarRejeicaoArquivo(contexto, arquivo, motivo) {
+  console.log(JSON.stringify({
+    code: 'DOC_UPLOAD_REJECTED',
+    contexto,
+    arquivo: arquivo?.originalname,
+    mimetype: arquivo?.mimetype,
+    motivo
+  }));
+}
+
+function mimePermitido(mime, ext) {
+  if (!mime) return true;
+  const mimeNormalizado = mime.toLowerCase();
+
+  if (mimeNormalizado.startsWith('image/') && ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'].includes(ext)) {
+    return true;
+  }
+
+  return MIMES_PERMITIDOS.includes(mimeNormalizado);
+}
+
+function validarArquivoUpload(arquivo) {
+  const nome = arquivo?.originalname || '';
+  const pontoIndex = nome.lastIndexOf('.');
+  const ext = pontoIndex >= 0 ? nome.substring(pontoIndex).toLowerCase() : '';
+
+  if (!EXTENSOES_PERMITIDAS.includes(ext)) {
+    return { ok: false, motivo: `Extensão não permitida (${ext || 'sem extensão'})` };
+  }
+
+  if (!mimePermitido(arquivo?.mimetype || '', ext)) {
+    return { ok: false, motivo: `Tipo de arquivo não permitido (${arquivo?.mimetype || 'indefinido'})` };
+  }
+
+  return { ok: true, ext };
 }
 
 function gerarNomeDocumento({ repositorCodigo, tipoCodigo, referencia, ext, nomesUsados = new Set() }) {
@@ -478,16 +538,32 @@ router.post('/upload-multiplo', upload.array('arquivos', 10), async (req, res) =
 
     console.log(`📁 Recebidos ${arquivos.length} arquivo(s)`);
 
-    // Validar extensões
-    for (const arquivo of arquivos) {
-      const ext = arquivo.originalname.substring(arquivo.originalname.lastIndexOf('.')).toLowerCase();
-      if (!EXTENSOES_PERMITIDAS.includes(ext)) {
-        registrarFalhaValidacao('upload_multiplo', `extensão não permitida: ${ext}`);
-        return res.status(400).json({
-          ok: false,
-          message: `Extensão não permitida: ${ext} (arquivo: ${arquivo.originalname})`
-        });
-      }
+    const resultados = [];
+    const erros = [];
+
+    const arquivosValidados = arquivos
+      .map((arquivo) => {
+        const validacao = validarArquivoUpload(arquivo);
+        if (!validacao.ok) {
+          registrarRejeicaoArquivo('upload_multiplo', arquivo, validacao.motivo);
+          erros.push({ arquivo: arquivo.originalname, erro: validacao.motivo });
+          return null;
+        }
+
+        return { ...arquivo, extNormalizada: validacao.ext };
+      })
+      .filter(Boolean);
+
+    if (arquivosValidados.length === 0) {
+      return res.status(200).json(sanitizeBigInt({
+        ok: false,
+        message: 'Nenhum arquivo com formato permitido',
+        total: arquivos.length,
+        sucesso: 0,
+        erros_total: erros.length,
+        resultados: [],
+        erros
+      }));
     }
 
     // Buscar tipo
@@ -531,13 +607,10 @@ router.post('/upload-multiplo', upload.array('arquivos', 10), async (req, res) =
     const arquivosExistentes = await googleDriveService.listarArquivosPorPasta(tipoFolderId);
     const nomesUsados = new Set(arquivosExistentes.map(a => (a.name || '').toLowerCase()));
 
-    const resultados = [];
-    const erros = [];
-
     // Processar cada arquivo
-    for (const arquivo of arquivos) {
+    for (const arquivo of arquivosValidados) {
       try {
-        const ext = arquivo.originalname.substring(arquivo.originalname.lastIndexOf('.')).toLowerCase();
+        const ext = arquivo.extNormalizada || arquivo.originalname.substring(arquivo.originalname.lastIndexOf('.')).toLowerCase();
         let referencia;
         try {
           referencia = validarEPadronizarReferencia();

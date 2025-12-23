@@ -2451,9 +2451,10 @@ export const pages = {
                             <div class="filter-group doc-file-input">
                                 <label for="uploadArquivo">Arquivos * <span style="font-size: 12px; color: #6b7280;">(múltiplos permitidos)</span></label>
                                 <div class="doc-input-row">
-                                    <input type="file" id="uploadArquivo" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.txt,.zip" multiple required>
+                                    <input type="file" id="uploadArquivo" accept="application/pdf,application/msword,application/vnd.ms-word.document.macroEnabled.12,application/vnd.ms-word.template.macroEnabled.12,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.wordprocessingml.template,application/vnd.ms-excel,application/vnd.ms-excel.sheet.macroEnabled.12,application/vnd.ms-excel.sheet.binary.macroEnabled.12,application/vnd.ms-excel.template.macroEnabled.12,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.spreadsheetml.template,image/jpeg,image/png,image/webp,image/heic,image/heif,.pdf,.doc,.docx,.docm,.dot,.dotx,.dotm,.xls,.xlsx,.xlsm,.xlsb,.xlt,.xltx,.xltm,.jpg,.jpeg,.png,.webp,.heic,.heif" multiple required>
                                     <button type="button" class="btn-camera" id="btnAnexarFoto">📸 Anexar por foto</button>
                                 </div>
+                                <span style="font-size: 12px; color: #374151; font-weight: 600;">Formatos aceitos: PDF, Excel, Word e Fotos.</span>
                                 <span style="font-size: 12px; color: #6b7280;">Tamanho máximo por arquivo: ${MAX_UPLOAD_MB} MB</span>
                                 <span id="arquivosSelecionados" style="font-size: 13px; color: #6b7280; margin-top: 4px;"></span>
                             </div>
@@ -2470,6 +2471,11 @@ export const pages = {
                         <div class="upload-queue" id="filaUploads">
                             <div class="upload-queue-title">📁 Fila de anexos</div>
                             <div style="font-size: 13px; color: #6b7280;">Nenhum arquivo ou foto selecionado</div>
+                        </div>
+                        <div class="upload-rejected" id="arquivosRejeitados" style="display:none;">
+                            <div class="upload-queue-title">🚫 Arquivos rejeitados</div>
+                            <div style="font-size: 13px; color: #6b7280;">Apenas formatos permitidos são aceitos.</div>
+                            <ul class="upload-rejected-list"></ul>
                         </div>
                     </div>
                 </div>
@@ -2558,6 +2564,24 @@ export const pages = {
                     font-weight: 700;
                     margin-bottom: 12px;
                     color: #111827;
+                }
+
+                .upload-rejected {
+                    margin-top: 12px;
+                    border: 1px solid #fecdd3;
+                    background: #fef2f2;
+                    border-radius: 12px;
+                    padding: 12px 16px;
+                }
+
+                .upload-rejected-list {
+                    list-style: disc;
+                    padding-left: 20px;
+                    color: #b91c1c;
+                    margin: 8px 0 0;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 4px;
                 }
 
                 .upload-item {
@@ -2923,13 +2947,6 @@ export const pages = {
                                 <option value="60+">Mais de 1 hora</option>
                             </select>
                         </div>
-                        <div class="filter-group">
-                            <label for="perfCampanhaAgrupar">Agrupar Campanha</label>
-                            <select id="perfCampanhaAgrupar">
-                                <option value="sessao">Visita</option>
-                                <option value="cliente">Cliente</option>
-                            </select>
-                        </div>
                         <div class="filter-group" style="display:flex; gap:8px;">
                             <button class="btn btn-secondary" id="btnAplicarPerformance" style="flex:1;">🔍 Aplicar filtros</button>
                             <button class="btn btn-light" id="btnLimparPerformance" style="flex:1;">🧹 Limpar</button>
@@ -2939,7 +2956,6 @@ export const pages = {
                     <!-- Tabs -->
                     <div class="performance-tabs">
                         <button class="performance-tab active" data-tab="tempo">⏱️ Tempo de Atendimento</button>
-                        <button class="performance-tab" data-tab="campanha">📋 Campanha</button>
                         <button class="performance-tab" data-tab="servicos">🔧 Análise de Serviços</button>
                         <button class="performance-tab" data-tab="roteiro">🗺️ Roteiro</button>
                     </div>
@@ -2952,19 +2968,6 @@ export const pages = {
                         <div id="tempoResultados">
                             <div class="empty-state">
                                 <div class="empty-state-icon">⏱️</div>
-                                <p>Selecione o período e clique em Aplicar filtros</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Tab Content: Campanha -->
-                    <div class="performance-tab-content" id="tab-campanha">
-                        <h4 style="margin-bottom: 16px; color: #374151; font-weight: 600;">Análise de Campanhas</h4>
-                        <p style="color:#6b7280; font-size: 0.9em; margin-top:-4px;">Agrupamento definido em "Agrupar Campanha" nos filtros principais.</p>
-
-                        <div id="campanhaResultados">
-                            <div class="empty-state">
-                                <div class="empty-state-icon">📋</div>
                                 <p>Selecione o período e clique em Aplicar filtros</p>
                             </div>
                         </div>
@@ -3097,6 +3100,167 @@ export const pages = {
                 .badge-longo { background: #dbeafe; color: #1e40af; }
             </style>
         `;
+    },
+    'consulta-campanha': async () => {
+        const repositores = await db.getAllRepositors();
+        const repositorOptions = repositores
+            .map(repo => `<option value="${repo.repo_cod}">${repo.repo_cod} - ${repo.repo_nome}</option>`)
+            .join('');
+
+        const hoje = new Date().toISOString().split('T')[0];
+        const umMesAtras = new Date();
+        umMesAtras.setMonth(umMesAtras.getMonth() - 1);
+        const dataInicio = umMesAtras.toISOString().split('T')[0];
+
+        return `
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h3 class="card-title" style="white-space: nowrap;">Consulta Campanha</h3>
+                        <p class="text-muted" style="margin: 4px 0 0;">Visualize fotos e resultados de campanhas por visita ou cliente.</p>
+                    </div>
+                </div>
+                <div class="card-body" style="padding-top: 20px;">
+                    <div class="performance-filters" style="margin-bottom: 18px; background:#f9fafb; padding:14px 16px; border:1px solid #e5e7eb; border-radius:12px; display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:10px; align-items:end;">
+                        <div class="filter-group">
+                            <label for="perfRepositor">Repositor</label>
+                            <select id="perfRepositor">
+                                <option value="">Todos</option>
+                                ${repositorOptions}
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="perfDataInicio">Data Início</label>
+                            <input type="date" id="perfDataInicio" value="${dataInicio}">
+                        </div>
+                        <div class="filter-group">
+                            <label for="perfDataFim">Data Fim</label>
+                            <input type="date" id="perfDataFim" value="${hoje}">
+                        </div>
+                        <div class="filter-group">
+                            <label for="perfCampanhaAgrupar">Agrupar Campanha</label>
+                            <select id="perfCampanhaAgrupar">
+                                <option value="sessao">Visita</option>
+                                <option value="cliente">Cliente</option>
+                            </select>
+                        </div>
+                        <div class="filter-group" style="display:flex; gap:8px;">
+                            <button class="btn btn-secondary" id="btnAplicarPerformance" style="flex:1;">🔍 Aplicar filtros</button>
+                            <button class="btn btn-light" id="btnLimparPerformance" style="flex:1;">🧹 Limpar</button>
+                        </div>
+                    </div>
+
+                    <div id="campanhaResultados">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📋</div>
+                            <p>Selecione o período e clique em Aplicar filtros</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <style>
+                .performance-filters .filter-group label {
+                    font-weight: 600;
+                    color: #374151;
+                }
+
+                .performance-tabs {
+                    display: flex;
+                    gap: 8px;
+                    margin-bottom: 24px;
+                    border-bottom: 2px solid #e5e7eb;
+                    padding-bottom: 0;
+                }
+
+                .performance-tab {
+                    padding: 12px 24px;
+                    background: transparent;
+                    border: none;
+                    border-bottom: 3px solid transparent;
+                    color: #6b7280;
+                    font-size: 15px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    margin-bottom: -2px;
+                }
+
+                .performance-tab:hover {
+                    color: #374151;
+                    background: #f9fafb;
+                }
+
+                .performance-tab.active {
+                    color: #ef4444;
+                    border-bottom-color: #ef4444;
+                }
+
+                .performance-tab-content {
+                    display: none;
+                    animation: fadeIn 0.3s ease;
+                }
+
+                .performance-tab-content.active {
+                    display: block;
+                }
+
+                @keyframes fadeIn {
+                    from { opacity: 0; transform: translateY(10px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+
+                .performance-card {
+                    background: white;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 12px;
+                    padding: 16px;
+                    margin-bottom: 12px;
+                    transition: all 0.2s ease;
+                }
+
+                .performance-card:hover {
+                    border-color: #ef4444;
+                    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+                }
+
+                .performance-stat {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 8px 0;
+                    border-bottom: 1px solid #f3f4f6;
+                }
+
+                .performance-stat:last-child {
+                    border-bottom: none;
+                }
+
+                .performance-stat-label {
+                    font-weight: 600;
+                    color: #374151;
+                    font-size: 14px;
+                }
+
+                .performance-stat-value {
+                    font-size: 16px;
+                    font-weight: 700;
+                    color: #ef4444;
+                }
+
+                .badge-tempo {
+                    display: inline-block;
+                    padding: 4px 12px;
+                    border-radius: 12px;
+                    font-size: 12px;
+                    font-weight: 600;
+                }
+
+                .badge-rapido { background: #fee2e2; color: #991b1b; }
+                .badge-medio { background: #fef3c7; color: #92400e; }
+                .badge-longo { background: #dbeafe; color: #1e40af; }
+            </style>
+        `;
     }
 };
 
@@ -3119,7 +3283,8 @@ export const pageTitles = {
   'roteiro-repositor': 'Roteiro do Repositor',
   'registro-rota': 'Registro de Rota',
   'consulta-visitas': 'Consulta de Visitas',
+  'consulta-campanha': 'Consulta Campanha',
   'documentos': 'Registro de Documentos',
   'consulta-documentos': 'Consulta de Documentos',
-  'analise-performance': 'Análise de Performance'
+  'analise-performance': 'Visitas'
 };
