@@ -619,6 +619,7 @@ tbody td {
 .modal.active {
     display: flex;
     padding: 12px;
+    align-items: center;
 }
 
 .modal-content {
@@ -636,10 +637,12 @@ tbody td {
 .modal-captura .modal-content.captura-modal {
     max-width: 960px;
     width: 98%;
-    height: 92dvh;
-    max-height: 92dvh;
+    height: 94dvh;
+    max-height: 94dvh;
     overflow: hidden;
     padding: 0;
+    display: flex;
+    flex-direction: column;
 }
 
 @media (max-width: 768px) {
@@ -988,6 +991,7 @@ tbody td {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 12px;
 }
 
 .modal-header h3 {
@@ -1040,8 +1044,15 @@ tbody td {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 16px;
+    padding: 14px 16px;
     border-bottom: 1px solid var(--gray-200);
+}
+
+.captura-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
 }
 
 .captura-titulos {
@@ -1062,6 +1073,24 @@ tbody td {
     font-size: 0.95rem;
 }
 
+.captura-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px 16px;
+    overflow: hidden;
+    min-height: 0;
+}
+
+.captura-main {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    flex: 1;
+    min-height: 0;
+}
+
 .captura-badge {
     display: inline-flex;
     align-items: center;
@@ -1074,6 +1103,12 @@ tbody td {
     width: fit-content;
 }
 
+.captura-localizacao {
+    padding: 8px 16px 0 16px;
+    border-bottom: 1px solid var(--gray-200);
+    background: var(--white);
+}
+
 .gps-chip {
     margin-left: auto;
     background: #f8fafc;
@@ -1083,7 +1118,7 @@ tbody td {
     border-radius: 12px;
     font-weight: 600;
     font-size: 0.9rem;
-    max-width: 320px;
+    max-width: 100%;
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -1199,6 +1234,8 @@ tbody td {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    flex: 1;
+    min-height: 0;
 }
 
 .camera-area {
@@ -1209,7 +1246,15 @@ tbody td {
     display: flex;
     align-items: center;
     justify-content: center;
-    height: clamp(320px, 55vh, 520px);
+    flex: 1;
+    min-height: 55vh;
+    height: auto;
+}
+
+@media (min-width: 769px) {
+    .camera-area {
+        min-height: clamp(320px, 55vh, 520px);
+    }
 }
 
 .camera-video,
@@ -1257,6 +1302,7 @@ tbody td {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    flex-shrink: 0;
 }
 
 .captura-thumbs-header {
@@ -1337,6 +1383,26 @@ tbody td {
     gap: 12px;
     padding: 12px 16px;
     border-top: 1px solid var(--gray-200);
+    flex-wrap: wrap;
+}
+
+.captura-footer .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.captura-actions-right,
+.captura-actions-left {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.captura-actions-right {
+    margin-left: auto;
+    justify-content: flex-end;
 }
 
 .doc-input-row {
@@ -3240,6 +3306,35 @@ tbody td {
     .btn, .btn-small {
         padding: 10px 16px;
         font-size: 0.875rem;
+    }
+
+    .captura-body {
+        padding: 10px 12px;
+    }
+
+    .captura-footer {
+        padding: 10px 12px;
+    }
+
+    .captura-footer .btn-text {
+        display: none;
+    }
+
+    .captura-footer .btn {
+        padding: 10px;
+        min-width: auto;
+    }
+
+    .captura-header {
+        padding: 12px 14px;
+    }
+
+    .captura-localizacao {
+        padding: 8px 14px 0 14px;
+    }
+
+    .gps-chip {
+        width: 100%;
     }
 
     /* Vídeo da câmera ocupa tela toda */

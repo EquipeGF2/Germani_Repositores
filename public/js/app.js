@@ -5432,8 +5432,11 @@ class App {
             const btnCampanha = podeCheckout
                 ? `<button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'campanha', '${cadastroEsc}')" class="btn-small">🎯 Campanha</button>`
                 : '';
+            const btnCancelar = statusBase === 'em_atendimento'
+                ? `<button onclick="app.confirmarCancelarAtendimento(${repId}, '${cliId}', '${nomeEsc}')" class="btn-small btn-danger" title="Cancelar atendimento em aberto">🛑 Cancelar</button>`
+                : '';
 
-            const botoes = `${btnCheckin}${btnAtividades}${btnCheckout}${btnCampanha}`;
+            const botoes = `${btnCheckin}${btnAtividades}${btnCheckout}${btnCampanha}${btnCancelar}`;
             const avisoAtraso = checkinBloqueadoPorAtraso
                 ? '<span style="display:block;color:#b91c1c;font-size:12px;margin-top:6px;">Atraso superior a 7 dias. Check-in bloqueado.</span>'
                 : '';
@@ -5505,6 +5508,53 @@ class App {
         }
     }
 
+    async confirmarCancelarAtendimento(repId, clienteId, clienteNome) {
+        const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
+        const clienteIdNorm = normalizeClienteId(clienteId);
+
+        const atendimentoPersistido = this.recuperarAtendimentoPersistido(repId, clienteIdNorm) || {};
+        const statusCliente = this.registroRotaState.resumoVisitas.get(clienteIdNorm) || {};
+        const abertoMap = this.registroRotaState.atendimentosAbertos instanceof Map
+            ? this.registroRotaState.atendimentosAbertos.get(clienteIdNorm)
+            : null;
+
+        const rvId = statusCliente?.rv_id || atendimentoPersistido?.rv_id || abertoMap?.rv_id;
+
+        if (!rvId) {
+            this.showNotification('Nenhum atendimento aberto encontrado para cancelar.', 'warning');
+            return;
+        }
+
+        const confirmou = window.confirm(`Cancelar o atendimento em aberto para ${clienteIdNorm} - ${clienteNome || ''}?`);
+        if (!confirmou) return;
+
+        try {
+            const response = await fetch(`${this.registroRotaState.backendUrl}/api/registro-rota/cancelar-atendimento`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rv_id: rvId, motivo: 'Cancelado manualmente na interface' })
+            });
+
+            if (!response.ok) {
+                const erro = await this.extrairMensagemErro(response);
+                throw new Error(erro || 'Erro ao cancelar atendimento');
+            }
+
+            this.atualizarStatusClienteLocal(clienteIdNorm, {
+                status: 'sem_checkin',
+                rv_id: null,
+                atividades_count: 0,
+                rep_id: repId
+            });
+
+            this.showNotification('Atendimento cancelado. Novo check-in liberado.', 'success');
+            await this.carregarRoteiroRepositor();
+        } catch (error) {
+            console.error('Erro ao cancelar atendimento:', error);
+            this.showNotification('Não foi possível cancelar o atendimento: ' + error.message, 'error');
+        }
+    }
+
     atualizarStatusClienteLocal(clienteId, novoStatus = {}) {
         const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
         const clienteIdNorm = normalizeClienteId(clienteId);
@@ -5519,6 +5569,21 @@ class App {
 
         mapaResumo.set(clienteIdNorm, combinado);
         this.registroRotaState.resumoVisitas = mapaResumo;
+
+        if (!(this.registroRotaState.atendimentosAbertos instanceof Map)) {
+            this.registroRotaState.atendimentosAbertos = new Map();
+        }
+
+        if (combinado.status === 'em_atendimento' && combinado.rv_id) {
+            this.registroRotaState.atendimentosAbertos.set(clienteIdNorm, {
+                cliente_id: clienteIdNorm,
+                rv_id: combinado.rv_id,
+                atividades_count: Number(combinado.atividades_count || 0),
+                checkin_em: combinado.checkin_em || atual.checkin_em || null
+            });
+        } else {
+            this.registroRotaState.atendimentosAbertos.delete(clienteIdNorm);
+        }
 
         if (combinado.status === 'em_atendimento' && combinado.rv_id) {
             this.persistirAtendimentoLocal(combinado.rep_id || this.registroRotaState?.clienteAtual?.repId, clienteIdNorm, {
@@ -5647,6 +5712,38 @@ class App {
         }
     }
 
+    reconciliarSessaoAbertaLocal(sessao, repIdFallback) {
+        const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
+
+        if (!sessao) return null;
+
+        const clienteIdNorm = normalizeClienteId(sessao.cliente_id);
+        const atividades = Number(sessao.atividades_count || sessao.qtd_frentes || 0);
+        const rvId = sessao.sessao_id || sessao.rv_sessao_id;
+
+        if (!(this.registroRotaState.atendimentosAbertos instanceof Map)) {
+            this.registroRotaState.atendimentosAbertos = new Map();
+        }
+
+        this.registroRotaState.atendimentosAbertos.set(clienteIdNorm, {
+            cliente_id: clienteIdNorm,
+            rv_id: rvId,
+            checkin_em: sessao.checkin_at || sessao.checkin_data_hora || null,
+            atividades_count: atividades,
+            data_roteiro: sessao.data_planejada || null,
+            dia_previsto: sessao.dia_previsto || null
+        });
+
+        this.atualizarStatusClienteLocal(clienteIdNorm, {
+            status: 'em_atendimento',
+            rv_id: rvId,
+            atividades_count: atividades,
+            rep_id: sessao.rep_id || repIdFallback
+        });
+
+        return this.registroRotaState.resumoVisitas.get(clienteIdNorm);
+    }
+
     configurarToggleGps() {
         const toggle = document.getElementById('gpsDetalhesToggle');
         const detalhes = document.getElementById('gpsDetalhes');
@@ -5705,9 +5802,9 @@ class App {
         const clienteIdNorm = normalizeClienteId(clienteId);
         const dataInput = document.getElementById('registroData')?.value;
         const dataVisita = dataVisitaParam || dataInput;
-        const statusCliente = this.registroRotaState.resumoVisitas.get(clienteIdNorm);
+        let statusCliente = this.registroRotaState.resumoVisitas.get(clienteIdNorm);
 
-        const tipoPadrao = tipoRegistro || (statusCliente?.status === 'em_atendimento' ? 'checkout' : 'checkin');
+        let tipoPadrao = tipoRegistro || (statusCliente?.status === 'em_atendimento' ? 'checkout' : 'checkin');
         this.registroRotaState.tipoRegistro = tipoPadrao;
 
         const atrasoInfo = this.calcularAtrasoRoteiro(dataVisita);
@@ -5724,6 +5821,15 @@ class App {
         if (['checkout', 'campanha'].includes(tipoPadrao) && sessaoAberta && normalizeClienteId(sessaoAberta.cliente_id) !== clienteIdNorm) {
             this.showNotification(`Há um atendimento em aberto para ${sessaoAberta.cliente_id}. Utilize o mesmo cliente.`, 'warning');
             return;
+        }
+        if (sessaoAberta && normalizeClienteId(sessaoAberta.cliente_id) === clienteIdNorm) {
+            const atualizado = this.reconciliarSessaoAbertaLocal(sessaoAberta, repId);
+            statusCliente = atualizado || statusCliente;
+
+            if (!tipoRegistro) {
+                tipoPadrao = statusCliente?.status === 'em_atendimento' ? 'checkout' : 'checkin';
+                this.registroRotaState.tipoRegistro = tipoPadrao;
+            }
         }
         if (tipoPadrao === 'checkout' && (!statusCliente || statusCliente.status !== 'em_atendimento')) {
             this.showNotification('Realize o check-in antes de registrar o checkout.', 'warning');
@@ -6514,6 +6620,8 @@ class App {
             return;
         }
 
+        this.reconciliarSessaoAbertaLocal(sessaoAberta, repId);
+
         this.registroRotaState.sessaoAtividades = {
             sessaoId: sessaoAberta.sessao_id || sessaoAberta.rv_sessao_id,
             repId: Number(repId),
@@ -6675,7 +6783,7 @@ class App {
             selectCliente.disabled = true;
             selectCliente.innerHTML = '<option value="">Carregando clientes...</option>';
 
-            const url = new URL(`${this.registroRotaState.backendUrl}/api/roteiro/clientes`);
+            const url = new URL(`${this.registroRotaState.backendUrl}/api/registro-rota/roteiro/clientes`);
             url.searchParams.set('repositor_id', repositorId);
 
             const response = await fetch(url);
@@ -6697,7 +6805,8 @@ class App {
             selectCliente.disabled = false;
         } catch (error) {
             console.error('Erro ao carregar clientes do roteiro:', error);
-            selectCliente.innerHTML = '<option value="">Erro ao carregar clientes</option>';
+            selectCliente.innerHTML = '<option value="">Nenhum cliente carregado</option>';
+            selectCliente.disabled = false;
             this.showNotification('Não foi possível carregar a lista de clientes para o repositor selecionado.', 'warning');
         }
     }
