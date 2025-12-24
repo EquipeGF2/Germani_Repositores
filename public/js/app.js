@@ -9,6 +9,10 @@ import { ACL_RECURSOS } from './acl-resources.js';
 import { geoService } from './geo.js';
 import { formatarDataISO, normalizarDataISO, normalizarSupervisor, normalizarTextoCadastro, formatarGrupo, documentoParaBusca, documentoParaExibicao } from './utils.js';
 
+performance.mark('app_start');
+const DEBUG_PERF = typeof window !== 'undefined'
+    && (window.location.search.includes('debugPerf=true') || localStorage.getItem('DEBUG_PERF') === 'true');
+
 const AUTH_STORAGE_KEY = 'GERMANI_AUTH_USER';
 const API_BASE_URL = (typeof window !== 'undefined' && window.API_BASE_URL) || 'https://repositor-backend.onrender.com';
 const MAX_UPLOAD_MB = 10;
@@ -124,6 +128,9 @@ class App {
         this.cacheUltimaAtualizacaoRoteiro = {};
         this.cidadesConsultaDisponiveis = [];
         this.MAX_CAMPANHA_FOTOS = 10;
+        this.performanceMarks = {};
+        this.keepAliveHandle = null;
+        this.primeiraApiRegistrada = false;
         this.recursosPorPagina = {
             'cadastro-repositor': 'mod_repositores',
             'validacao-dados': 'mod_repositores',
@@ -174,12 +181,14 @@ class App {
         };
 
         this.setupShellResponsiva();
+        this.marcarPerformance('shell_ready');
+        this.renderBootPlaceholder();
 
         // Event Listeners
         this.setupEventListeners();
 
-        // Dispara captura de localização imediatamente (em paralelo com demais inicializações)
-        const geoPromise = this.exigirLocalizacaoInicial();
+        // Dispara captura de localização em background (não bloqueia o boot)
+        const geoPromise = this.exigirLocalizacaoInicial(false);
 
         const [resultadoDb, resultadoDadosNaoCriticos] = await Promise.allSettled([
             this.initializeDatabase(),
@@ -191,16 +200,19 @@ class App {
             return;
         }
 
+        if (!this.primeiraApiRegistrada) {
+            this.marcarPerformance('primeira_api_concluida');
+            this.primeiraApiRegistrada = true;
+        }
+
         if (resultadoDadosNaoCriticos.status === 'rejected') {
             console.warn('Falha ao carregar dados não críticos:', resultadoDadosNaoCriticos.reason);
             this.showNotification('Alguns dados opcionais não foram carregados. Tente novamente mais tarde.', 'warning');
         }
 
-        const geoLiberado = await geoPromise;
-        if (!geoLiberado) return;
-
         const temSessao = await this.ensureUsuarioLogado();
         if (!temSessao) return;
+        this.marcarPerformance('sessao_pronta');
 
         await this.carregarPermissoesUsuario();
         this.aplicarInformacoesUsuario();
@@ -214,6 +226,108 @@ class App {
 
         // Carrega a página inicial
         await this.navigateTo(this.currentPage);
+        this.marcarPerformance('primeira_pagina_renderizada');
+        this.registrarResumoPerformance();
+        this.iniciarKeepAliveBackend();
+
+        const geoLiberado = await geoPromise;
+        if (!geoLiberado) {
+            this.showNotification('Localização não liberada. Ative o GPS para recursos de rota.', 'warning');
+        }
+    }
+
+    marcarPerformance(nome) {
+        try {
+            performance.mark(nome);
+            this.performanceMarks[nome] = performance.now();
+        } catch (error) {
+            console.warn('[PERF] Não foi possível registrar a marca', nome, error);
+        }
+    }
+
+    registrarResumoPerformance() {
+        if (!DEBUG_PERF) return;
+
+        const pegarMark = (nome) => performance.getEntriesByName(nome).at(-1);
+        const linhas = [];
+
+        const adicionar = (etapa, inicio, fim) => {
+            const mInicio = pegarMark(inicio);
+            const mFim = pegarMark(fim);
+            if (mInicio && mFim) {
+                linhas.push({ etapa, tempo_ms: (mFim.startTime - mInicio.startTime).toFixed(1) });
+            }
+        };
+
+        adicionar('Shell renderizado', 'app_start', 'shell_ready');
+        adicionar('Sessão carregada', 'app_start', 'sessao_pronta');
+        adicionar('Primeira API', 'app_start', 'primeira_api_concluida');
+        adicionar('Primeira tela', 'app_start', 'primeira_pagina_renderizada');
+
+        if (linhas.length > 0) {
+            console.table(linhas);
+        }
+    }
+
+    renderBootPlaceholder() {
+        if (!this.elements?.contentBody) return;
+
+        this.elements.contentBody.innerHTML = `
+            <div class="card" aria-live="polite">
+                <div class="card-header" style="align-items:center;">
+                    <div>
+                        <p class="form-card-eyebrow" style="margin:0;">Preparando ambiente</p>
+                        <h4 style="margin:4px 0 0;">Carregando dados iniciais</h4>
+                    </div>
+                    <div class="spinner" style="width:36px; height:36px; border-width:3px;"></div>
+                </div>
+                <div class="card-body">
+                    <p style="color:#4b5563; margin-bottom:12px;">Montando a interface enquanto buscamos sessão e configurações.</p>
+                    <ul class="text-muted" style="display:flex; flex-direction:column; gap:6px; margin-left:18px;">
+                        <li>Menu e cabeçalho já estão disponíveis.</li>
+                        <li>Dados são carregados em segundo plano.</li>
+                        <li>Se demorar, o servidor pode estar aquecendo.</li>
+                    </ul>
+                </div>
+            </div>
+        `;
+    }
+
+    iniciarKeepAliveBackend() {
+        if (this.keepAliveHandle) clearInterval(this.keepAliveHandle);
+
+        this.pingServidorSaude(false);
+        this.keepAliveHandle = setInterval(() => this.pingServidorSaude(true), 5 * 60 * 1000);
+    }
+
+    async pingServidorSaude(silencioso = true) {
+        const inicio = performance.now();
+        let avisoAquecimento;
+
+        try {
+            avisoAquecimento = setTimeout(() => {
+                if (!silencioso) {
+                    this.showNotification('Servidor aquecendo...', 'info');
+                }
+            }, 5000);
+
+            const resposta = await fetch(`${API_BASE_URL}/api/health`);
+            clearTimeout(avisoAquecimento);
+
+            if (!resposta.ok) {
+                throw new Error(`Health check falhou (${resposta.status})`);
+            }
+
+            if (DEBUG_PERF) {
+                console.log('[KEEP-ALIVE] /health em', (performance.now() - inicio).toFixed(1), 'ms');
+            }
+        } catch (error) {
+            clearTimeout(avisoAquecimento);
+            console.warn('Falha no keep-alive:', error);
+            if (!silencioso) {
+                this.showNotification('Não foi possível comunicar com o servidor no momento.', 'warning');
+            }
+        }
     }
 
     exibirOverlayGeoCarregando(texto = 'Obtendo localização...') {
@@ -293,9 +407,9 @@ class App {
         });
     }
 
-    async exigirLocalizacaoInicial() {
+    async exigirLocalizacaoInicial(obrigatoria = true) {
         try {
-            this.exibirOverlayGeoCarregando();
+            if (obrigatoria) this.exibirOverlayGeoCarregando();
             const posicao = await geoService.getRequiredLocation();
             this.geoState.ultimaCaptura = posicao;
             this.registroRotaState.gpsCoords = {
@@ -304,12 +418,14 @@ class App {
                 accuracy: posicao.accuracy,
                 ts: posicao.ts
             };
-            this.ocultarOverlayGeoCarregando();
+            if (obrigatoria) this.ocultarOverlayGeoCarregando();
             return true;
         } catch (error) {
             console.error('Localização não liberada:', error);
-            this.ocultarOverlayGeoCarregando();
-            this.mostrarModalGeoObrigatoria(error, () => this.exigirLocalizacaoInicial());
+            if (obrigatoria) {
+                this.ocultarOverlayGeoCarregando();
+                this.mostrarModalGeoObrigatoria(error, () => this.exigirLocalizacaoInicial(true));
+            }
             return false;
         }
     }
@@ -463,7 +579,7 @@ class App {
 
             this.usuarioLogado = {
                 user_id: null,
-                username: 'Modo livre',
+                username: 'Visitante',
                 loggedAt: new Date().toISOString()
             };
             return true;
@@ -471,7 +587,7 @@ class App {
             console.error('Erro ao recuperar sessão do usuário:', error);
             this.usuarioLogado = {
                 user_id: null,
-                username: 'Modo livre',
+                username: 'Visitante',
                 loggedAt: new Date().toISOString()
             };
             return true;
@@ -8559,8 +8675,7 @@ class App {
     obterLayoutsCampanhaPermitidos(sizeMode = 'md') {
         const mapa = {
             sm: ['lista'],
-            md: ['lista', 'blocos'],
-            lg: ['lista', 'blocos']
+            md: ['detalhes', 'blocos']
         };
 
         return mapa[sizeMode] || mapa.md;
@@ -8568,7 +8683,8 @@ class App {
 
     normalizarCampanhaViewState() {
         const base = this.campanhaViewState || {};
-        const sizeMode = base.sizeMode || 'md';
+        const sizePermitidos = ['sm', 'md'];
+        const sizeMode = sizePermitidos.includes(base.sizeMode) ? base.sizeMode : 'md';
         const permitidos = this.obterLayoutsCampanhaPermitidos(sizeMode);
         const layoutMode = permitidos.includes(base.layoutMode) ? base.layoutMode : permitidos[0];
 
@@ -8776,7 +8892,6 @@ class App {
                                 <span style="font-weight:700; color:#374151;">Tamanho:</span>
                                 <button class="toggle-chip" data-campanha-size="sm">Pequenas</button>
                                 <button class="toggle-chip" data-campanha-size="md">Médias</button>
-                                <button class="toggle-chip" data-campanha-size="lg">Grandes</button>
                             </div>
                             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                                 <span style="font-weight:700; color:#374151;">Layout:</span>

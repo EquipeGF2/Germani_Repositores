@@ -234,6 +234,7 @@ body {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    min-height: 100vh;
 }
 
 .content-header {
@@ -246,6 +247,10 @@ body {
     gap: var(--spacing);
     flex-wrap: nowrap;
     box-shadow: var(--shadow-sm);
+    position: sticky;
+    top: 0;
+    z-index: 1100;
+    min-height: 72px;
 }
 
 .content-header h2 {
@@ -255,6 +260,11 @@ body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    line-height: 1.3;
+    margin: 0;
+    flex: 1;
+    min-width: 0;
+    padding: 4px 0;
 }
 
 .user-info {
@@ -518,6 +528,11 @@ small {
     background: #b91c1c;
 }
 
+.btn-compact {
+    padding: 0.45rem 0.75rem;
+    font-size: 0.9rem;
+}
+
 .btn-sm {
     padding: var(--spacing-xs) var(--spacing-sm);
     font-size: 0.875rem;
@@ -697,13 +712,14 @@ tbody td {
 }
 
 .modal-repositor .modal-content {
-    max-width: 1400px;
+    max-width: 1200px;
     width: 98%;
     max-height: calc(100vh - 80px);
     height: auto;
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    overflow-x: hidden;
 }
 
 #modalAdicionarCliente .modal-content {
@@ -780,6 +796,7 @@ tbody td {
 .modal-repositor .modal-body {
     padding: var(--spacing);
     overflow-y: auto;
+    overflow-x: hidden;
     flex: 1;
 }
 
@@ -822,7 +839,7 @@ tbody td {
 
 .repositor-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: var(--spacing);
 }
 
@@ -2093,13 +2110,14 @@ tbody td {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
-    min-width: 140px;
-    margin-right: var(--spacing-sm);
+    min-width: 90px;
+    max-width: 110px;
+    margin-right: 0;
 }
 
 .cidade-ordem-wrapper input {
-    max-width: 140px;
-    padding: 0.55rem 0.75rem;
+    max-width: 110px;
+    padding: 0.55rem 0.65rem;
 }
 
 /* ==================== NOTIFICAÇÕES ==================== */
@@ -3018,6 +3036,22 @@ tbody td {
     gap: 0.75rem;
     align-items: flex-end;
     margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+
+.cidade-input-larga {
+    flex: 1 1 320px;
+    min-width: 260px;
+}
+
+.ordem-compacta {
+    min-width: 90px;
+    max-width: 110px;
+}
+
+.btn-add-cidade {
+    height: 44px;
+    align-self: flex-end;
 }
 
 .cidades-lista-container {
