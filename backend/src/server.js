@@ -33,10 +33,15 @@ app.use(express.json({ limit: '15mb' }));
 // URL encoded
 app.use(express.urlencoded({ extended: true }));
 
-// Logs de requisições
+// Logs de requisições com tempo de resposta
 app.use((req, res, next) => {
-  const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] ${req.method} ${req.path}`);
+  const inicio = process.hrtime.bigint();
+  res.on('finish', () => {
+    const fim = process.hrtime.bigint();
+    const duracaoMs = Number(fim - inicio) / 1e6;
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${duracaoMs.toFixed(1)}ms)`);
+  });
   next();
 });
 

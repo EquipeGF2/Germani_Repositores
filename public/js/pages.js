@@ -639,26 +639,26 @@ export const pages = {
                 </section>
 
                 <section class="card">
-                    <div class="card-header">
-                        <div>
-                            <p class="form-card-eyebrow">Cidades atendidas</p>
-                            <h4>Cidades no dia selecionado</h4>
-                        </div>
+                        <div class="card-header">
+                            <div>
+                                <p class="form-card-eyebrow">Cidades atendidas</p>
+                                <h4>Cidades no dia selecionado</h4>
+                            </div>
                         <button class="btn btn-secondary btn-sm" id="btnSelecionarTodasCidades" style="display:none;">
                             <span id="textoSelecionarTodas">✓ Selecionar Todas</span>
                         </button>
                     </div>
-                    <div class="card-body">
+                        <div class="card-body">
                         <div class="cidades-busca-container">
-                            <div class="autocomplete-input" style="flex: 1;">
+                            <div class="autocomplete-input cidade-input-larga">
                                 <input type="text" id="roteiroCidadeBusca" placeholder="Digite para buscar e adicionar cidade...">
                                 <div id="roteiroCidadeSugestoes" class="autocomplete-list"></div>
                             </div>
-                            <div class="cidade-ordem-wrapper">
+                            <div class="cidade-ordem-wrapper ordem-compacta">
                                 <label for="roteiroCidadeOrdem">Ordem</label>
                                 <input type="number" id="roteiroCidadeOrdem" min="1" step="1" placeholder="1" aria-label="Ordem da cidade">
                             </div>
-                            <button class="btn btn-primary btn-sm" id="btnAdicionarCidade">+ Adicionar</button>
+                            <button class="btn btn-primary btn-sm btn-compact btn-add-cidade" id="btnAdicionarCidade">+ Adicionar</button>
                         </div>
 
                         <div id="roteiroCidadesMensagem" class="roteiro-hint"></div>
@@ -674,13 +674,13 @@ export const pages = {
                 </section>
 
                 <section class="card">
-                    <div class="card-header">
-                        <div>
-                            <p class="form-card-eyebrow">Clientes</p>
-                            <h4>Clientes da cidade selecionada</h4>
+                        <div class="card-header">
+                            <div>
+                                <p class="form-card-eyebrow">Clientes</p>
+                                <h4>Clientes da cidade selecionada</h4>
+                            </div>
+                        <button class="btn btn-primary btn-sm btn-compact" id="btnAdicionarClienteRoteiro">+ Adicionar cliente</button>
                         </div>
-                        <button class="btn btn-primary btn-sm" id="btnAdicionarClienteRoteiro">+ Adicionar cliente</button>
-                    </div>
                     <div class="card-body">
                         <div id="roteiroClientesMensagem" class="roteiro-hint"></div>
                         <div class="table-container" id="roteiroClientesTabela"></div>
