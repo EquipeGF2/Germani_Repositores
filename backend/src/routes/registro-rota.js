@@ -325,6 +325,16 @@ router.post('/visitas', upload.any(), async (req, res) => {
   const requestId = req.requestId || crypto.randomUUID();
   res.setHeader('x-request-id', requestId);
 
+  const logErroEtapa = (etapa, error, extras = {}) => {
+    logEstruturado('VISITA_STAGE_ERROR', {
+      requestId,
+      etapa,
+      message: error?.message,
+      stack: error?.stack,
+      ...extras
+    });
+  };
+
   try {
 
     const {
@@ -344,15 +354,22 @@ router.post('/visitas', upload.any(), async (req, res) => {
 
     const allowNovaVisita = String(req.body?.allow_nova_visita ?? '').toLowerCase() === 'true';
 
-    const arquivos = Array.isArray(req.files) ? req.files : [];
+    const arquivosUploads = Array.isArray(req.files) ? req.files : [];
+    const arquivos = arquivosUploads.filter((file) => ['fotos', 'fotos[]', 'foto', 'imagem', 'file'].includes(file?.fieldname));
 
     logEstruturado('VISITA_REQUEST_START', {
       requestId,
       rota: req.originalUrl,
       metodo: req.method,
       timestamp: new Date().toISOString(),
+      rv_tipo: tipo,
+      rep_id,
+      cliente_id,
       payload_keys: Object.keys(req.body || {}).filter((k) => !String(k || '').toLowerCase().includes('foto')),
-      arquivos_qtd: arquivos.length
+      arquivos_qtd: arquivos.length,
+      headers: { 'content-type': req.headers['content-type'] },
+      campos_form: Object.keys(req.body || {}),
+      tem_arquivo: Boolean(arquivos.length)
     });
     const normalizarTexto = (valor) => {
       const texto = typeof valor === 'string' ? valor.trim() : String(valor ?? '').trim();
@@ -361,7 +378,10 @@ router.post('/visitas', upload.any(), async (req, res) => {
 
     const enderecoCliente = normalizarTexto(cliente_endereco || req.body.endereco_cliente);
 
-    if (!rep_id || !cliente_id || (!foto_base64 && arquivos.length === 0) || !tipo || !cliente_nome || !enderecoCliente) {
+    if (!rep_id || !cliente_id || !tipo || !cliente_nome || !enderecoCliente) {
+      logErroEtapa('validacao_payload', new Error('Campos obrigatórios ausentes'), {
+        camposPresentes: Object.keys(req.body || {})
+      });
       return responderErro({
         res,
         status: 400,
@@ -396,6 +416,20 @@ router.post('/visitas', upload.any(), async (req, res) => {
     const tipoNormalizado = String(tipo).toLowerCase();
     if (!RV_TIPOS.includes(tipoNormalizado)) {
       return responderErro({ res, status: 400, code: 'TIPO_INVALIDO', message: 'Tipo de registro inválido', requestId });
+    }
+
+    if (!foto_base64 && arquivos.length === 0) {
+      logErroEtapa('validacao_arquivo', new Error('Foto obrigatória ausente'), {
+        temArquivo: arquivos.length > 0,
+        temBase64: Boolean(foto_base64)
+      });
+      return responderErro({
+        res,
+        status: 400,
+        code: 'FOTO_OBRIGATORIA',
+        message: 'Foto obrigatória para concluir.',
+        requestId
+      });
     }
 
     const dataHoraRegistro = new Date().toISOString();
@@ -675,14 +709,26 @@ router.post('/visitas', upload.any(), async (req, res) => {
 
       const base64Data = arquivo.buffer.toString('base64');
 
-      const uploadResult = await googleDriveService.uploadFotoBase64({
-        base64Data,
-        mimeType: arquivo.mimetype || mimeType,
-        filename: nomeFinal,
-        repId: repIdNumber,
-        repoNome: repositor.repo_nome,
-        parentFolderId
-      });
+      let uploadResult;
+      try {
+        uploadResult = await googleDriveService.uploadFotoBase64({
+          base64Data,
+          mimeType: arquivo.mimetype || mimeType,
+          filename: nomeFinal,
+          repId: repIdNumber,
+          repoNome: repositor.repo_nome,
+          parentFolderId
+        });
+      } catch (uploadError) {
+        logErroEtapa('upload_drive', uploadError, { arquivo: nomeFinal });
+        return responderErro({
+          res,
+          status: 502,
+          code: 'DRIVE_UPLOAD_FAIL',
+          message: 'Falha ao enviar arquivo. Tente novamente.',
+          requestId
+        });
+      }
 
       if (!uploadResult?.fileId || !uploadResult?.webViewLink) {
         return responderErro({
@@ -694,40 +740,54 @@ router.post('/visitas', upload.any(), async (req, res) => {
         });
       }
 
-      const visita = await tursoService.salvarVisitaDetalhada({
-        repId: repIdNumber,
-        clienteId: clienteIdNorm,
-        dataHora: dataHoraArquivo,
-        latitude: latitudeNumber,
-        longitude: longitudeNumber,
-        enderecoResolvido: enderecoSnapshot,
-        driveFileId: uploadResult.fileId,
-        driveFileUrl: uploadResult.webViewLink,
-        rvTipo,
-        rvSessaoId: sessaoId,
-        rvDataPlanejada: dataReferencia,
-        rvClienteNome: cliente_nome || cliente_id,
-        rvEnderecoCliente: enderecoCliente || null,
-        rvPastaDriveId: parentFolderId,
-        rvDataHoraRegistro: dataHoraArquivo,
-        rvEnderecoRegistro: enderecoSnapshot,
-        rvEnderecoCheckin: isCheckin ? enderecoSnapshot : null,
-        rvEnderecoCheckout: isCheckout ? enderecoSnapshot : null,
-        rvDriveFileId: uploadResult.fileId,
-        rvDriveFileUrl: uploadResult.webViewLink,
-        rvLatitude: latitudeNumber,
-        rvLongitude: longitudeNumber,
-        rvDiaPrevisto: diaPrevistoCodigo,
-        rvRoteiroId: roteiroId,
-        sessao_id: sessaoId,
-        tipo: rvTipo,
-        data_hora_registro: dataHoraArquivo,
-        endereco_registro: enderecoSnapshot,
-        latitudeBase: latitudeNumber,
-        longitudeBase: longitudeNumber,
-        drive_file_id: uploadResult.fileId,
-        drive_file_url: uploadResult.webViewLink
-      });
+      let visita;
+      try {
+        visita = await tursoService.salvarVisitaDetalhada({
+          repId: repIdNumber,
+          clienteId: clienteIdNorm,
+          dataHora: dataHoraArquivo,
+          latitude: latitudeNumber,
+          longitude: longitudeNumber,
+          enderecoResolvido: enderecoSnapshot,
+          driveFileId: uploadResult.fileId,
+          driveFileUrl: uploadResult.webViewLink,
+          rvTipo,
+          rvSessaoId: sessaoId,
+          rvDataPlanejada: dataReferencia,
+          rvClienteNome: cliente_nome || cliente_id,
+          rvEnderecoCliente: enderecoCliente || null,
+          rvPastaDriveId: parentFolderId,
+          rvDataHoraRegistro: dataHoraArquivo,
+          rvEnderecoRegistro: enderecoSnapshot,
+          rvEnderecoCheckin: isCheckin ? enderecoSnapshot : null,
+          rvEnderecoCheckout: isCheckout ? enderecoSnapshot : null,
+          rvDriveFileId: uploadResult.fileId,
+          rvDriveFileUrl: uploadResult.webViewLink,
+          rvLatitude: latitudeNumber,
+          rvLongitude: longitudeNumber,
+          rvDiaPrevisto: diaPrevistoCodigo,
+          rvRoteiroId: roteiroId,
+          sessao_id: sessaoId,
+          tipo: rvTipo,
+          data_hora_registro: dataHoraArquivo,
+          endereco_registro: enderecoSnapshot,
+          latitudeBase: latitudeNumber,
+          longitudeBase: longitudeNumber,
+          drive_file_id: uploadResult.fileId,
+          drive_file_url: uploadResult.webViewLink
+        });
+      } catch (dbInsertError) {
+        logErroEtapa('insert_cc_registro_visita', dbInsertError, {
+          campos: Object.keys(dbInsertError?.parameters || {})
+        });
+        return responderErro({
+          res,
+          status: 500,
+          code: 'VISITA_INSERT_FAILED',
+          message: 'Não foi possível salvar a visita no banco de dados.',
+          requestId
+        });
+      }
 
       registrosSalvos.push({
         id: visita?.id ?? null,
@@ -751,24 +811,35 @@ router.post('/visitas', upload.any(), async (req, res) => {
         dataReferencia: dataPlanejadaSessao
       } = sessaoCheckinPayload;
 
-      if (!sessaoBase) {
-        await tursoService.criarSessaoVisita({
-          sessaoId: sessaoCheckinId,
-          repId: repIdNumber,
-          clienteId: clienteIdNorm,
-          clienteNome: clienteNomeSessao,
-          enderecoCliente: enderecoSessao,
-          dataPlanejada: dataPlanejadaSessao,
-          checkinAt: dataCheckin,
-          enderecoCheckin: enderecoSessaoCheckin,
-          diaPrevisto: diaPrevistoCodigo,
-          roteiroId: roteiroSessao
+      try {
+        if (!sessaoBase) {
+          await tursoService.criarSessaoVisita({
+            sessaoId: sessaoCheckinId,
+            repId: repIdNumber,
+            clienteId: clienteIdNorm,
+            clienteNome: clienteNomeSessao,
+            enderecoCliente: enderecoSessao,
+            dataPlanejada: dataPlanejadaSessao,
+            checkinAt: dataCheckin,
+            enderecoCheckin: enderecoSessaoCheckin,
+            diaPrevisto: diaPrevistoCodigo,
+            roteiroId: roteiroSessao
+          });
+        } else {
+          await tursoService.execute(
+            'UPDATE cc_visita_sessao SET checkin_at = ?, status = "ABERTA", endereco_cliente = ?, endereco_checkin = ?, dia_previsto = ?, roteiro_id = ? WHERE sessao_id = ?',
+            [dataCheckin, enderecoSessao, enderecoSessaoCheckin, diaPrevistoCodigo, roteiroSessao, sessaoCheckinId]
+          );
+        }
+      } catch (sessaoError) {
+        logErroEtapa('persistencia_sessao_checkin', sessaoError, { sessaoId: sessaoCheckinId });
+        return responderErro({
+          res,
+          status: 500,
+          code: 'SESSAO_CHECKIN_ERRO',
+          message: 'Não foi possível registrar a sessão do check-in.',
+          requestId
         });
-      } else {
-        await tursoService.execute(
-          'UPDATE cc_visita_sessao SET checkin_at = ?, status = "ABERTA", endereco_cliente = ?, endereco_checkin = ?, dia_previsto = ?, roteiro_id = ? WHERE sessao_id = ?',
-          [dataCheckin, enderecoSessao, enderecoSessaoCheckin, diaPrevistoCodigo, roteiroSessao, sessaoCheckinId]
-        );
       }
     }
 
@@ -792,7 +863,18 @@ router.post('/visitas', upload.any(), async (req, res) => {
         });
       }
 
-      await tursoService.registrarCheckoutSessao(sessaoId, dataHoraRegistro, tempoTrabalhoMin ?? null, enderecoSnapshot);
+      try {
+        await tursoService.registrarCheckoutSessao(sessaoId, dataHoraRegistro, tempoTrabalhoMin ?? null, enderecoSnapshot);
+      } catch (checkoutError) {
+        logErroEtapa('checkout_sessao', checkoutError, { sessaoId });
+        return responderErro({
+          res,
+          status: 500,
+          code: 'CHECKOUT_ERRO',
+          message: 'Não foi possível registrar o checkout.',
+          requestId
+        });
+      }
       console.info('CHECKOUT_OK', { rv_id: sessaoId, rep_id: repIdNumber, cliente_id: clienteIdNorm });
     }
 
