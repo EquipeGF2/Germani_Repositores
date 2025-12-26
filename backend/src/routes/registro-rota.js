@@ -785,6 +785,11 @@ router.post('/visitas', upload.any(), async (req, res) => {
           message: 'Token OAuth expirado - sistema em modo offline',
           ...extras
         });
+
+        // Enviar email de alerta (apenas 1x por dia para evitar spam)
+        emailService.enviarAlertaTokenExpirado().catch(emailErr => {
+          console.error('Erro ao enviar email de alerta:', emailErr?.message);
+        });
       } else {
         logEstruturado('VISITA_DRIVE_ERROR', {
           requestId,
@@ -1115,6 +1120,53 @@ router.post('/visitas', upload.any(), async (req, res) => {
 
     if (rvTipo === 'checkin') {
       console.info('CHECKIN_OK', { rv_id: sessaoId, rep_id: repIdNumber, cliente_id: clienteIdNorm });
+    }
+
+    // Tentar processar pendências automaticamente em background (sem bloquear resposta)
+    if (!driveIndisponivel) {
+      setImmediate(async () => {
+        try {
+          const pendencias = await tursoService.listarPendenciasDrive({ limit: 5 });
+          if (pendencias.length > 0) {
+            console.log(`🔄 Processando ${pendencias.length} pendência(s) automaticamente...`);
+
+            for (const pendencia of pendencias) {
+              try {
+                const repositorInfo = await tursoService.obterRepositor(pendencia.rep_id);
+                const repoNome = repositorInfo?.repo_nome || `REP_${pendencia.rep_id}`;
+                const parentFolder = await googleDriveService.criarPastaRepositor(pendencia.rep_id, repoNome);
+
+                const uploadResult = await googleDriveService.uploadFotoBase64({
+                  base64Data: pendencia.arquivo_base64,
+                  mimeType: pendencia.arquivo_mime || 'image/jpeg',
+                  filename: pendencia.arquivo_nome,
+                  repId: pendencia.rep_id,
+                  repoNome,
+                  parentFolderId: parentFolder
+                });
+
+                await tursoService.atualizarRegistroVisita(pendencia.rv_id, {
+                  drive_file_id: uploadResult?.fileId,
+                  drive_file_url: uploadResult?.webViewLink,
+                  rv_status: 'ENVIADO'
+                });
+
+                await tursoService.atualizarPendenciaDrive(pendencia.pend_id, {
+                  status: 'ENVIADO',
+                  erro_ultimo: null
+                });
+
+                console.log(`✅ Pendência ${pendencia.pend_id} processada com sucesso`);
+              } catch (pendErr) {
+                console.error(`❌ Erro ao processar pendência ${pendencia.pend_id}:`, pendErr?.message);
+                break; // Parar se houver erro (Drive pode estar offline novamente)
+              }
+            }
+          }
+        } catch (err) {
+          console.error('Erro ao processar pendências automaticamente:', err?.message);
+        }
+      });
     }
 
     if (houvePendenciaUpload) {
