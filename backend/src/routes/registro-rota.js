@@ -773,25 +773,31 @@ router.post('/visitas', upload.any(), async (req, res) => {
 
     const tratarErroDrive = (etapa, erro, extras = {}) => {
       const driveError = googleDriveService.mapDriveError(etapa, erro);
-      logEstruturado('VISITA_DRIVE_ERROR', {
-        requestId,
-        etapa,
-        code: driveError?.code,
-        message: driveError?.message,
-        status: driveError?.httpStatus,
-        ...extras
-      });
 
+      // Log especial para INVALID_GRANT (token expirado) - alerta para administrador
       if (driveError instanceof IntegrationAuthError || driveError?.code === 'DRIVE_INVALID_GRANT') {
-        return responderErro({
-          res,
-          status: driveError?.httpStatus || 503,
-          code: 'DRIVE_INVALID_GRANT',
-          message: driveError?.message || 'Integração com Google Drive desconectada. Reautentique e atualize o token.',
-          requestId
+        console.warn('⚠️ ALERTA: Token OAuth do Google Drive expirado ou inválido. Sistema operando em modo offline.');
+        console.warn('   Renove o token em: /api/google/oauth/start');
+        logEstruturado('DRIVE_TOKEN_EXPIRED', {
+          requestId,
+          etapa,
+          code: driveError?.code,
+          message: 'Token OAuth expirado - sistema em modo offline',
+          ...extras
+        });
+      } else {
+        logEstruturado('VISITA_DRIVE_ERROR', {
+          requestId,
+          etapa,
+          code: driveError?.code,
+          message: driveError?.message,
+          status: driveError?.httpStatus,
+          ...extras
         });
       }
 
+      // Marcar Drive como indisponível e continuar em modo offline
+      // Isso permite que check-ins sejam salvos localmente como pendência
       driveIndisponivel = true;
       return null;
     };
@@ -1122,15 +1128,8 @@ router.post('/visitas', upload.any(), async (req, res) => {
 
     return res.status(201).json(sanitizeForJson({ ...payload, requestId }));
   } catch (error) {
-    if (error instanceof IntegrationAuthError || error?.code === 'DRIVE_INVALID_GRANT') {
-      return responderErro({
-        res,
-        status: error?.httpStatus || 503,
-        code: 'DRIVE_INVALID_GRANT',
-        message: error?.message || 'Integração com Google Drive desconectada. Reautentique e atualize o token.',
-        requestId
-      });
-    }
+    // Erros do Drive são tratados localmente por tratarErroDrive()
+    // Não interromper o fluxo aqui - sistema opera em modo offline
 
     if (error instanceof OAuthNotConfiguredError) {
       return responderErro({
