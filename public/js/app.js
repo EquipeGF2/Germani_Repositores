@@ -6905,9 +6905,20 @@ class App {
                     btnSalvar.textContent = `Processando ${i + 1}/${totalFotos}...`;
                 }
 
-                const carimbada = await stampOnBlob(listaFotos[i].blob, linhasCarimboBase);
+                const blobOriginal = listaFotos[i]?.blob;
+                if (!blobOriginal) {
+                    console.warn('Blob da foto ausente na posição', i);
+                    continue;
+                }
+
+                const carimbada = await stampOnBlob(blobOriginal, linhasCarimboBase);
                 const arquivo = new File([carimbada], `captura-${pad2(i + 1)}.jpg`, { type: 'image/jpeg' });
                 arquivos.push(arquivo);
+            }
+
+            if (!arquivos.length) {
+                this.showNotification('Nenhum arquivo válido para enviar. Capture novamente.', 'warning');
+                return;
             }
 
             if (btnSalvar) {
@@ -6930,7 +6941,7 @@ class App {
             }
             if (rvSessaoId) formData.append('rv_id', rvSessaoId);
 
-            arquivos.forEach((arquivo) => formData.append('fotos[]', arquivo));
+            arquivos.forEach((arquivo) => formData.append('fotos', arquivo));
 
             const response = await fetch(`${this.registroRotaState.backendUrl}/api/registro-rota/visitas`, {
                 method: 'POST',
@@ -7023,7 +7034,7 @@ class App {
                 await this.tratarAtendimentoNaoEncontrado(repId, clienteId, clienteNome);
             } else {
                 const protocolo = error?.requestId ? ` (Protocolo: ${error.requestId})` : '';
-                this.showNotification(`Não foi possível registrar visita: ${error.message}${protocolo}`, 'error');
+                this.showNotification(`Não foi possível registrar: ${error.message}${protocolo}`, 'error');
             }
         } finally {
             if (btnSalvar) {
