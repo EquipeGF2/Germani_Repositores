@@ -10097,15 +10097,26 @@ class App {
 
             const totaisPlanejamento = { adiantadas: 0, atrasadas: 0 };
 
-            sessoesFinalizadas.forEach((sessao) => {
+            console.log('[PONTUALIDADE] Calculando pontualidade para', sessoesFinalizadas.length, 'sessões');
+            sessoesFinalizadas.forEach((sessao, index) => {
                 // Usar a função obterStatusPontualidadeVisita que já existe e é robusta
                 const status = this.obterStatusPontualidadeVisita(sessao);
+                if (index < 3) { // Log das primeiras 3 para debug
+                    console.log('[PONTUALIDADE] Sessão', index, ':', {
+                        cliente: sessao.cliente_id,
+                        checkout: sessao.checkout_at || sessao.data_checkout,
+                        prevista: sessao.data_prevista || sessao.rv_data_roteiro,
+                        status: status
+                    });
+                }
                 if (status === 'ATRASADA') {
                     totaisPlanejamento.atrasadas += 1;
                 } else if (status === 'ADIANTADA') {
                     totaisPlanejamento.adiantadas += 1;
                 }
             });
+
+            console.log('[PONTUALIDADE] Totais calculados:', totaisPlanejamento);
 
             // Calcular médias e percentuais
             if (stats.total_clientes > 0) {
