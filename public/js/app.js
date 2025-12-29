@@ -10098,16 +10098,12 @@ class App {
             const totaisPlanejamento = { adiantadas: 0, atrasadas: 0 };
 
             sessoesFinalizadas.forEach((sessao) => {
-                const prevista = normalizarData(
-                    sessao.data_prevista
-                    || sessao.data_planejada
-                    || sessao.rv_data_planejada
-                    || sessao.rv_data_roteiro
-                );
-                const checkoutData = normalizarData(sessao.data_checkout || sessao.checkout_at || sessao.checkout_data_hora);
-                if (prevista && checkoutData) {
-                    if (checkoutData > prevista) totaisPlanejamento.atrasadas += 1;
-                    else if (checkoutData < prevista) totaisPlanejamento.adiantadas += 1;
+                // Usar a função obterStatusPontualidadeVisita que já existe e é robusta
+                const status = this.obterStatusPontualidadeVisita(sessao);
+                if (status === 'ATRASADA') {
+                    totaisPlanejamento.atrasadas += 1;
+                } else if (status === 'ADIANTADA') {
+                    totaisPlanejamento.adiantadas += 1;
                 }
             });
 
