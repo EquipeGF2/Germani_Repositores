@@ -190,6 +190,7 @@ class App {
 
         // Event Listeners
         this.setupEventListeners();
+        this.configurarFechamentoModais();
 
         // Dispara captura de localização em background (não bloqueia o boot)
         const geoPromise = this.exigirLocalizacaoInicial(false);
@@ -953,9 +954,14 @@ class App {
 
     async carregarUsuarios() {
         try {
+            const token = localStorage.getItem('auth_token');
+            if (!token) {
+                throw new Error('Token de autenticação não encontrado');
+            }
+
             const response = await fetch(`${API_BASE_URL}/api/usuarios`, {
                 headers: {
-                    'Authorization': `Bearer ${localStorage.getItem(AUTH_STORAGE_KEY)}`
+                    'Authorization': `Bearer ${token}`
                 }
             });
 
@@ -1107,11 +1113,12 @@ class App {
         }
 
         try {
+            const token = localStorage.getItem('auth_token');
             const response = await fetch(`${API_BASE_URL}/api/usuarios/${usuarioId}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem(AUTH_STORAGE_KEY)}`
+                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({ ativo: novoStatus })
             });
@@ -1161,6 +1168,7 @@ class App {
         }
 
         try {
+            const token = localStorage.getItem('auth_token');
             const url = isEdicao
                 ? `${API_BASE_URL}/api/usuarios/${usuarioId}`
                 : `${API_BASE_URL}/api/usuarios`;
@@ -1169,7 +1177,7 @@ class App {
                 method: isEdicao ? 'PUT' : 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem(AUTH_STORAGE_KEY)}`
+                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify(dados)
             });
@@ -1207,6 +1215,7 @@ class App {
     async criarUsuarioParaRepositor(repoCod, nomeRepositor, emailRepositor) {
         try {
             const senhaAleatoria = this.gerarSenhaAleatoria();
+            const token = localStorage.getItem('auth_token');
 
             const dados = {
                 username: String(repoCod), // username = repo_cod
@@ -1221,7 +1230,7 @@ class App {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem(AUTH_STORAGE_KEY)}`
+                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify(dados)
             });
@@ -1321,6 +1330,9 @@ class App {
             this.elements.contentBody.innerHTML = pageContent;
             this.currentPage = pageName;
             this.atualizarTituloPaginaAtual();
+
+            // Configurar fechamento de modais após carregar a página
+            this.configurarFechamentoModais();
 
             if (pageName === 'cadastro-repositor') {
                 await this.aplicarFiltrosCadastroRepositores();
@@ -1829,6 +1841,63 @@ class App {
         if (modal) {
             modal.classList.remove('active');
         }
+    }
+
+    // Adicionar listeners para fechar modais clicando no backdrop
+    configurarFechamentoModais() {
+        // Modal de detalhes do representante
+        const modalRep = document.getElementById('modalRepresentanteDetalhes');
+        if (modalRep && !modalRep.dataset.listenerAdded) {
+            modalRep.addEventListener('click', (e) => {
+                if (e.target === modalRep) {
+                    this.fecharDetalhesRepresentante();
+                }
+            });
+            modalRep.dataset.listenerAdded = 'true';
+        }
+
+        // Modal de resumo do repositor
+        const modalResumo = document.getElementById('modalResumoRepositor');
+        if (modalResumo && !modalResumo.dataset.listenerAdded) {
+            modalResumo.addEventListener('click', (e) => {
+                if (e.target === modalResumo) {
+                    this.fecharResumoRepositor();
+                }
+            });
+            modalResumo.dataset.listenerAdded = 'true';
+        }
+
+        // Modal de usuário
+        const modalUsuario = document.getElementById('modalUsuario');
+        if (modalUsuario && !modalUsuario.dataset.listenerAdded) {
+            modalUsuario.addEventListener('click', (e) => {
+                if (e.target === modalUsuario) {
+                    this.fecharModalUsuario();
+                }
+            });
+            modalUsuario.dataset.listenerAdded = 'true';
+        }
+
+        // Modal de repositor
+        const modalRepositor = document.getElementById('modalRepositor');
+        if (modalRepositor && !modalRepositor.dataset.listenerAdded) {
+            modalRepositor.addEventListener('click', (e) => {
+                if (e.target === modalRepositor) {
+                    this.closeModalRepositor();
+                }
+            });
+            modalRepositor.dataset.listenerAdded = 'true';
+        }
+
+        // Adicionar evento ESC para fechar modais
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                if (modalRep?.classList.contains('active')) this.fecharDetalhesRepresentante();
+                if (modalResumo?.classList.contains('active')) this.fecharResumoRepositor();
+                if (modalUsuario?.style.display === 'flex') this.fecharModalUsuario();
+                if (modalRepositor?.classList.contains('active')) this.closeModalRepositor();
+            }
+        });
     }
 
     // ==================== ROTEIRO DO REPOSITOR ====================
