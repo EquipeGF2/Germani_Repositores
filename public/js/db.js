@@ -2651,6 +2651,128 @@ class TursoDatabase {
         }
     }
 
+    async buscarRateiosPorCliente(clienteCodigo) {
+        try {
+            await this.connect();
+
+            if (!this.mainClient) {
+                console.error('mainClient não inicializado');
+                return [];
+            }
+
+            const resultado = await this.mainClient.execute({
+                sql: `
+                    SELECT
+                        rat_cliente_codigo,
+                        rat_repositor_id,
+                        rat_percentual,
+                        rat_vigencia_inicio,
+                        rat_vigencia_fim
+                    FROM rat_cliente_repositor
+                    WHERE rat_cliente_codigo = ?
+                `,
+                args: [clienteCodigo]
+            });
+
+            const linhasBrutas = Array.isArray(resultado)
+                ? resultado
+                : Array.isArray(resultado?.rows)
+                    ? resultado.rows
+                    : [];
+
+            return linhasBrutas.filter(row => row && typeof row === 'object');
+        } catch (error) {
+            console.error('Erro ao buscar rateios por cliente:', error);
+            return [];
+        }
+    }
+
+    async buscarClienteNoRoteiro(clienteCodigo) {
+        try {
+            await this.connect();
+
+            if (!this.mainClient) {
+                console.error('mainClient não inicializado');
+                return [];
+            }
+
+            const resultado = await this.mainClient.execute({
+                sql: `
+                    SELECT
+                        cli.rot_cli_id,
+                        cli.rot_cliente_codigo,
+                        cid.rot_repositor_id as repositor_id,
+                        cid.rot_cidade,
+                        cid.rot_dia_semana
+                    FROM rot_roteiro_cliente cli
+                    JOIN rot_roteiro_cidade cid ON cid.rot_cid_id = cli.rot_cid_id
+                    WHERE cli.rot_cliente_codigo = ?
+                `,
+                args: [clienteCodigo]
+            });
+
+            const linhasBrutas = Array.isArray(resultado)
+                ? resultado
+                : Array.isArray(resultado?.rows)
+                    ? resultado.rows
+                    : [];
+
+            return linhasBrutas.filter(row => row && typeof row === 'object');
+        } catch (error) {
+            console.error('Erro ao buscar cliente no roteiro:', error);
+            return [];
+        }
+    }
+
+    async criarRateioAutomatico(clienteCodigo, repositorId, percentual, usuario = '') {
+        try {
+            await this.connect();
+
+            if (!this.mainClient) {
+                throw new Error('mainClient não inicializado');
+            }
+
+            const agora = new Date().toISOString();
+
+            await this.mainClient.execute({
+                sql: `
+                    INSERT INTO rat_cliente_repositor (
+                        rat_cliente_codigo,
+                        rat_repositor_id,
+                        rat_percentual,
+                        rat_vigencia_inicio,
+                        rat_vigencia_fim,
+                        rat_criado_em,
+                        rat_atualizado_em
+                    ) VALUES (?, ?, ?, NULL, NULL, ?, ?)
+                `,
+                args: [
+                    clienteCodigo,
+                    repositorId,
+                    Number(percentual),
+                    agora,
+                    agora
+                ]
+            });
+
+            // Registrar auditoria
+            try {
+                await this.registrarAuditoriaRoteiro({
+                    usuario,
+                    repositorId,
+                    acao: 'RATEIO_AUTO_CRIADO',
+                    clienteCodigo,
+                    detalhes: `Rateio criado automaticamente com ${percentual}%`
+                });
+            } catch (e) {
+                console.warn('Aviso ao registrar auditoria de rateio automático:', e?.message || e);
+            }
+        } catch (error) {
+            console.error('Erro ao criar rateio automático:', error);
+            throw new Error('Não foi possível criar o rateio automático.');
+        }
+    }
+
     // ==================== DADOS DO BANCO COMERCIAL ====================
     async getSupervisoresComercial() {
         try {
