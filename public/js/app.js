@@ -2692,6 +2692,9 @@ class App {
             const usuario = this.usuarioLogado?.username || 'desconhecido';
             if (selecionado) {
                 await db.adicionarClienteRoteiro(rotCidId, clienteCodigo, usuario, opcoes);
+
+                // Auto-incluir rateio com 0% se cliente já tem rateio em outros repositores
+                await this.autoIncluirRateioSeNecessario(clienteCodigo);
             } else {
                 await db.removerClienteRoteiro(rotCidId, clienteCodigo, usuario);
             }
@@ -2701,6 +2704,50 @@ class App {
         } catch (error) {
             this.showNotification(error.message || 'Erro ao atualizar cliente no roteiro.', 'error');
             await this.carregarClientesRoteiro();
+        }
+    }
+
+    async autoIncluirRateioSeNecessario(clienteCodigo) {
+        try {
+            // Verificar se o cliente já tem rateio cadastrado
+            const rateiosExistentes = await db.buscarRateiosPorCliente(clienteCodigo);
+
+            if (rateiosExistentes && rateiosExistentes.length > 0) {
+                // Cliente já tem rateio em outros repositores
+                // Buscar todos os repositores que atendem esse cliente
+                const clientesRoteiro = await db.buscarClienteNoRoteiro(clienteCodigo);
+
+                if (clientesRoteiro && clientesRoteiro.length > 0) {
+                    const usuario = this.usuarioLogado?.username || 'desconhecido';
+
+                    for (const clienteRot of clientesRoteiro) {
+                        // Verificar se já tem rateio cadastrado para este repositor
+                        const jaTemRateio = rateiosExistentes.some(r =>
+                            r.rat_repositor_id === clienteRot.repositor_id
+                        );
+
+                        if (!jaTemRateio) {
+                            // Criar rateio com 0% para o novo repositor
+                            await db.criarRateioAutomatico(
+                                clienteCodigo,
+                                clienteRot.repositor_id,
+                                0, // percentual 0%
+                                usuario
+                            );
+
+                            // Ativar flag de rateio no roteiro
+                            if (clienteRot.rot_cli_id) {
+                                await db.atualizarRateioClienteRoteiro(clienteRot.rot_cli_id, true, usuario);
+                            }
+
+                            console.log(`Rateio 0% criado automaticamente para cliente ${clienteCodigo}, repositor ${clienteRot.repositor_id}`);
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Erro ao auto-incluir rateio:', error);
+            // Não bloquear a operação principal se houver erro
         }
     }
 
@@ -3324,7 +3371,53 @@ class App {
             `;
         }).join('');
 
+        // Verificar rateios com 0%
+        const rateiosZero = linhas.filter(linha => parseFloat(linha.rat_percentual) === 0);
+
+        let cardAvisoHtml = '';
+        if (rateiosZero.length > 0) {
+            // Agrupar por cliente e repositor
+            const gruposZero = {};
+            rateiosZero.forEach(linha => {
+                const key = `${linha.cliente_codigo}|${linha.rat_repositor_id}`;
+                if (!gruposZero[key]) {
+                    gruposZero[key] = {
+                        cliente_codigo: linha.cliente_codigo,
+                        cliente_nome: linha.cliente_nome || linha.cliente_fantasia || 'Sem nome',
+                        repositor_id: linha.rat_repositor_id,
+                        repositor_nome: linha.repo_nome || 'Sem nome'
+                    };
+                }
+            });
+
+            const itemsHtml = Object.values(gruposZero).map(item => `
+                <li>
+                    <strong>${item.cliente_nome}</strong> (${item.cliente_codigo})
+                    - Repositor: ${item.repositor_nome} (${item.repositor_id})
+                </li>
+            `).join('');
+
+            cardAvisoHtml = `
+                <div class="card-aviso-rateio-zero">
+                    <div class="card-aviso-header">
+                        <span class="card-aviso-icon">⚠️</span>
+                        <span class="card-aviso-titulo">Atenção: Rateios com 0%</span>
+                    </div>
+                    <div class="card-aviso-body">
+                        <p>Os seguintes repositores possuem rateio configurado com <strong>0%</strong>:</p>
+                        <ul class="lista-rateios-zero">
+                            ${itemsHtml}
+                        </ul>
+                        <p class="card-aviso-dica">
+                            <em>Ajuste os percentuais para garantir distribuição correta das vendas.</em>
+                        </p>
+                    </div>
+                </div>
+            `;
+        }
+
         container.innerHTML = `
+            ${cardAvisoHtml}
             <div class="rateio-cascata-container">
                 ${htmlCascata}
             </div>
