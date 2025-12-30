@@ -2477,13 +2477,16 @@ class TursoDatabase {
                     : [];
 
             const codigosClientes = linhasBrutas.map(row => row.rot_cliente_codigo).filter(Boolean);
+            console.log('[DB] Códigos de clientes com flag centralização:', codigosClientes);
 
             if (codigosClientes.length === 0) {
+                console.warn('[DB] Nenhum cliente com rot_venda_centralizada = 1 encontrado');
                 return [];
             }
 
             // Buscar dados completos dos clientes do banco comercial
             const clientesMap = await this.getClientesPorCodigo(codigosClientes);
+            console.log('[DB] Dados dos clientes obtidos:', Object.keys(clientesMap).length);
 
             // Converter para array
             let clientes = Object.values(clientesMap);

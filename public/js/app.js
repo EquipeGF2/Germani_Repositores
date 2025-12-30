@@ -3843,11 +3843,15 @@ class App {
         }
 
         try {
+            console.log('[CENTRALIZAÇÃO] Carregando clientes com filtros:', filtros);
+
             // Buscar clientes marcados como venda centralizada no roteiro
             const clientesCentralizados = await db.getClientesCentralizados(filtros);
+            console.log('[CENTRALIZAÇÃO] Clientes centralizados encontrados:', clientesCentralizados.length, clientesCentralizados);
 
             // Buscar vinculos existentes
             const vendas = await this.buscarVendasCentralizadas();
+            console.log('[CENTRALIZAÇÃO] Vínculos encontrados:', vendas.length, vendas);
 
             // Criar mapa de vinculos
             const vinculosMap = {};
@@ -3861,6 +3865,8 @@ class App {
 
             if (clientesCentralizados.length > 0) {
                 this.showNotification(`${clientesCentralizados.length} cliente(s) com venda centralizada encontrado(s)`, 'success');
+            } else {
+                console.warn('[CENTRALIZAÇÃO] Nenhum cliente com flag de venda centralizada encontrado');
             }
         } catch (error) {
             console.error('Erro ao carregar clientes centralizados:', error);
@@ -4039,8 +4045,10 @@ class App {
         this.restaurarEstruturModalVincular();
 
         // Atualizar título
-        document.getElementById('modalVincularTitulo').textContent =
-            jaTemVinculo ? 'Editar Cliente Comprador' : 'Vincular Cliente Comprador';
+        const modalTitulo = document.getElementById('modalVincularTitulo');
+        if (modalTitulo) {
+            modalTitulo.textContent = jaTemVinculo ? 'Editar Cliente Comprador' : 'Vincular Cliente Comprador';
+        }
 
         const modalClienteOrigem = document.getElementById('modalClienteOrigem');
         if (modalClienteOrigem) {
@@ -4051,38 +4059,53 @@ class App {
         try {
             const clientesOrigem = await db.getClientesPorCodigo([clienteOrigem]);
             const clienteDados = clientesOrigem[clienteOrigem];
-            if (clienteDados && clienteDados.cnpj_cpf) {
-                this.clienteOrigemCnpj = clienteDados.cnpj_cpf.replace(/\D/g, ''); // Apenas números
-                document.getElementById('modalClienteOrigemCnpj').textContent = `CNPJ: ${clienteDados.cnpj_cpf}`;
-            } else {
-                document.getElementById('modalClienteOrigemCnpj').textContent = '';
+            const modalCnpj = document.getElementById('modalClienteOrigemCnpj');
+
+            if (modalCnpj) {
+                if (clienteDados && clienteDados.cnpj_cpf) {
+                    this.clienteOrigemCnpj = clienteDados.cnpj_cpf.replace(/\D/g, ''); // Apenas números
+                    modalCnpj.textContent = `CNPJ: ${clienteDados.cnpj_cpf}`;
+                } else {
+                    modalCnpj.textContent = '';
+                }
             }
         } catch (error) {
             console.error('Erro ao buscar dados do cliente origem:', error);
-            document.getElementById('modalClienteOrigemCnpj').textContent = '';
+            const modalCnpj = document.getElementById('modalClienteOrigemCnpj');
+            if (modalCnpj) modalCnpj.textContent = '';
         }
 
         // Carregar cidades (de potencial_cidade)
         const cidades = await db.getCidadesPotencial();
         console.log('Cidades potenciais carregadas:', cidades.length, cidades);
         const selectCidade = document.getElementById('selectCidadeComprador');
-        selectCidade.innerHTML = '<option value="">Selecione a cidade...</option>';
 
-        if (cidades && cidades.length > 0) {
-            cidades.forEach(cidade => {
-                const option = document.createElement('option');
-                option.value = cidade;
-                option.textContent = cidade;
-                selectCidade.appendChild(option);
-            });
-        } else {
-            console.warn('Nenhuma cidade potencial encontrada');
+        if (selectCidade) {
+            selectCidade.innerHTML = '<option value="">Selecione a cidade...</option>';
+
+            if (cidades && cidades.length > 0) {
+                cidades.forEach(cidade => {
+                    const option = document.createElement('option');
+                    option.value = cidade;
+                    option.textContent = cidade;
+                    selectCidade.appendChild(option);
+                });
+            } else {
+                console.warn('Nenhuma cidade potencial encontrada');
+            }
         }
 
         // Limpar campos
-        document.getElementById('selectClienteComprador').innerHTML = '<option value="">Primeiro selecione a cidade...</option>';
-        document.getElementById('selectClienteComprador').disabled = true;
-        document.getElementById('checkMesmoCnpjRaiz').checked = false;
+        const selectClienteComprador = document.getElementById('selectClienteComprador');
+        if (selectClienteComprador) {
+            selectClienteComprador.innerHTML = '<option value="">Primeiro selecione a cidade...</option>';
+            selectClienteComprador.disabled = true;
+        }
+
+        const checkCnpj = document.getElementById('checkMesmoCnpjRaiz');
+        if (checkCnpj) {
+            checkCnpj.checked = false;
+        }
 
         // Configurar event listeners
         this.configurarEventListenersVincularComprador();
