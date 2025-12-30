@@ -2234,7 +2234,7 @@ class TursoDatabase {
             // Buscar clientes com venda centralizada marcada
             const resultado = await this.mainClient.execute(`
                 SELECT DISTINCT rot_cliente_codigo
-                FROM rot_clientes
+                FROM rot_roteiro_cliente
                 WHERE rot_venda_centralizada = 1
                 ORDER BY rot_cliente_codigo
             `);
@@ -2281,7 +2281,7 @@ class TursoDatabase {
             // Buscar clientes com venda centralizada marcada
             const resultado = await this.mainClient.execute(`
                 SELECT DISTINCT rot_cliente_codigo
-                FROM rot_clientes
+                FROM rot_roteiro_cliente
                 WHERE rot_venda_centralizada = 1
                 ORDER BY rot_cliente_codigo
             `);
