@@ -198,7 +198,36 @@ class Autocomplete {
         }
 
         this.renderDropdown();
+        this.positionDropdown();
         this.dropdown.classList.add('active');
+    }
+
+    positionDropdown() {
+        if (!this.input || !this.dropdown) return;
+
+        const rect = this.input.getBoundingClientRect();
+        const dropdownHeight = Math.min(300, this.filteredItems.length * 42);
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+
+        // Posicionar dropdown
+        this.dropdown.style.left = `${rect.left}px`;
+        this.dropdown.style.width = `${rect.width}px`;
+
+        // Verificar se há espaço abaixo ou se deve abrir para cima
+        if (spaceBelow >= dropdownHeight + 10) {
+            // Abrir para baixo
+            this.dropdown.style.top = `${rect.bottom + 4}px`;
+            this.dropdown.style.bottom = 'auto';
+        } else if (spaceAbove >= dropdownHeight + 10) {
+            // Abrir para cima
+            this.dropdown.style.bottom = `${window.innerHeight - rect.top + 4}px`;
+            this.dropdown.style.top = 'auto';
+        } else {
+            // Abrir para baixo mesmo sem espaço suficiente
+            this.dropdown.style.top = `${rect.bottom + 4}px`;
+            this.dropdown.style.bottom = 'auto';
+        }
     }
 
     hideDropdown() {
@@ -227,6 +256,7 @@ class Autocomplete {
 
         // Mostrar dropdown apenas se não estiver disabled
         if (!this.disabled) {
+            this.positionDropdown();
             this.dropdown.classList.add('active');
         }
 
