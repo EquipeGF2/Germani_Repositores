@@ -2709,44 +2709,52 @@ class App {
 
     async autoIncluirRateioSeNecessario(clienteCodigo) {
         try {
-            // Verificar se o cliente já tem rateio cadastrado
-            const rateiosExistentes = await db.buscarRateiosPorCliente(clienteCodigo);
+            console.log(`[AUTO-RATEIO] Verificando cliente ${clienteCodigo}`);
 
-            if (rateiosExistentes && rateiosExistentes.length > 0) {
-                // Cliente já tem rateio em outros repositores
-                // Buscar todos os repositores que atendem esse cliente
-                const clientesRoteiro = await db.buscarClienteNoRoteiro(clienteCodigo);
+            // Buscar todos os repositores que atendem esse cliente
+            const clientesRoteiro = await db.buscarClienteNoRoteiro(clienteCodigo);
+            console.log(`[AUTO-RATEIO] Cliente está em ${clientesRoteiro.length} roteiro(s)`);
 
-                if (clientesRoteiro && clientesRoteiro.length > 0) {
-                    const usuario = this.usuarioLogado?.username || 'desconhecido';
+            // Se o cliente está em 2 ou mais roteiros, precisa ter rateio
+            if (clientesRoteiro && clientesRoteiro.length >= 2) {
+                const usuario = this.usuarioLogado?.username || 'desconhecido';
 
-                    for (const clienteRot of clientesRoteiro) {
-                        // Verificar se já tem rateio cadastrado para este repositor
-                        const jaTemRateio = rateiosExistentes.some(r =>
-                            r.rat_repositor_id === clienteRot.repositor_id
+                // Buscar rateios existentes
+                const rateiosExistentes = await db.buscarRateiosPorCliente(clienteCodigo);
+                console.log(`[AUTO-RATEIO] Cliente tem ${rateiosExistentes.length} rateio(s) cadastrado(s)`);
+
+                for (const clienteRot of clientesRoteiro) {
+                    // Verificar se já tem rateio cadastrado para este repositor
+                    const jaTemRateio = rateiosExistentes.some(r =>
+                        r.rat_repositor_id === clienteRot.repositor_id
+                    );
+
+                    if (!jaTemRateio) {
+                        console.log(`[AUTO-RATEIO] Criando rateio 0% para repositor ${clienteRot.repositor_id}`);
+
+                        // Criar rateio com 0% para este repositor
+                        await db.criarRateioAutomatico(
+                            clienteCodigo,
+                            clienteRot.repositor_id,
+                            0, // percentual 0%
+                            usuario
                         );
 
-                        if (!jaTemRateio) {
-                            // Criar rateio com 0% para o novo repositor
-                            await db.criarRateioAutomatico(
-                                clienteCodigo,
-                                clienteRot.repositor_id,
-                                0, // percentual 0%
-                                usuario
-                            );
-
-                            // Ativar flag de rateio no roteiro
-                            if (clienteRot.rot_cli_id) {
-                                await db.atualizarRateioClienteRoteiro(clienteRot.rot_cli_id, true, usuario);
-                            }
-
-                            console.log(`Rateio 0% criado automaticamente para cliente ${clienteCodigo}, repositor ${clienteRot.repositor_id}`);
+                        // Ativar flag de rateio no roteiro
+                        if (clienteRot.rot_cli_id) {
+                            await db.atualizarRateioClienteRoteiro(clienteRot.rot_cli_id, true, usuario);
                         }
+
+                        console.log(`[AUTO-RATEIO] ✅ Rateio 0% criado para cliente ${clienteCodigo}, repositor ${clienteRot.repositor_id}`);
+                    } else {
+                        console.log(`[AUTO-RATEIO] Repositor ${clienteRot.repositor_id} já tem rateio`);
                     }
                 }
+            } else {
+                console.log(`[AUTO-RATEIO] Cliente está em apenas ${clientesRoteiro.length} roteiro(s), não precisa de rateio ainda`);
             }
         } catch (error) {
-            console.error('Erro ao auto-incluir rateio:', error);
+            console.error('[AUTO-RATEIO] Erro ao auto-incluir rateio:', error);
             // Não bloquear a operação principal se houver erro
         }
     }
@@ -3625,17 +3633,20 @@ class App {
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 0;">
                     <div class="form-group" style="margin-bottom: 0;">
-                        <label for="selectCidadeComprador" style="font-weight: 600; margin-bottom: 8px; display: block;">Cidade do Cliente Comprador *</label>
-                        <select id="selectCidadeComprador" class="form-control full-width" required style="padding: 10px;">
-                            <option value="">Selecione a cidade...</option>
-                        </select>
+                        <label for="inputCidadeComprador" style="font-weight: 600; margin-bottom: 8px; display: block;">Cidade do Cliente Comprador *</label>
+                        <input type="text" id="inputCidadeComprador" class="form-control full-width" required
+                               style="padding: 10px;" placeholder="Digite para buscar a cidade..."
+                               list="listCidadesComprador" autocomplete="off">
+                        <datalist id="listCidadesComprador"></datalist>
                     </div>
 
                     <div class="form-group" style="margin-bottom: 0;">
-                        <label for="selectClienteComprador" style="font-weight: 600; margin-bottom: 8px; display: block;">Cliente Comprador *</label>
-                        <select id="selectClienteComprador" class="form-control full-width" required disabled style="padding: 10px;">
-                            <option value="">Primeiro selecione a cidade...</option>
-                        </select>
+                        <label for="inputClienteComprador" style="font-weight: 600; margin-bottom: 8px; display: block;">Cliente Comprador *</label>
+                        <input type="text" id="inputClienteComprador" class="form-control full-width" required disabled
+                               style="padding: 10px;" placeholder="Digite código ou nome do cliente..."
+                               list="listClientesComprador" autocomplete="off">
+                        <datalist id="listClientesComprador"></datalist>
+                        <input type="hidden" id="hiddenClienteCompradorCodigo">
                     </div>
                 </div>
             `;
@@ -4004,18 +4015,21 @@ class App {
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 0;">
                     <div class="form-group" style="margin-bottom: 0;">
-                        <label for="selectCidadeComprador" style="font-weight: 600; margin-bottom: 8px; display: block;">Cidade do Cliente Comprador *</label>
-                        <select id="selectCidadeComprador" class="form-control full-width" required style="padding: 10px;">
-                            <option value="">Selecione a cidade...</option>
-                        </select>
+                        <label for="inputCidadeComprador" style="font-weight: 600; margin-bottom: 8px; display: block;">Cidade do Cliente Comprador *</label>
+                        <input type="text" id="inputCidadeComprador" class="form-control full-width" required
+                               style="padding: 10px;" placeholder="Digite para buscar a cidade..."
+                               list="listCidadesComprador" autocomplete="off">
+                        <datalist id="listCidadesComprador"></datalist>
                         <small class="text-muted" style="display: block; margin-top: 6px;">Pode ser diferente da cidade do roteiro</small>
                     </div>
 
                     <div class="form-group" style="margin-bottom: 0;">
-                        <label for="selectClienteComprador" style="font-weight: 600; margin-bottom: 8px; display: block;">Cliente Comprador *</label>
-                        <select id="selectClienteComprador" class="form-control full-width" required disabled style="padding: 10px;">
-                            <option value="">Primeiro selecione a cidade...</option>
-                        </select>
+                        <label for="inputClienteComprador" style="font-weight: 600; margin-bottom: 8px; display: block;">Cliente Comprador *</label>
+                        <input type="text" id="inputClienteComprador" class="form-control full-width" required disabled
+                               style="padding: 10px;" placeholder="Digite código ou nome do cliente..."
+                               list="listClientesComprador" autocomplete="off">
+                        <datalist id="listClientesComprador"></datalist>
+                        <input type="hidden" id="hiddenClienteCompradorCodigo">
                         <small class="text-muted" style="display: block; margin-top: 6px;">Cliente que efetua a compra centralizada</small>
                     </div>
                 </div>
@@ -4078,29 +4092,29 @@ class App {
         // Carregar cidades (de potencial_cidade)
         const cidades = await db.getCidadesPotencial();
         console.log('Cidades potenciais carregadas:', cidades.length, cidades);
-        const selectCidade = document.getElementById('selectCidadeComprador');
 
-        if (selectCidade) {
-            selectCidade.innerHTML = '<option value="">Selecione a cidade...</option>';
-
-            if (cidades && cidades.length > 0) {
-                cidades.forEach(cidade => {
-                    const option = document.createElement('option');
-                    option.value = cidade;
-                    option.textContent = cidade;
-                    selectCidade.appendChild(option);
-                });
-            } else {
-                console.warn('Nenhuma cidade potencial encontrada');
-            }
+        // Popular datalist de cidades
+        const datalistCidades = document.getElementById('listCidadesComprador');
+        if (datalistCidades && cidades && cidades.length > 0) {
+            datalistCidades.innerHTML = '';
+            cidades.forEach(cidade => {
+                const option = document.createElement('option');
+                option.value = cidade;
+                datalistCidades.appendChild(option);
+            });
         }
 
         // Limpar campos
-        const selectClienteComprador = document.getElementById('selectClienteComprador');
-        if (selectClienteComprador) {
-            selectClienteComprador.innerHTML = '<option value="">Primeiro selecione a cidade...</option>';
-            selectClienteComprador.disabled = true;
+        const inputCidade = document.getElementById('inputCidadeComprador');
+        const inputCliente = document.getElementById('inputClienteComprador');
+        const hiddenCodigo = document.getElementById('hiddenClienteCompradorCodigo');
+
+        if (inputCidade) inputCidade.value = '';
+        if (inputCliente) {
+            inputCliente.value = '';
+            inputCliente.disabled = true;
         }
+        if (hiddenCodigo) hiddenCodigo.value = '';
 
         const checkCnpj = document.getElementById('checkMesmoCnpjRaiz');
         if (checkCnpj) {
@@ -4135,67 +4149,85 @@ class App {
     }
 
     configurarEventListenersVincularComprador() {
-        const selectCidade = document.getElementById('selectCidadeComprador');
+        const inputCidade = document.getElementById('inputCidadeComprador');
+        const inputCliente = document.getElementById('inputClienteComprador');
         const checkCnpj = document.getElementById('checkMesmoCnpjRaiz');
 
-        // Remover listeners antigos (se existirem)
-        const novoSelectCidade = selectCidade.cloneNode(true);
-        selectCidade.parentNode.replaceChild(novoSelectCidade, selectCidade);
+        // Event listener para cidade
+        if (inputCidade) {
+            inputCidade.addEventListener('input', () => {
+                this.carregarClientesCompradores();
+            });
+        }
 
-        const novoCheckCnpj = checkCnpj.cloneNode(true);
-        checkCnpj.parentNode.replaceChild(novoCheckCnpj, checkCnpj);
+        // Event listener para checkbox
+        if (checkCnpj) {
+            checkCnpj.addEventListener('change', () => {
+                this.carregarClientesCompradores();
+            });
+        }
 
-        // Adicionar novos listeners
-        document.getElementById('selectCidadeComprador').addEventListener('change', () => {
-            this.carregarClientesCompradores();
-        });
-
-        document.getElementById('checkMesmoCnpjRaiz').addEventListener('change', () => {
-            this.carregarClientesCompradores();
-        });
+        // Event listener para cliente - extrair código ao selecionar
+        if (inputCliente) {
+            inputCliente.addEventListener('change', () => {
+                const valorSelecionado = inputCliente.value;
+                const match = valorSelecionado.match(/^(\d+)/);
+                const hiddenCodigo = document.getElementById('hiddenClienteCompradorCodigo');
+                if (match && hiddenCodigo) {
+                    hiddenCodigo.value = match[1];
+                }
+            });
+        }
     }
 
     async carregarClientesCompradores() {
-        const selectCidade = document.getElementById('selectCidadeComprador');
+        const inputCidade = document.getElementById('inputCidadeComprador');
+        const inputCliente = document.getElementById('inputClienteComprador');
+        const datalistClientes = document.getElementById('listClientesComprador');
         const checkCnpj = document.getElementById('checkMesmoCnpjRaiz');
-        const selectCliente = document.getElementById('selectClienteComprador');
 
-        const cidadeSelecionada = selectCidade.value;
+        const cidadeSelecionada = inputCidade?.value?.trim();
 
         if (!cidadeSelecionada) {
-            selectCliente.innerHTML = '<option value="">Primeiro selecione a cidade...</option>';
-            selectCliente.disabled = true;
+            if (inputCliente) inputCliente.disabled = true;
+            if (datalistClientes) datalistClientes.innerHTML = '';
             return;
         }
 
-        selectCliente.innerHTML = '<option value="">Carregando...</option>';
-        selectCliente.disabled = true;
-
         try {
-            const cnpjRaiz = (checkCnpj.checked && this.clienteOrigemCnpj)
+            const cnpjRaiz = (checkCnpj?.checked && this.clienteOrigemCnpj)
                 ? this.clienteOrigemCnpj.substring(0, 8)
                 : null;
 
             const clientes = await db.getClientesPorCidadeComFiltro(cidadeSelecionada, cnpjRaiz);
 
-            selectCliente.innerHTML = '<option value="">Selecione o cliente comprador...</option>';
+            if (datalistClientes) {
+                datalistClientes.innerHTML = '';
 
-            if (clientes.length === 0) {
-                selectCliente.innerHTML = '<option value="">Nenhum cliente encontrado</option>';
-                return;
+                if (clientes.length > 0) {
+                    clientes.forEach(cliente => {
+                        const option = document.createElement('option');
+                        option.value = `${cliente.cliente} - ${cliente.nome || cliente.fantasia}`;
+                        option.setAttribute('data-codigo', cliente.cliente);
+                        datalistClientes.appendChild(option);
+                    });
+                }
             }
 
-            clientes.forEach(cliente => {
-                const option = document.createElement('option');
-                option.value = cliente.cliente;
-                option.textContent = `${cliente.cliente} - ${cliente.nome || cliente.fantasia}`;
-                selectCliente.appendChild(option);
-            });
-
-            selectCliente.disabled = false;
+            if (inputCliente) {
+                inputCliente.disabled = clientes.length === 0;
+                if (clientes.length === 0) {
+                    inputCliente.placeholder = 'Nenhum cliente encontrado nesta cidade';
+                } else {
+                    inputCliente.placeholder = 'Digite código ou nome do cliente...';
+                }
+            }
         } catch (error) {
             console.error('Erro ao carregar clientes:', error);
-            selectCliente.innerHTML = '<option value="">Erro ao carregar clientes</option>';
+            if (inputCliente) {
+                inputCliente.disabled = true;
+                inputCliente.placeholder = 'Erro ao carregar clientes';
+            }
         }
     }
 
@@ -4248,7 +4280,17 @@ class App {
             return this.salvarVinculoManualCentralizacao();
         }
 
-        const clienteComprador = document.getElementById('selectClienteComprador')?.value?.trim();
+        // Obter código do cliente comprador (do campo hidden preenchido ao selecionar)
+        let clienteComprador = document.getElementById('hiddenClienteCompradorCodigo')?.value?.trim();
+
+        // Se não tiver no hidden, tentar extrair do input
+        if (!clienteComprador) {
+            const inputCliente = document.getElementById('inputClienteComprador')?.value?.trim();
+            const match = inputCliente?.match(/^(\d+)/);
+            if (match) {
+                clienteComprador = match[1];
+            }
+        }
 
         if (!clienteComprador) {
             this.showNotification('Selecione o cliente comprador', 'warning');
@@ -4261,6 +4303,11 @@ class App {
         }
 
         try {
+            // Inicializar vinculosCentralizacao se não existir
+            if (!this.vinculosCentralizacao) {
+                this.vinculosCentralizacao = {};
+            }
+
             const vinculoExistente = this.vinculosCentralizacao[this.clienteOrigemAtual];
 
             if (vinculoExistente) {
@@ -4299,7 +4346,13 @@ class App {
             }
 
             this.fecharModalVincularComprador();
-            await this.aplicarFiltrosCentralizacao();
+
+            // Recarregar clientes do roteiro se estiver na tela de roteiro
+            if (this.currentPage === 'roteiro-repositor') {
+                await this.carregarClientesRoteiro();
+            } else {
+                await this.aplicarFiltrosCentralizacao();
+            }
         } catch (error) {
             console.error('Erro ao salvar vínculo:', error);
             this.showNotification('Erro ao salvar vínculo: ' + error.message, 'error');
