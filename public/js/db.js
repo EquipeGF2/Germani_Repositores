@@ -2299,6 +2299,7 @@ class TursoDatabase {
 
                 const sqlQuery = `
                     SELECT
+                        rat.rat_id,
                         rat.rat_cliente_codigo AS cliente_codigo,
                         rat.rat_repositor_id,
                         rat.rat_percentual,
@@ -2342,6 +2343,7 @@ class TursoDatabase {
             const clientesMap = await this.getClientesPorCodigo(codigosClientes);
 
             let resultado_final = linhas.map(row => ({
+                rat_id: row.rat_id || '',
                 cliente_codigo: row.cliente_codigo || '',
                 cliente_nome: clientesMap[row.cliente_codigo]?.nome || '',
                 cliente_fantasia: clientesMap[row.cliente_codigo]?.fantasia || '',
