@@ -2703,13 +2703,17 @@ class App {
     }
 
     async sugerirVinculoClienteComprador(cliente) {
-        const confirmar = confirm('Cliente marcado com venda centralizada. Deseja vincular o cliente comprador agora?');
-        if (!confirmar) return;
-
         const clienteNome = cliente.cliente_dados?.nome || cliente.cliente_dados?.fantasia || 'Sem nome';
 
-        // Abrir o modal de vincular comprador
-        this.abrirModalVincularComprador(cliente.rot_cliente_codigo, clienteNome, false);
+        // Usar modal visual em vez de confirm()
+        this.abrirModalConfirmacao(
+            'Venda Centralizada',
+            'Cliente marcado com venda centralizada. Deseja vincular o cliente comprador agora?',
+            () => {
+                // Abrir o modal de vincular comprador
+                this.abrirModalVincularComprador(cliente.rot_cliente_codigo, clienteNome, false);
+            }
+        );
     }
 
     marcarRoteiroPendente() {
@@ -2950,6 +2954,11 @@ class App {
     definirRateioPendente({ rotCliId, clienteCodigo, repositorId, ativo, percentual = null, vigenciaInicio = null }) {
         if (!rotCliId || !clienteCodigo || !repositorId) return;
 
+        // Inicializar objeto se não existir
+        if (!this.rateioPendentes) {
+            this.rateioPendentes = {};
+        }
+
         this.rateioPendentes[rotCliId] = {
             rotCliId,
             clienteCodigo,
@@ -2964,6 +2973,11 @@ class App {
 
     definirVendaCentralizadaPendente({ rotCliId, clienteCodigo, repositorId, ativo }) {
         if (!rotCliId || !clienteCodigo || !repositorId) return;
+
+        // Inicializar objeto se não existir
+        if (!this.vendasCentralizadasPendentes) {
+            this.vendasCentralizadasPendentes = {};
+        }
 
         this.vendasCentralizadasPendentes[rotCliId] = {
             rotCliId,
@@ -3623,6 +3637,40 @@ class App {
         this.clienteOrigemNome = null;
     }
 
+    abrirModalConfirmacao(titulo, mensagem, onConfirmar) {
+        const modal = document.getElementById('modalConfirmacao');
+        if (!modal) {
+            console.error('Modal de confirmação não encontrado');
+            return;
+        }
+
+        // Configurar título e mensagem
+        document.getElementById('modalConfirmacaoTitulo').textContent = titulo;
+        document.getElementById('modalConfirmacaoMensagem').textContent = mensagem;
+
+        // Remover event listeners anteriores (se houver)
+        const btnConfirmar = document.getElementById('btnConfirmarModal');
+        const novoBtnConfirmar = btnConfirmar.cloneNode(true);
+        btnConfirmar.parentNode.replaceChild(novoBtnConfirmar, btnConfirmar);
+
+        // Adicionar novo event listener
+        novoBtnConfirmar.addEventListener('click', () => {
+            this.fecharModalConfirmacao();
+            if (onConfirmar && typeof onConfirmar === 'function') {
+                onConfirmar();
+            }
+        });
+
+        modal.classList.add('active');
+    }
+
+    fecharModalConfirmacao() {
+        const modal = document.getElementById('modalConfirmacao');
+        if (modal) {
+            modal.classList.remove('active');
+        }
+    }
+
     async salvarVinculoComprador() {
         const clienteComprador = document.getElementById('inputClienteComprador')?.value?.trim();
         const observacao = document.getElementById('inputObservacaoCentralizacao')?.value?.trim();
@@ -3684,25 +3732,27 @@ class App {
     }
 
     async removerVinculoCentralizacao(clienteOrigem, vcId) {
-        if (!confirm(`Deseja realmente remover o vínculo de venda centralizada para o cliente ${clienteOrigem}?`)) {
-            return;
-        }
+        this.abrirModalConfirmacao(
+            'Remover Vínculo',
+            `Deseja realmente remover o vínculo de venda centralizada para o cliente ${clienteOrigem}?`,
+            async () => {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/api/venda-centralizada/${vcId}`, {
+                        method: 'DELETE'
+                    });
 
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/venda-centralizada/${vcId}`, {
-                method: 'DELETE'
-            });
+                    if (!response.ok) {
+                        throw new Error('Erro ao remover vínculo');
+                    }
 
-            if (!response.ok) {
-                throw new Error('Erro ao remover vínculo');
+                    this.showNotification('Vínculo removido com sucesso', 'success');
+                    await this.aplicarFiltrosCentralizacao();
+                } catch (error) {
+                    console.error('Erro ao remover vínculo:', error);
+                    this.showNotification('Erro ao remover vínculo: ' + error.message, 'error');
+                }
             }
-
-            this.showNotification('Vínculo removido com sucesso', 'success');
-            await this.aplicarFiltrosCentralizacao();
-        } catch (error) {
-            console.error('Erro ao remover vínculo:', error);
-            this.showNotification('Erro ao remover vínculo: ' + error.message, 'error');
-        }
+        );
     }
 
     // ==================== VALIDAÇÃO DE DADOS ====================

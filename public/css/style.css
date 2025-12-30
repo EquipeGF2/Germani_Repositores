@@ -4284,7 +4284,7 @@ body.modal-open {
     padding: 10px 16px;
     border-bottom: 1px solid var(--gray-100);
     display: flex;
-    gap: 12px;
+    gap: 16px;
     align-items: center;
     flex-wrap: wrap;
 }
@@ -4326,11 +4326,11 @@ body.modal-open {
 }
 
 .input-rateio-percentual.campo-inline {
-    width: 70px;
+    width: 80px;
 }
 
 .input-rateio-vigencia.campo-inline {
-    width: 135px;
+    width: 150px;
 }
 
 .texto-atualizado-inline {
