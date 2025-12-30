@@ -228,18 +228,21 @@
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 0;">
                     <div class="form-group" style="margin-bottom: 0;">
-                        <label for="selectCidadeComprador" style="font-weight: 600; margin-bottom: 8px; display: block;">Cidade do Cliente Comprador *</label>
-                        <select id="selectCidadeComprador" class="form-control full-width" required style="padding: 10px;">
-                            <option value="">Selecione a cidade...</option>
-                        </select>
+                        <label for="inputCidadeComprador" style="font-weight: 600; margin-bottom: 8px; display: block;">Cidade do Cliente Comprador *</label>
+                        <input type="text" id="inputCidadeComprador" class="form-control full-width" required
+                               style="padding: 10px;" placeholder="Digite para buscar a cidade..."
+                               list="listCidadesComprador" autocomplete="off">
+                        <datalist id="listCidadesComprador"></datalist>
                         <small class="text-muted" style="display: block; margin-top: 6px;">Pode ser diferente da cidade do roteiro</small>
                     </div>
 
                     <div class="form-group" style="margin-bottom: 0;">
-                        <label for="selectClienteComprador" style="font-weight: 600; margin-bottom: 8px; display: block;">Cliente Comprador *</label>
-                        <select id="selectClienteComprador" class="form-control full-width" required disabled style="padding: 10px;">
-                            <option value="">Primeiro selecione a cidade...</option>
-                        </select>
+                        <label for="inputClienteComprador" style="font-weight: 600; margin-bottom: 8px; display: block;">Cliente Comprador *</label>
+                        <input type="text" id="inputClienteComprador" class="form-control full-width" required disabled
+                               style="padding: 10px;" placeholder="Digite código ou nome do cliente..."
+                               list="listClientesComprador" autocomplete="off">
+                        <datalist id="listClientesComprador"></datalist>
+                        <input type="hidden" id="hiddenClienteCompradorCodigo">
                         <small class="text-muted" style="display: block; margin-top: 6px;">Cliente que efetua a compra centralizada</small>
                     </div>
                 </div>
