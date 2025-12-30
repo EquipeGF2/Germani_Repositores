@@ -2222,6 +2222,110 @@ class TursoDatabase {
         return this.obterCidadesComRateio();
     }
 
+    async getCidadesClientesCentralizados() {
+        try {
+            await this.connect();
+
+            if (!this.mainClient) {
+                console.error('mainClient não inicializado');
+                return [];
+            }
+
+            // Buscar clientes com venda centralizada marcada
+            const resultado = await this.mainClient.execute(`
+                SELECT DISTINCT rot_cliente_codigo
+                FROM rot_clientes
+                WHERE rot_venda_centralizada = 1
+                ORDER BY rot_cliente_codigo
+            `);
+
+            const linhasBrutas = Array.isArray(resultado)
+                ? resultado
+                : Array.isArray(resultado?.rows)
+                    ? resultado.rows
+                    : [];
+
+            const codigosClientes = linhasBrutas.map(row => row.rot_cliente_codigo).filter(Boolean);
+
+            if (codigosClientes.length === 0) {
+                return [];
+            }
+
+            // Buscar cidades dos clientes do banco comercial
+            const clientesMap = await this.getClientesPorCodigo(codigosClientes);
+
+            // Extrair cidades únicas
+            const cidadesSet = new Set();
+            Object.values(clientesMap).forEach(cliente => {
+                if (cliente.cidade) {
+                    cidadesSet.add(cliente.cidade);
+                }
+            });
+
+            return [...cidadesSet].sort();
+        } catch (error) {
+            console.error('Erro ao buscar cidades com clientes centralizados:', error);
+            return [];
+        }
+    }
+
+    async getClientesCentralizados({ cidade, cliente } = {}) {
+        try {
+            await this.connect();
+
+            if (!this.mainClient) {
+                console.error('mainClient não inicializado');
+                return [];
+            }
+
+            // Buscar clientes com venda centralizada marcada
+            const resultado = await this.mainClient.execute(`
+                SELECT DISTINCT rot_cliente_codigo
+                FROM rot_clientes
+                WHERE rot_venda_centralizada = 1
+                ORDER BY rot_cliente_codigo
+            `);
+
+            const linhasBrutas = Array.isArray(resultado)
+                ? resultado
+                : Array.isArray(resultado?.rows)
+                    ? resultado.rows
+                    : [];
+
+            const codigosClientes = linhasBrutas.map(row => row.rot_cliente_codigo).filter(Boolean);
+
+            if (codigosClientes.length === 0) {
+                return [];
+            }
+
+            // Buscar dados completos dos clientes do banco comercial
+            const clientesMap = await this.getClientesPorCodigo(codigosClientes);
+
+            // Converter para array
+            let clientes = Object.values(clientesMap);
+
+            // Aplicar filtros
+            if (cidade) {
+                clientes = clientes.filter(c =>
+                    c.cidade && c.cidade.toUpperCase().includes(cidade.toUpperCase())
+                );
+            }
+
+            if (cliente) {
+                clientes = clientes.filter(c =>
+                    (c.cliente && String(c.cliente).includes(cliente)) ||
+                    (c.nome && c.nome.toUpperCase().includes(cliente.toUpperCase())) ||
+                    (c.fantasia && c.fantasia.toUpperCase().includes(cliente.toUpperCase()))
+                );
+            }
+
+            return clientes;
+        } catch (error) {
+            console.error('Erro ao buscar clientes centralizados:', error);
+            return [];
+        }
+    }
+
     async listarClientesRateioIncompleto() {
         try {
             await this.connect();

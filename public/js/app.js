@@ -1366,6 +1366,8 @@ class App {
                 await this.inicializarConsultaRoteiro();
             } else if (pageName === 'cadastro-rateio') {
                 await this.inicializarCadastroRateio();
+            } else if (pageName === 'manutencao-centralizacao') {
+                await this.inicializarManutencaoCentralizacao();
             } else if (pageName === 'custos-repositor') {
                 await this.inicializarCustosRepositor();
             } else if (pageName === 'custos-grid') {
@@ -2637,6 +2639,11 @@ class App {
 
                 cliente.rot_venda_centralizada = toggle.checked ? 1 : 0;
                 this.carregarClientesRoteiro();
+
+                // Se marcou como venda centralizada, oferecer vincular cliente comprador
+                if (toggle.checked) {
+                    this.sugerirVinculoClienteComprador(cliente);
+                }
             });
         });
 
@@ -2693,6 +2700,16 @@ class App {
             cidade: cliente.cidade || '',
             estado: cliente.estado || ''
         });
+    }
+
+    async sugerirVinculoClienteComprador(cliente) {
+        const confirmar = confirm('Cliente marcado com venda centralizada. Deseja vincular o cliente comprador agora?');
+        if (!confirmar) return;
+
+        const clienteNome = cliente.cliente_dados?.nome || cliente.cliente_dados?.fantasia || 'Sem nome';
+
+        // Abrir o modal de vincular comprador
+        this.abrirModalVincularComprador(cliente.rot_cliente_codigo, clienteNome, false);
     }
 
     marcarRoteiroPendente() {
@@ -3220,30 +3237,22 @@ class App {
             const clientesHtml = clientesOrdenados.map(clienteCodigo => {
                 const clienteInfo = clientes[clienteCodigo];
                 const repositoresHtml = clienteInfo.repositores.map(linha => `
-                    <div class="rateio-linha" data-rateio-id="${linha.rat_id || ''}">
-                        <div class="rateio-repositor-info">
+                    <div class="rateio-linha-compacta" data-rateio-id="${linha.rat_id || ''}">
+                        <div class="repositor-info-inline">
                             <span class="repositor-codigo">${linha.rat_repositor_id || '-'}</span>
                             <span class="repositor-nome">${linha.repo_nome || 'Sem nome'}</span>
                         </div>
-                        <div class="rateio-campos">
-                            <div class="campo-percentual">
-                                <label>%</label>
-                                <input type="number" class="input-rateio-percentual" data-rateio-id="${linha.rat_id || ''}"
-                                       min="0" max="100" step="0.01" value="${linha.rat_percentual ?? ''}">
-                            </div>
-                            <div class="campo-vigencia">
-                                <label>Início</label>
-                                <input type="date" class="input-rateio-vigencia" data-tipo="inicio"
-                                       data-rateio-id="${linha.rat_id || ''}" value="${linha.rat_vigencia_inicio || ''}">
-                            </div>
-                            <div class="campo-vigencia">
-                                <label>Fim</label>
-                                <input type="date" class="input-rateio-vigencia" data-tipo="fim"
-                                       data-rateio-id="${linha.rat_id || ''}" value="${linha.rat_vigencia_fim || ''}">
-                            </div>
-                            <button class="btn btn-primary btn-sm" data-salvar-rateio="${linha.rat_id || ''}">Salvar</button>
-                        </div>
-                        <small class="texto-atualizado">Atualizado em: ${linha.rat_atualizado_em ? normalizarDataISO(linha.rat_atualizado_em) : 'N/D'}</small>
+                        <input type="number" class="input-rateio-percentual campo-inline" data-rateio-id="${linha.rat_id || ''}"
+                               min="0" max="100" step="0.01" value="${linha.rat_percentual ?? ''}"
+                               placeholder="%" title="Percentual">
+                        <input type="date" class="input-rateio-vigencia campo-inline" data-tipo="inicio"
+                               data-rateio-id="${linha.rat_id || ''}" value="${linha.rat_vigencia_inicio || ''}"
+                               title="Data início">
+                        <input type="date" class="input-rateio-vigencia campo-inline" data-tipo="fim"
+                               data-rateio-id="${linha.rat_id || ''}" value="${linha.rat_vigencia_fim || ''}"
+                               title="Data fim">
+                        <button class="btn btn-primary btn-sm" data-salvar-rateio="${linha.rat_id || ''}">Salvar</button>
+                        <span class="texto-atualizado-inline">${linha.rat_atualizado_em ? normalizarDataISO(linha.rat_atualizado_em) : 'N/D'}</span>
                     </div>
                 `).join('');
 
@@ -3379,6 +3388,323 @@ class App {
             this.showNotification(error.message || 'Erro ao salvar rateio.', 'error');
         }
     }
+
+    // ==================== MANUTENÇÃO DE CENTRALIZAÇÃO ====================
+    async inicializarManutencaoCentralizacao() {
+        // Popular filtro de cidades
+        const selectCidade = document.getElementById('filtroCidadeCentralizacao');
+        if (selectCidade && selectCidade.options.length === 1) {
+            try {
+                // Buscar cidades de clientes com venda centralizada marcada no roteiro
+                const cidades = await db.getCidadesClientesCentralizados();
+                cidades.forEach(cidade => {
+                    const option = document.createElement('option');
+                    option.value = cidade;
+                    option.textContent = cidade;
+                    selectCidade.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Erro ao carregar cidades:', error);
+            }
+        }
+
+        // Event listeners
+        const btnRecarregar = document.getElementById('btnRecarregarCentralizacao');
+        if (btnRecarregar) {
+            btnRecarregar.addEventListener('click', () => this.aplicarFiltrosCentralizacao());
+        }
+
+        const btnAplicarFiltros = document.getElementById('btnAplicarFiltrosCentralizacao');
+        if (btnAplicarFiltros) {
+            btnAplicarFiltros.addEventListener('click', () => this.aplicarFiltrosCentralizacao());
+        }
+
+        // Permitir filtrar ao pressionar Enter
+        const inputCliente = document.getElementById('filtroClienteCentralizacao');
+        if (inputCliente) {
+            inputCliente.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    this.aplicarFiltrosCentralizacao();
+                }
+            });
+        }
+    }
+
+    obterFiltrosCentralizacao() {
+        const cidade = document.getElementById('filtroCidadeCentralizacao')?.value || '';
+        const cliente = document.getElementById('filtroClienteCentralizacao')?.value?.trim() || '';
+
+        return { cidade, cliente };
+    }
+
+    async aplicarFiltrosCentralizacao() {
+        const filtros = this.obterFiltrosCentralizacao();
+        await this.carregarClientesCentralizados(filtros);
+    }
+
+    async carregarClientesCentralizados(filtros = {}) {
+        const container = document.getElementById('centralizacaoContainer');
+        if (container) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">⏳</div>
+                    <p>Carregando clientes com venda centralizada...</p>
+                </div>
+            `;
+        }
+
+        try {
+            // Buscar clientes marcados como venda centralizada no roteiro
+            const clientesCentralizados = await db.getClientesCentralizados(filtros);
+
+            // Buscar vinculos existentes
+            const vendas = await this.buscarVendasCentralizadas();
+
+            // Criar mapa de vinculos
+            const vinculosMap = {};
+            vendas.forEach(v => {
+                vinculosMap[v.vc_cliente_origem] = v;
+            });
+
+            this.clientesCentralizados = clientesCentralizados;
+            this.vinculosCentralizacao = vinculosMap;
+            this.renderClientesCentralizados();
+
+            if (clientesCentralizados.length > 0) {
+                this.showNotification(`${clientesCentralizados.length} cliente(s) com venda centralizada encontrado(s)`, 'success');
+            }
+        } catch (error) {
+            console.error('Erro ao carregar clientes centralizados:', error);
+            this.showNotification('Erro ao carregar clientes: ' + error.message, 'error');
+        }
+    }
+
+    async buscarVendasCentralizadas(filtros = {}) {
+        try {
+            const params = new URLSearchParams();
+            if (filtros.cliente_origem) params.set('cliente_origem', filtros.cliente_origem);
+            if (filtros.cliente_comprador) params.set('cliente_comprador', filtros.cliente_comprador);
+
+            const url = `${API_BASE_URL}/api/venda-centralizada${params.toString() ? '?' + params.toString() : ''}`;
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                throw new Error('Erro ao buscar vendas centralizadas');
+            }
+
+            const data = await response.json();
+            return data.data || [];
+        } catch (error) {
+            console.error('Erro ao buscar vendas centralizadas:', error);
+            return [];
+        }
+    }
+
+    renderClientesCentralizados() {
+        const container = document.getElementById('centralizacaoContainer');
+        if (!container) return;
+
+        const clientes = this.clientesCentralizados || [];
+        if (!clientes.length) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">🔍</div>
+                    <p>Nenhum cliente com venda centralizada encontrado. Use os filtros para buscar.</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Agrupar por cidade
+        const estruturaCascata = {};
+        clientes.forEach(cliente => {
+            const cidade = cliente.cidade || 'Sem cidade';
+            if (!estruturaCascata[cidade]) {
+                estruturaCascata[cidade] = [];
+            }
+            estruturaCascata[cidade].push(cliente);
+        });
+
+        const cidadesOrdenadas = Object.keys(estruturaCascata).sort();
+
+        const htmlCascata = cidadesOrdenadas.map(cidade => {
+            const clientesCidade = estruturaCascata[cidade];
+
+            const clientesHtml = clientesCidade.map(cliente => {
+                const vinculo = this.vinculosCentralizacao[cliente.cliente] || null;
+                const temVinculo = !!vinculo;
+                const clienteCompradorNome = vinculo ? (vinculo.vc_cliente_comprador || '-') : '-';
+                const statusClass = temVinculo ? 'status-vinculado' : 'status-pendente';
+                const statusText = temVinculo ? 'Vinculado' : 'Pendente';
+
+                return `
+                    <div class="centralizacao-linha ${statusClass}">
+                        <div class="cliente-info-central">
+                            <span class="cliente-codigo">${cliente.cliente}</span>
+                            <span class="cliente-nome">${cliente.nome || cliente.fantasia || 'Sem nome'}</span>
+                        </div>
+                        <div class="vinculo-info">
+                            <span class="status-badge">${statusText}</span>
+                            ${temVinculo ? `
+                                <span class="cliente-comprador">
+                                    <strong>Compra em:</strong> ${clienteCompradorNome}
+                                </span>
+                            ` : ''}
+                        </div>
+                        <div class="acoes-centralizacao">
+                            <button class="btn btn-primary btn-sm" onclick="app.abrirModalVincularComprador('${cliente.cliente}', '${(cliente.nome || cliente.fantasia || '').replace(/'/g, "\\'")}', ${temVinculo})">
+                                ${temVinculo ? 'Editar' : 'Vincular'}
+                            </button>
+                            ${temVinculo ? `
+                                <button class="btn btn-danger btn-sm" onclick="app.removerVinculoCentralizacao('${cliente.cliente}', ${vinculo.vc_id})">
+                                    Remover
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            return `
+                <div class="centralizacao-cidade">
+                    <h4 class="cidade-titulo">📍 ${cidade}</h4>
+                    <div class="clientes-lista-central">
+                        ${clientesHtml}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = `
+            <div class="centralizacao-cascata-container">
+                ${htmlCascata}
+            </div>
+        `;
+    }
+
+    abrirModalVincularComprador(clienteOrigem, clienteNome, jaTemVinculo) {
+        this.clienteOrigemAtual = clienteOrigem;
+        this.clienteOrigemNome = clienteNome;
+
+        const modal = document.getElementById('modalVincularComprador');
+        if (!modal) {
+            console.error('Modal não encontrado');
+            return;
+        }
+
+        // Atualizar título
+        document.getElementById('modalVincularTitulo').textContent =
+            jaTemVinculo ? 'Editar Cliente Comprador' : 'Vincular Cliente Comprador';
+
+        document.getElementById('modalClienteOrigem').textContent = `${clienteOrigem} - ${clienteNome}`;
+
+        // Limpar campo
+        document.getElementById('inputClienteComprador').value = '';
+        document.getElementById('inputObservacaoCentralizacao').value = '';
+
+        // Se já tem vínculo, carregar dados
+        if (jaTemVinculo) {
+            const vinculo = this.vinculosCentralizacao[clienteOrigem];
+            if (vinculo) {
+                document.getElementById('inputClienteComprador').value = vinculo.vc_cliente_comprador || '';
+                document.getElementById('inputObservacaoCentralizacao').value = vinculo.vc_observacao || '';
+            }
+        }
+
+        modal.classList.add('active');
+    }
+
+    fecharModalVincularComprador() {
+        const modal = document.getElementById('modalVincularComprador');
+        if (modal) {
+            modal.classList.remove('active');
+        }
+        this.clienteOrigemAtual = null;
+        this.clienteOrigemNome = null;
+    }
+
+    async salvarVinculoComprador() {
+        const clienteComprador = document.getElementById('inputClienteComprador')?.value?.trim();
+        const observacao = document.getElementById('inputObservacaoCentralizacao')?.value?.trim();
+
+        if (!clienteComprador) {
+            this.showNotification('Informe o código do cliente comprador', 'warning');
+            return;
+        }
+
+        if (!this.clienteOrigemAtual) {
+            this.showNotification('Cliente origem não identificado', 'error');
+            return;
+        }
+
+        try {
+            const vinculoExistente = this.vinculosCentralizacao[this.clienteOrigemAtual];
+
+            if (vinculoExistente) {
+                // Atualizar
+                const response = await fetch(`${API_BASE_URL}/api/venda-centralizada/${vinculoExistente.vc_id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cliente_comprador: clienteComprador,
+                        observacao: observacao || null
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Erro ao atualizar vínculo');
+                }
+
+                this.showNotification('Vínculo atualizado com sucesso', 'success');
+            } else {
+                // Criar
+                const response = await fetch(`${API_BASE_URL}/api/venda-centralizada`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cliente_origem: this.clienteOrigemAtual,
+                        cliente_comprador: clienteComprador,
+                        observacao: observacao || null
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Erro ao criar vínculo');
+                }
+
+                this.showNotification('Vínculo criado com sucesso', 'success');
+            }
+
+            this.fecharModalVincularComprador();
+            await this.aplicarFiltrosCentralizacao();
+        } catch (error) {
+            console.error('Erro ao salvar vínculo:', error);
+            this.showNotification('Erro ao salvar vínculo: ' + error.message, 'error');
+        }
+    }
+
+    async removerVinculoCentralizacao(clienteOrigem, vcId) {
+        if (!confirm(`Deseja realmente remover o vínculo de venda centralizada para o cliente ${clienteOrigem}?`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/venda-centralizada/${vcId}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) {
+                throw new Error('Erro ao remover vínculo');
+            }
+
+            this.showNotification('Vínculo removido com sucesso', 'success');
+            await this.aplicarFiltrosCentralizacao();
+        } catch (error) {
+            console.error('Erro ao remover vínculo:', error);
+            this.showNotification('Erro ao remover vínculo: ' + error.message, 'error');
+        }
+    }
+
     // ==================== VALIDAÇÃO DE DADOS ====================
 
     async executarValidacaoDados() {

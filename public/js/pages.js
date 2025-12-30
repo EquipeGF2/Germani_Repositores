@@ -474,6 +474,90 @@ export const pages = {
         `;
     },
 
+    'manutencao-centralizacao': async () => {
+        return `
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h3 class="card-title">Manutenção de Centralização</h3>
+                        <p class="text-muted" style="margin: 4px 0 0; font-size: 0.9rem;">
+                            Vincule clientes com venda centralizada ao cliente que realiza a compra.
+                        </p>
+                    </div>
+                    <div class="card-actions">
+                        <button class="btn btn-secondary btn-sm" id="btnRecarregarCentralizacao">Recarregar</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="filtros-section" style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                        <h4 style="margin: 0 0 15px; font-size: 1rem; font-weight: 600;">Filtros</h4>
+                        <div class="row" style="display: flex; gap: 15px; flex-wrap: wrap;">
+                            <div class="col" style="flex: 1; min-width: 200px;">
+                                <label for="filtroCidadeCentralizacao" style="display: block; margin-bottom: 5px; font-size: 0.9rem; font-weight: 500;">Cidade</label>
+                                <select id="filtroCidadeCentralizacao" class="form-control" style="width: 100%;">
+                                    <option value="">Todas as cidades</option>
+                                </select>
+                            </div>
+                            <div class="col" style="flex: 1; min-width: 200px;">
+                                <label for="filtroClienteCentralizacao" style="display: block; margin-bottom: 5px; font-size: 0.9rem; font-weight: 500;">Cliente</label>
+                                <input type="text" id="filtroClienteCentralizacao" class="form-control" placeholder="Buscar por código ou nome..." style="width: 100%;">
+                            </div>
+                            <div class="col" style="flex: 0; min-width: 120px; display: flex; align-items: flex-end;">
+                                <button class="btn btn-primary" id="btnAplicarFiltrosCentralizacao" style="width: 100%;">Filtrar</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="centralizacaoContainer" class="centralizacao-lista">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">⏳</div>
+                            <p>Selecione os filtros e clique em "Filtrar" para carregar os clientes com venda centralizada...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Vincular Cliente Comprador -->
+            <div class="modal" id="modalVincularComprador">
+                <div class="modal-content" style="max-width: 600px;">
+                    <div class="modal-header">
+                        <h3 id="modalVincularTitulo">Vincular Cliente Comprador</h3>
+                        <button class="modal-close" onclick="window.app.fecharModalVincularComprador()">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label>Cliente Origem (Venda Centralizada)</label>
+                            <div style="padding: 10px; background: #f8f9fa; border-radius: 4px; margin-bottom: 16px;">
+                                <strong id="modalClienteOrigem">-</strong>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="inputClienteComprador">Cliente Comprador *</label>
+                            <input type="text"
+                                   id="inputClienteComprador"
+                                   class="full-width"
+                                   placeholder="Digite o código do cliente que realiza a compra centralizada"
+                                   required>
+                            <small class="text-muted">Informe o código do cliente que efetivamente realiza a compra para este cliente de venda centralizada.</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="inputObservacaoCentralizacao">Observação</label>
+                            <textarea id="inputObservacaoCentralizacao"
+                                      class="full-width"
+                                      rows="3"
+                                      placeholder="Observações adicionais sobre esta centralização (opcional)"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="window.app.fecharModalVincularComprador()">Cancelar</button>
+                        <button type="button" class="btn btn-primary" onclick="window.app.salvarVinculoComprador()">Salvar</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
     'roteiro-repositor': async () => {
         const contexto = window.app?.contextoRoteiro;
 
@@ -3800,6 +3884,7 @@ export const pageTitles = {
     'home': 'Início',
     'cadastro-repositor': 'Cadastro de Repositores',
     'cadastro-rateio': 'Manutenção de Rateio',
+    'manutencao-centralizacao': 'Manutenção de Centralização',
     'validacao-dados': 'Validação de Dados',
     'resumo-periodo': 'Resumo do Período',
     'resumo-mensal': 'Resumo Mensal',
@@ -3829,5 +3914,6 @@ export const mobilePageTitles = {
     'documentos': 'Docs',
     'consulta-documentos': 'Docs',
     'roteiro-repositor': 'Roteiro',
-    'cadastro-rateio': 'Rateio'
+    'cadastro-rateio': 'Rateio',
+    'manutencao-centralizacao': 'Centralização'
 };
