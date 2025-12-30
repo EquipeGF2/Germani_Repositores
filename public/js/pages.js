@@ -515,6 +515,46 @@ export const pages = {
                     </div>
                 </div>
             </div>
+
+            <!-- Modal Vincular Cliente Comprador -->
+            <div class="modal" id="modalVincularComprador">
+                <div class="modal-content" style="max-width: 600px;">
+                    <div class="modal-header">
+                        <h3 id="modalVincularTitulo">Vincular Cliente Comprador</h3>
+                        <button class="modal-close" onclick="window.app.fecharModalVincularComprador()">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label>Cliente Origem (Venda Centralizada)</label>
+                            <div style="padding: 10px; background: #f8f9fa; border-radius: 4px; margin-bottom: 16px;">
+                                <strong id="modalClienteOrigem">-</strong>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="inputClienteComprador">Cliente Comprador *</label>
+                            <input type="text"
+                                   id="inputClienteComprador"
+                                   class="full-width"
+                                   placeholder="Digite o código do cliente que realiza a compra centralizada"
+                                   required>
+                            <small class="text-muted">Informe o código do cliente que efetivamente realiza a compra para este cliente de venda centralizada.</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="inputObservacaoCentralizacao">Observação</label>
+                            <textarea id="inputObservacaoCentralizacao"
+                                      class="full-width"
+                                      rows="3"
+                                      placeholder="Observações adicionais sobre esta centralização (opcional)"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="window.app.fecharModalVincularComprador()">Cancelar</button>
+                        <button type="button" class="btn btn-primary" onclick="window.app.salvarVinculoComprador()">Salvar</button>
+                    </div>
+                </div>
+            </div>
         `;
     },
 
