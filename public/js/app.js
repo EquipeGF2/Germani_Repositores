@@ -9091,13 +9091,15 @@ class App {
                 coordsCliente.lng
             );
 
-            const DISTANCIA_MAXIMA = 200; // 200 metros
+            const DISTANCIA_MAXIMA = 100000; // 100km
 
             if (distancia > DISTANCIA_MAXIMA) {
+                const distanciaKm = (distancia / 1000).toFixed(1);
+                const limiteKm = (DISTANCIA_MAXIMA / 1000);
                 return {
                     valido: false,
                     distancia: Math.round(distancia),
-                    aviso: `⚠️ ATENÇÃO: Você está a ${Math.round(distancia)}m do estabelecimento cadastrado. O limite é de ${DISTANCIA_MAXIMA}m.`
+                    aviso: `⚠️ ATENÇÃO: Você está a ${distanciaKm}km do estabelecimento cadastrado. O limite é de ${limiteKm}km.`
                 };
             }
 
