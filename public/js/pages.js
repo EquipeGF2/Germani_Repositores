@@ -135,7 +135,7 @@ export const pages = {
 
             <!-- Modal Repositor -->
             <div class="modal modal-repositor" id="modalRepositor">
-                <div class="modal-content">
+                <div class="modal-content" style="max-width: 1100px; max-height: 90vh; overflow-y: auto;">
                     <div class="modal-header">
                         <h3 id="modalRepositorTitle">Novo Repositor</h3>
                         <button class="modal-close" onclick="window.app.closeModalRepositor()">&times;</button>
@@ -158,8 +158,8 @@ export const pages = {
                                             </div>
                                             <div class="form-group vinculo-agencia">
                                                 <label for="repo_vinculo_agencia" class="label-nowrap">Vínculo</label>
-                                                <label class="checkbox-inline">
-                                                    <input type="checkbox" id="repo_vinculo_agencia" style="width: auto;">
+                                                <label class="checkbox-inline" style="display: flex; align-items: center; gap: 8px;">
+                                                    <input type="checkbox" id="repo_vinculo_agencia" style="width: auto; margin: 0;">
                                                     <span>É uma Agência?</span>
                                                 </label>
                                             </div>
@@ -212,26 +212,26 @@ export const pages = {
                                         <div class="form-group full-width">
                                             <label class="label-nowrap">Dias Trabalhados</label>
                                             <div class="dias-trabalho-grid compact">
-                                                <label class="checkbox-inline">
-                                                    <input type="checkbox" class="dia-trabalho" value="seg" style="width: auto;" checked> Segunda
+                                                <label class="checkbox-inline" style="display: flex; align-items: center; gap: 6px;">
+                                                    <input type="checkbox" class="dia-trabalho" value="seg" style="width: auto; margin: 0;" checked> Segunda
                                                 </label>
-                                                <label class="checkbox-inline">
-                                                    <input type="checkbox" class="dia-trabalho" value="ter" style="width: auto;" checked> Terça
+                                                <label class="checkbox-inline" style="display: flex; align-items: center; gap: 6px;">
+                                                    <input type="checkbox" class="dia-trabalho" value="ter" style="width: auto; margin: 0;" checked> Terça
                                                 </label>
-                                                <label class="checkbox-inline">
-                                                    <input type="checkbox" class="dia-trabalho" value="qua" style="width: auto;" checked> Quarta
+                                                <label class="checkbox-inline" style="display: flex; align-items: center; gap: 6px;">
+                                                    <input type="checkbox" class="dia-trabalho" value="qua" style="width: auto; margin: 0;" checked> Quarta
                                                 </label>
-                                                <label class="checkbox-inline">
-                                                    <input type="checkbox" class="dia-trabalho" value="qui" style="width: auto;" checked> Quinta
+                                                <label class="checkbox-inline" style="display: flex; align-items: center; gap: 6px;">
+                                                    <input type="checkbox" class="dia-trabalho" value="qui" style="width: auto; margin: 0;" checked> Quinta
                                                 </label>
-                                                <label class="checkbox-inline">
-                                                    <input type="checkbox" class="dia-trabalho" value="sex" style="width: auto;" checked> Sexta
+                                                <label class="checkbox-inline" style="display: flex; align-items: center; gap: 6px;">
+                                                    <input type="checkbox" class="dia-trabalho" value="sex" style="width: auto; margin: 0;" checked> Sexta
                                                 </label>
-                                                <label class="checkbox-inline">
-                                                    <input type="checkbox" class="dia-trabalho" value="sab" style="width: auto;"> Sábado
+                                                <label class="checkbox-inline" style="display: flex; align-items: center; gap: 6px;">
+                                                    <input type="checkbox" class="dia-trabalho" value="sab" style="width: auto; margin: 0;"> Sábado
                                                 </label>
-                                                <label class="checkbox-inline">
-                                                    <input type="checkbox" class="dia-trabalho" value="dom" style="width: auto;"> Domingo
+                                                <label class="checkbox-inline" style="display: flex; align-items: center; gap: 6px;">
+                                                    <input type="checkbox" class="dia-trabalho" value="dom" style="width: auto; margin: 0;"> Domingo
                                                 </label>
                                             </div>
                                             <small class="helper-compact">Marque os dias que o repositor trabalha (padrão: Seg a Sex)</small>
@@ -240,11 +240,11 @@ export const pages = {
                                         <div class="form-group full-width jornada-group">
                                             <label class="label-nowrap">Jornada</label>
                                             <div class="radio-group">
-                                                <label class="checkbox-inline">
-                                                    <input type="radio" name="rep_jornada_tipo" value="INTEGRAL" style="width: auto;" checked> Integral
+                                                <label class="checkbox-inline" style="display: flex; align-items: center; gap: 6px;">
+                                                    <input type="radio" name="rep_jornada_tipo" value="INTEGRAL" style="width: auto; margin: 0;" checked> Integral
                                                 </label>
-                                                <label class="checkbox-inline">
-                                                    <input type="radio" name="rep_jornada_tipo" value="MEIO_TURNO" style="width: auto;"> Meio turno
+                                                <label class="checkbox-inline" style="display: flex; align-items: center; gap: 6px;">
+                                                    <input type="radio" name="rep_jornada_tipo" value="MEIO_TURNO" style="width: auto; margin: 0;"> Meio turno
                                                 </label>
                                             </div>
                                         </div>
