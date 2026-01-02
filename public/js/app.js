@@ -466,9 +466,11 @@ class App {
         this.registrarResumoPerformance();
         this.iniciarKeepAliveBackend();
 
-        const geoLiberado = await geoPromise;
-        if (!geoLiberado) {
-            this.showNotification('Localização não liberada. Ative o GPS para recursos de rota.', 'warning');
+        if (this.geoInicialPromise) {
+            const geoLiberado = await this.geoInicialPromise;
+            if (!geoLiberado) {
+                this.showNotification('Localização não liberada. Ative o GPS para recursos de rota.', 'warning');
+            }
         }
     }
 
@@ -2152,6 +2154,21 @@ class App {
             btnAddCidade.onclick = () => this.adicionarCidadeRoteiro();
         }
 
+        const btnReplicarRoteiro = document.getElementById('btnReplicarRoteiro');
+        if (btnReplicarRoteiro) {
+            btnReplicarRoteiro.onclick = () => this.abrirModalReplicarRoteiro();
+        }
+
+        const btnConfirmarReplicacao = document.getElementById('btnConfirmarReplicacao');
+        if (btnConfirmarReplicacao) {
+            btnConfirmarReplicacao.onclick = () => this.confirmarReplicacaoRoteiro();
+        }
+
+        const selectDiaReplicacao = document.getElementById('diaOrigemReplicacao');
+        if (selectDiaReplicacao) {
+            selectDiaReplicacao.addEventListener('change', () => this.atualizarPreviewReplicacao());
+        }
+
         const btnAddCliente = document.getElementById('btnAdicionarClienteRoteiro');
         if (btnAddCliente) {
             btnAddCliente.onclick = () => this.abrirModalAdicionarCliente();
@@ -2557,11 +2574,21 @@ class App {
             });
         });
 
+        // Atualizar campo de ordem baseado no dia selecionado
         const campoOrdemCidade = document.getElementById('roteiroCidadeOrdem');
-        if (campoOrdemCidade && !campoOrdemCidade.value) {
+        if (campoOrdemCidade) {
             const maiorOrdem = Math.max(...cidades.map(c => Number(c.rot_ordem_cidade) || 0), 0);
-            campoOrdemCidade.value = (maiorOrdem + 1).toString();
+            const proximaOrdem = (maiorOrdem + 1).toString();
+
+            // Se o campo está vazio OU mudou de dia, atualizar com a próxima ordem
+            if (!campoOrdemCidade.value || campoOrdemCidade.dataset.diaCadastro !== dia) {
+                campoOrdemCidade.value = proximaOrdem;
+                campoOrdemCidade.dataset.diaCadastro = dia;
+            }
         }
+
+        // Verificar se deve mostrar botão de replicar roteiro
+        await this.verificarBotaoReplicarRoteiro();
 
         console.log('[ROTEIRO] Cidades renderizadas com sucesso! Total:', cidades.length);
         if (mensagem) mensagem.textContent = '';
@@ -2606,6 +2633,199 @@ class App {
         } catch (error) {
             this.showNotification(error.message, 'error');
             throw error;
+        }
+    }
+
+    // ==================== REPLICAÇÃO DE ROTEIRO ====================
+
+    async verificarBotaoReplicarRoteiro() {
+        const btnReplicar = document.getElementById('btnReplicarRoteiro');
+        if (!btnReplicar) return;
+
+        const diaAtual = this.estadoRoteiro.diaSelecionado;
+        const repId = this.contextoRoteiro?.repo_cod;
+
+        if (!diaAtual || !repId) {
+            btnReplicar.style.display = 'none';
+            return;
+        }
+
+        // Verificar se existem roteiros em outros dias
+        const diasComRoteiro = [];
+        for (const dia of this.diasRoteiroDisponiveis) {
+            if (dia === diaAtual) continue;
+
+            const roteiroDia = await db.getRoteiroCidades(repId, dia);
+            if (roteiroDia && roteiroDia.length > 0) {
+                diasComRoteiro.push(dia);
+            }
+        }
+
+        // Mostrar botão apenas se houver roteiros em outros dias
+        btnReplicar.style.display = diasComRoteiro.length > 0 ? 'inline-block' : 'none';
+    }
+
+    async abrirModalReplicarRoteiro() {
+        const diaAtual = this.estadoRoteiro.diaSelecionado;
+        const repId = this.contextoRoteiro?.repo_cod;
+
+        if (!diaAtual || !repId) {
+            this.showNotification('Selecione um dia para replicar o roteiro', 'warning');
+            return;
+        }
+
+        // Verificar se o dia atual já tem roteiro
+        const roteiroAtual = await db.getRoteiroCidades(repId, diaAtual);
+        if (roteiroAtual && roteiroAtual.length > 0) {
+            if (!confirm('Este dia já possui roteiro cadastrado. Deseja substituí-lo?')) {
+                return;
+            }
+        }
+
+        // Carregar dias disponíveis para replicar
+        const selectDia = document.getElementById('diaOrigemReplicacao');
+        if (!selectDia) return;
+
+        const nomesDias = {
+            seg: 'Segunda-feira',
+            ter: 'Terça-feira',
+            qua: 'Quarta-feira',
+            qui: 'Quinta-feira',
+            sex: 'Sexta-feira',
+            sab: 'Sábado',
+            dom: 'Domingo'
+        };
+
+        selectDia.innerHTML = '<option value="">Selecione um dia</option>';
+
+        for (const dia of this.diasRoteiroDisponiveis) {
+            if (dia === diaAtual) continue;
+
+            const roteiroDia = await db.getRoteiroCidades(repId, dia);
+            if (roteiroDia && roteiroDia.length > 0) {
+                const option = document.createElement('option');
+                option.value = dia;
+                option.textContent = `${nomesDias[dia]} (${roteiroDia.length} cidade${roteiroDia.length > 1 ? 's' : ''})`;
+                option.dataset.qtdCidades = roteiroDia.length;
+                selectDia.appendChild(option);
+            }
+        }
+
+        // Limpar preview
+        const previewDiv = document.getElementById('previewReplicacao');
+        if (previewDiv) {
+            previewDiv.style.display = 'none';
+        }
+
+        // Abrir modal
+        const modal = document.getElementById('modalReplicarRoteiro');
+        if (modal) {
+            modal.classList.add('active');
+        }
+    }
+
+    fecharModalReplicarRoteiro() {
+        const modal = document.getElementById('modalReplicarRoteiro');
+        if (modal) {
+            modal.classList.remove('active');
+        }
+    }
+
+    async atualizarPreviewReplicacao() {
+        const selectDia = document.getElementById('diaOrigemReplicacao');
+        const previewDiv = document.getElementById('previewReplicacao');
+        const infoP = document.getElementById('infoReplicacao');
+
+        if (!selectDia || !previewDiv || !infoP) return;
+
+        const diaOrigem = selectDia.value;
+        if (!diaOrigem) {
+            previewDiv.style.display = 'none';
+            return;
+        }
+
+        const repId = this.contextoRoteiro?.repo_cod;
+        const roteiroDia = await db.getRoteiroCidades(repId, diaOrigem);
+
+        let totalClientes = 0;
+        for (const cidade of roteiroDia) {
+            const clientes = await db.getRoteiroClientes(cidade.rot_cid_id);
+            totalClientes += clientes.length;
+        }
+
+        const nomesDias = {
+            seg: 'Segunda-feira',
+            ter: 'Terça-feira',
+            qua: 'Quarta-feira',
+            qui: 'Quinta-feira',
+            sex: 'Sexta-feira',
+            sab: 'Sábado',
+            dom: 'Domingo'
+        };
+
+        const diaDestino = this.estadoRoteiro.diaSelecionado;
+        infoP.textContent = `Será copiado o roteiro de ${nomesDias[diaOrigem]} para ${nomesDias[diaDestino]}: ${roteiroDia.length} cidade${roteiroDia.length > 1 ? 's' : ''} e ${totalClientes} cliente${totalClientes > 1 ? 's' : ''}.`;
+
+        previewDiv.style.display = 'block';
+    }
+
+    async confirmarReplicacaoRoteiro() {
+        const selectDia = document.getElementById('diaOrigemReplicacao');
+        if (!selectDia || !selectDia.value) {
+            this.showNotification('Selecione um dia de origem para replicar', 'warning');
+            return;
+        }
+
+        const diaOrigem = selectDia.value;
+        const diaDestino = this.estadoRoteiro.diaSelecionado;
+        const repId = this.contextoRoteiro?.repo_cod;
+
+        try {
+            // Primeiro, remover o roteiro do dia de destino se existir
+            const roteiroDestino = await db.getRoteiroCidades(repId, diaDestino);
+            for (const cidade of roteiroDestino) {
+                await db.removerCidadeRoteiro(cidade.rot_cid_id, this.usuarioLogado?.username || 'desconhecido');
+            }
+
+            // Copiar roteiro do dia de origem
+            const roteiroOrigem = await db.getRoteiroCidades(repId, diaOrigem);
+
+            for (const cidadeOrigem of roteiroOrigem) {
+                // Adicionar cidade ao dia de destino
+                await db.adicionarCidadeRoteiro(
+                    repId,
+                    diaDestino,
+                    cidadeOrigem.rot_cidade,
+                    this.usuarioLogado?.username || 'desconhecido',
+                    cidadeOrigem.rot_ordem_cidade
+                );
+
+                // Buscar a cidade recém-criada
+                const cidadesDestino = await db.getRoteiroCidades(repId, diaDestino);
+                const cidadeDestino = cidadesDestino.find(c => c.rot_cidade === cidadeOrigem.rot_cidade);
+
+                if (cidadeDestino) {
+                    // Copiar clientes
+                    const clientesOrigem = await db.getRoteiroClientes(cidadeOrigem.rot_cid_id);
+
+                    for (const cliente of clientesOrigem) {
+                        await db.adicionarClienteRoteiro(
+                            cidadeDestino.rot_cid_id,
+                            cliente.rot_cliente_codigo,
+                            this.usuarioLogado?.username || 'desconhecido',
+                            { ordemVisita: cliente.rot_ordem_visita }
+                        );
+                    }
+                }
+            }
+
+            this.fecharModalReplicarRoteiro();
+            await this.carregarCidadesRoteiro();
+            this.marcarRoteiroPendente();
+            this.showNotification('Roteiro replicado com sucesso!', 'success');
+        } catch (error) {
+            console.error('Erro ao replicar roteiro:', error);
+            this.showNotification('Erro ao replicar roteiro: ' + error.message, 'error');
         }
     }
 
@@ -3259,7 +3479,7 @@ class App {
                         <th class="col-endereco">Endereço</th>
                         <th>Bairro</th>
                         <th class="col-grupo">Grupo</th>
-                        <th class="col-acao">Ação</th>
+                        <th class="col-acao" style="min-width: 120px; width: 120px;">Ação</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -7491,7 +7711,18 @@ class App {
 
     // ==================== CLIENTES PENDENTES DO DIA ANTERIOR ====================
 
-    calcularDiasUteisAtras(dataInicial, numDias) {
+    async verificarRepositorTrabalhaSabado(repId) {
+        try {
+            // Verifica se o repositor tem roteiro cadastrado para sábado
+            const roteiroSabado = await db.carregarRoteiroRepositorDia(repId, 'sab');
+            return roteiroSabado && roteiroSabado.length > 0;
+        } catch (error) {
+            console.warn('Erro ao verificar roteiro de sábado:', error);
+            return false;
+        }
+    }
+
+    calcularDiasUteisAtras(dataInicial, numDias, considerarSabado = false) {
         const data = new Date(dataInicial + 'T12:00:00');
         let diasContados = 0;
 
@@ -7499,7 +7730,11 @@ class App {
             data.setDate(data.getDate() - 1);
             const diaSemana = data.getDay();
             // 0 = Domingo, 6 = Sábado
-            if (diaSemana !== 0 && diaSemana !== 6) {
+            const isDiaUtil = considerarSabado
+                ? diaSemana !== 0  // Apenas domingo não é útil
+                : (diaSemana !== 0 && diaSemana !== 6);  // Sábado e domingo não são úteis
+
+            if (isDiaUtil) {
                 diasContados++;
             }
         }
@@ -7507,14 +7742,18 @@ class App {
         return data.toISOString().split('T')[0];
     }
 
-    calcularDiasUteisFrente(dataInicial, numDias) {
+    calcularDiasUteisFrente(dataInicial, numDias, considerarSabado = false) {
         const data = new Date(dataInicial + 'T12:00:00');
         let diasContados = 0;
 
         while (diasContados < numDias) {
             data.setDate(data.getDate() + 1);
             const diaSemana = data.getDay();
-            if (diaSemana !== 0 && diaSemana !== 6) {
+            const isDiaUtil = considerarSabado
+                ? diaSemana !== 0  // Apenas domingo não é útil
+                : (diaSemana !== 0 && diaSemana !== 6);  // Sábado e domingo não são úteis
+
+            if (isDiaUtil) {
                 diasContados++;
             }
         }
@@ -7522,13 +7761,17 @@ class App {
         return data.toISOString().split('T')[0];
     }
 
-    obterUltimoDiaUtil(dataReferencia) {
+    obterUltimoDiaUtil(dataReferencia, considerarSabado = false) {
         const data = new Date(dataReferencia + 'T12:00:00');
         data.setDate(data.getDate() - 1);
 
         while (true) {
             const diaSemana = data.getDay();
-            if (diaSemana !== 0 && diaSemana !== 6) {
+            const isDiaUtil = considerarSabado
+                ? diaSemana !== 0  // Apenas domingo não é útil
+                : (diaSemana !== 0 && diaSemana !== 6);  // Sábado e domingo não são úteis
+
+            if (isDiaUtil) {
                 return data.toISOString().split('T')[0];
             }
             data.setDate(data.getDate() - 1);
@@ -7545,11 +7788,14 @@ class App {
 
             if (!repId || !dataAtual) return;
 
-            // Calcular último dia útil
-            const ultimoDiaUtil = this.obterUltimoDiaUtil(dataAtual);
+            // Verificar se o repositor trabalha no sábado
+            const trabalhaSabado = await this.verificarRepositorTrabalhaSabado(repId);
+
+            // Calcular último dia útil (considerando sábado se o repositor trabalha nesse dia)
+            const ultimoDiaUtil = this.obterUltimoDiaUtil(dataAtual, trabalhaSabado);
 
             // Verificar se já passaram mais de 2 dias úteis
-            const limiteAviso = this.calcularDiasUteisAtras(dataAtual, 2);
+            const limiteAviso = this.calcularDiasUteisAtras(dataAtual, 2, trabalhaSabado);
 
             if (ultimoDiaUtil < limiteAviso) {
                 // Já passou o prazo de 2 dias úteis
@@ -7818,6 +8064,18 @@ class App {
 
             if (eRecente && (statusLocal.status === 'finalizado' || statusLocal.status === 'em_atendimento')) {
                 mapaResumo.set(clienteId, statusLocal);
+            } else if (statusLocal.status === 'em_atendimento') {
+                // Preservar atividades_count local se for maior que o do backend
+                const statusBackend = mapaResumo.get(clienteId) || {};
+                const atividadesLocal = Number(statusLocal.atividades_count || 0);
+                const atividadesBackend = Number(statusBackend.atividades_count || 0);
+
+                if (atividadesLocal > atividadesBackend) {
+                    mapaResumo.set(clienteId, {
+                        ...statusBackend,
+                        atividades_count: atividadesLocal
+                    });
+                }
             }
         });
 
@@ -8520,6 +8778,20 @@ class App {
             ts: posicao.ts
         };
 
+        // Validar distância apenas para checkin
+        if (tipoPadrao === 'checkin' && enderecoCadastro) {
+            const validacao = await this.validarDistanciaCheckin(
+                posicao.lat,
+                posicao.lng,
+                enderecoCadastro
+            );
+
+            if (!validacao.valido) {
+                this.showNotification(validacao.aviso, 'warning');
+                // Não bloqueia, apenas avisa o repositor
+            }
+        }
+
         const tituloModal = document.getElementById('modalCapturaTitulo');
         if (tituloModal) {
             tituloModal.textContent = this.registroRotaState.clienteAtual.clienteNome || 'Registrar Visita';
@@ -8751,6 +9023,93 @@ class App {
         } catch (error) {
             console.error('Erro ao buscar endereço:', error);
             return null;
+        }
+    }
+
+    async obterCoordenadasPorEndereco(endereco) {
+        try {
+            // Usando API do OpenStreetMap Nominatim (gratuita) para geocodificação
+            const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(endereco)}&format=json&limit=1`;
+            const response = await fetch(url, {
+                headers: {
+                    'User-Agent': 'RepositorApp/1.0'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Erro ao buscar coordenadas');
+            }
+
+            const data = await response.json();
+
+            if (data && data.length > 0) {
+                return {
+                    lat: parseFloat(data[0].lat),
+                    lng: parseFloat(data[0].lon)
+                };
+            }
+
+            return null;
+        } catch (error) {
+            console.error('Erro ao buscar coordenadas:', error);
+            return null;
+        }
+    }
+
+    calcularDistanciaHaversine(lat1, lon1, lat2, lon2) {
+        // Fórmula de Haversine para calcular distância entre dois pontos em metros
+        const R = 6371e3; // Raio da Terra em metros
+        const φ1 = lat1 * Math.PI / 180;
+        const φ2 = lat2 * Math.PI / 180;
+        const Δφ = (lat2 - lat1) * Math.PI / 180;
+        const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+        const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                  Math.cos(φ1) * Math.cos(φ2) *
+                  Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+        return R * c; // Distância em metros
+    }
+
+    async validarDistanciaCheckin(latCheckin, lngCheckin, enderecoCliente) {
+        try {
+            // Tenta obter coordenadas do endereço do cliente
+            const coordsCliente = await this.obterCoordenadasPorEndereco(enderecoCliente);
+
+            if (!coordsCliente) {
+                // Se não conseguiu geocodificar, apenas avisa mas permite o checkin
+                console.warn('Não foi possível validar distância - endereço não geocodificado');
+                return { valido: true, distancia: null, aviso: 'Não foi possível validar a distância do estabelecimento' };
+            }
+
+            // Calcula distância em metros
+            const distancia = this.calcularDistanciaHaversine(
+                latCheckin,
+                lngCheckin,
+                coordsCliente.lat,
+                coordsCliente.lng
+            );
+
+            const DISTANCIA_MAXIMA = 200; // 200 metros
+
+            if (distancia > DISTANCIA_MAXIMA) {
+                return {
+                    valido: false,
+                    distancia: Math.round(distancia),
+                    aviso: `⚠️ ATENÇÃO: Você está a ${Math.round(distancia)}m do estabelecimento cadastrado. O limite é de ${DISTANCIA_MAXIMA}m.`
+                };
+            }
+
+            return {
+                valido: true,
+                distancia: Math.round(distancia),
+                aviso: null
+            };
+        } catch (error) {
+            console.error('Erro ao validar distância:', error);
+            // Em caso de erro, permite o checkin mas registra o erro
+            return { valido: true, distancia: null, aviso: 'Erro ao validar distância' };
         }
     }
 

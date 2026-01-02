@@ -135,7 +135,7 @@ export const pages = {
 
             <!-- Modal Repositor -->
             <div class="modal modal-repositor" id="modalRepositor">
-                <div class="modal-content">
+                <div class="modal-content" style="max-width: 1100px; max-height: 90vh; overflow-y: auto;">
                     <div class="modal-header">
                         <h3 id="modalRepositorTitle">Novo Repositor</h3>
                         <button class="modal-close" onclick="window.app.closeModalRepositor()">&times;</button>
@@ -158,8 +158,8 @@ export const pages = {
                                             </div>
                                             <div class="form-group vinculo-agencia">
                                                 <label for="repo_vinculo_agencia" class="label-nowrap">Vínculo</label>
-                                                <label class="checkbox-inline">
-                                                    <input type="checkbox" id="repo_vinculo_agencia" style="width: auto;">
+                                                <label class="checkbox-inline" style="display: flex; align-items: center; gap: 8px;">
+                                                    <input type="checkbox" id="repo_vinculo_agencia" style="width: auto; margin: 0;">
                                                     <span>É uma Agência?</span>
                                                 </label>
                                             </div>
@@ -212,26 +212,26 @@ export const pages = {
                                         <div class="form-group full-width">
                                             <label class="label-nowrap">Dias Trabalhados</label>
                                             <div class="dias-trabalho-grid compact">
-                                                <label class="checkbox-inline">
-                                                    <input type="checkbox" class="dia-trabalho" value="seg" style="width: auto;" checked> Segunda
+                                                <label class="checkbox-inline" style="display: flex; align-items: center; gap: 6px;">
+                                                    <input type="checkbox" class="dia-trabalho" value="seg" style="width: auto; margin: 0;" checked> Segunda
                                                 </label>
-                                                <label class="checkbox-inline">
-                                                    <input type="checkbox" class="dia-trabalho" value="ter" style="width: auto;" checked> Terça
+                                                <label class="checkbox-inline" style="display: flex; align-items: center; gap: 6px;">
+                                                    <input type="checkbox" class="dia-trabalho" value="ter" style="width: auto; margin: 0;" checked> Terça
                                                 </label>
-                                                <label class="checkbox-inline">
-                                                    <input type="checkbox" class="dia-trabalho" value="qua" style="width: auto;" checked> Quarta
+                                                <label class="checkbox-inline" style="display: flex; align-items: center; gap: 6px;">
+                                                    <input type="checkbox" class="dia-trabalho" value="qua" style="width: auto; margin: 0;" checked> Quarta
                                                 </label>
-                                                <label class="checkbox-inline">
-                                                    <input type="checkbox" class="dia-trabalho" value="qui" style="width: auto;" checked> Quinta
+                                                <label class="checkbox-inline" style="display: flex; align-items: center; gap: 6px;">
+                                                    <input type="checkbox" class="dia-trabalho" value="qui" style="width: auto; margin: 0;" checked> Quinta
                                                 </label>
-                                                <label class="checkbox-inline">
-                                                    <input type="checkbox" class="dia-trabalho" value="sex" style="width: auto;" checked> Sexta
+                                                <label class="checkbox-inline" style="display: flex; align-items: center; gap: 6px;">
+                                                    <input type="checkbox" class="dia-trabalho" value="sex" style="width: auto; margin: 0;" checked> Sexta
                                                 </label>
-                                                <label class="checkbox-inline">
-                                                    <input type="checkbox" class="dia-trabalho" value="sab" style="width: auto;"> Sábado
+                                                <label class="checkbox-inline" style="display: flex; align-items: center; gap: 6px;">
+                                                    <input type="checkbox" class="dia-trabalho" value="sab" style="width: auto; margin: 0;"> Sábado
                                                 </label>
-                                                <label class="checkbox-inline">
-                                                    <input type="checkbox" class="dia-trabalho" value="dom" style="width: auto;"> Domingo
+                                                <label class="checkbox-inline" style="display: flex; align-items: center; gap: 6px;">
+                                                    <input type="checkbox" class="dia-trabalho" value="dom" style="width: auto; margin: 0;"> Domingo
                                                 </label>
                                             </div>
                                             <small class="helper-compact">Marque os dias que o repositor trabalha (padrão: Seg a Sex)</small>
@@ -240,11 +240,11 @@ export const pages = {
                                         <div class="form-group full-width jornada-group">
                                             <label class="label-nowrap">Jornada</label>
                                             <div class="radio-group">
-                                                <label class="checkbox-inline">
-                                                    <input type="radio" name="rep_jornada_tipo" value="INTEGRAL" style="width: auto;" checked> Integral
+                                                <label class="checkbox-inline" style="display: flex; align-items: center; gap: 6px;">
+                                                    <input type="radio" name="rep_jornada_tipo" value="INTEGRAL" style="width: auto; margin: 0;" checked> Integral
                                                 </label>
-                                                <label class="checkbox-inline">
-                                                    <input type="radio" name="rep_jornada_tipo" value="MEIO_TURNO" style="width: auto;"> Meio turno
+                                                <label class="checkbox-inline" style="display: flex; align-items: center; gap: 6px;">
+                                                    <input type="radio" name="rep_jornada_tipo" value="MEIO_TURNO" style="width: auto; margin: 0;"> Meio turno
                                                 </label>
                                             </div>
                                         </div>
@@ -710,6 +710,7 @@ export const pages = {
                                 <input type="number" id="roteiroCidadeOrdem" min="1" step="1" placeholder="1" aria-label="Ordem da cidade">
                             </div>
                             <button class="btn btn-primary btn-sm btn-compact btn-add-cidade" id="btnAdicionarCidade">+ Adicionar</button>
+                            <button class="btn btn-secondary btn-sm btn-compact" id="btnReplicarRoteiro" style="display:none;">📋 Replicar Roteiro</button>
                         </div>
 
                         <div id="roteiroCidadesMensagem" class="roteiro-hint"></div>
@@ -750,14 +751,14 @@ export const pages = {
                         <button class="modal-close" onclick="window.app.fecharModalAdicionarCliente()">&times;</button>
                     </div>
                     <div class="modal-body">
-                        <div class="form-group">
-                            <label for="modalBuscaClientesCidade">Buscar cliente</label>
-                            <input type="text" id="modalBuscaClientesCidade" placeholder="Nome, fantasia, bairro ou código">
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
+                        <div class="form-row" style="position: sticky; top: 0; background: white; z-index: 10; padding-bottom: 12px; margin-bottom: 16px; border-bottom: 1px solid #e5e7eb;">
+                            <div class="form-group" style="flex: 2;">
+                                <label for="modalBuscaClientesCidade">Buscar cliente</label>
+                                <input type="text" id="modalBuscaClientesCidade" placeholder="Nome, fantasia, bairro ou código">
+                            </div>
+                            <div class="form-group" style="flex: 1; min-width: 150px;">
                                 <label for="modalOrdemCliente">Ordem de atendimento</label>
-                                <input type="number" id="modalOrdemCliente" min="1" step="1" placeholder="Informe a ordem" required>
+                                <input type="number" id="modalOrdemCliente" min="1" step="1" placeholder="Ordem" required>
                                 <small id="modalOrdemHelper" class="text-muted"></small>
                             </div>
                         </div>
@@ -765,6 +766,34 @@ export const pages = {
                     </div>
                     <div class="modal-footer">
                         <button class="btn btn-secondary" onclick="window.app.fecharModalAdicionarCliente()">Fechar</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal" id="modalReplicarRoteiro">
+                <div class="modal-content" style="max-width: 500px;">
+                    <div class="modal-header">
+                        <h3>Replicar Roteiro</h3>
+                        <button class="modal-close" onclick="window.app.fecharModalReplicarRoteiro()">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <p style="margin-bottom: 16px; color: #6b7280;">
+                            Selecione o dia da semana que deseja usar como base para replicar o roteiro:
+                        </p>
+                        <div class="form-group">
+                            <label for="diaOrigemReplicacao">Copiar roteiro de:</label>
+                            <select id="diaOrigemReplicacao" class="form-control" style="width: 100%;">
+                                <option value="">Selecione um dia</option>
+                            </select>
+                        </div>
+                        <div id="previewReplicacao" style="margin-top: 16px; padding: 12px; background: #f9fafb; border-radius: 6px; display: none;">
+                            <p style="font-size: 14px; color: #374151; margin-bottom: 8px;"><strong>Prévia:</strong></p>
+                            <p id="infoReplicacao" style="font-size: 13px; color: #6b7280; margin: 0;"></p>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" onclick="window.app.fecharModalReplicarRoteiro()">Cancelar</button>
+                        <button class="btn btn-primary" id="btnConfirmarReplicacao">Replicar</button>
                     </div>
                 </div>
             </div>
