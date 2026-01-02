@@ -1,5 +1,6 @@
 const STORAGE_KEY = 'geo_last_ok';
-const REQUEST_OPTIONS = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
+const REQUEST_OPTIONS_FAST = { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 };
+const REQUEST_OPTIONS_FALLBACK = { enableHighAccuracy: true, timeout: 45000, maximumAge: 0 };
 
 class GeoService {
     constructor() {
@@ -36,6 +37,31 @@ class GeoService {
         }
     }
 
+    async tentarCapturarLocalizacao(options) {
+        return new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, options);
+        });
+    }
+
+    async obterLocalizacao() {
+        const erros = [];
+
+        try {
+            return await this.tentarCapturarLocalizacao(REQUEST_OPTIONS_FAST);
+        } catch (erroRapido) {
+            erros.push(erroRapido);
+            console.warn('Tentativa rápida de geolocalização falhou, tentando fallback...', erroRapido);
+        }
+
+        try {
+            return await this.tentarCapturarLocalizacao(REQUEST_OPTIONS_FALLBACK);
+        } catch (erroFallback) {
+            erros.push(erroFallback);
+            const mensagem = erroFallback?.message || 'Ative a localização do Windows e tente novamente.';
+            throw { code: erroFallback?.code || 'GEO_FAILED', message: mensagem, erros };
+        }
+    }
+
     async getRequiredLocation() {
         this.validarContextoSeguro();
 
@@ -48,9 +74,7 @@ class GeoService {
             return this.lastLocation;
         }
 
-        const position = await new Promise((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, REQUEST_OPTIONS);
-        });
+        const position = await this.obterLocalizacao();
 
         const location = {
             lat: position.coords.latitude,

@@ -364,6 +364,7 @@ class App {
         this.performanceMarks = {};
         this.keepAliveHandle = null;
         this.primeiraApiRegistrada = false;
+        this.geoInicialPromise = null;
         this.recursosPorPagina = {
             'cadastro-repositor': 'mod_repositores',
             'validacao-dados': 'mod_repositores',
@@ -422,9 +423,7 @@ class App {
 
         // Event Listeners
         this.setupEventListeners();
-
-        // Dispara captura de localização em background (não bloqueia o boot)
-        const geoPromise = this.exigirLocalizacaoInicial(false);
+        this.configurarCapturaGeoInicial();
 
         const [resultadoDb, resultadoDadosNaoCriticos] = await Promise.allSettled([
             this.initializeDatabase(),
@@ -734,6 +733,7 @@ class App {
             console.error('Localização não liberada:', error);
             if (obrigatoria) {
                 this.ocultarOverlayGeoCarregando();
+                this.showNotification('Ative a localização do Windows e clique em “Tentar novamente”.', 'warning');
                 this.mostrarModalGeoObrigatoria(error, () => this.exigirLocalizacaoInicial(true));
             }
             return false;
@@ -749,6 +749,7 @@ class App {
             const mensagem = contextoDescricao
                 ? `${contextoDescricao}: ${error?.message || 'Habilite o GPS para continuar.'}`
                 : error;
+            this.showNotification('Ative a localização do Windows e clique em “Tentar novamente”.', 'warning');
             this.mostrarModalGeoObrigatoria(mensagem, onRetry);
             return null;
         }
@@ -821,6 +822,22 @@ class App {
             const params = event.state?.params || {};
             this.navigateTo(destino, params, { skipHistory: true, replaceHistory: true });
         });
+    }
+
+    configurarCapturaGeoInicial() {
+        const dispararCaptura = () => {
+            if (!this.geoInicialPromise) {
+                this.geoInicialPromise = this.exigirLocalizacaoInicial(false);
+            }
+        };
+
+        const listenerOpts = { once: true, passive: true };
+        document.addEventListener('click', dispararCaptura, listenerOpts);
+        document.addEventListener('touchstart', dispararCaptura, listenerOpts);
+
+        if (window.matchMedia('(display-mode: standalone)').matches) {
+            this.geoInicialPromise = this.exigirLocalizacaoInicial(false);
+        }
     }
 
     definirPaginaInicial() {
