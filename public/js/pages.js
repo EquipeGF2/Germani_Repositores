@@ -710,6 +710,7 @@ export const pages = {
                                 <input type="number" id="roteiroCidadeOrdem" min="1" step="1" placeholder="1" aria-label="Ordem da cidade">
                             </div>
                             <button class="btn btn-primary btn-sm btn-compact btn-add-cidade" id="btnAdicionarCidade">+ Adicionar</button>
+                            <button class="btn btn-secondary btn-sm btn-compact" id="btnReplicarRoteiro" style="display:none;">📋 Replicar Roteiro</button>
                         </div>
 
                         <div id="roteiroCidadesMensagem" class="roteiro-hint"></div>
@@ -765,6 +766,34 @@ export const pages = {
                     </div>
                     <div class="modal-footer">
                         <button class="btn btn-secondary" onclick="window.app.fecharModalAdicionarCliente()">Fechar</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal" id="modalReplicarRoteiro">
+                <div class="modal-content" style="max-width: 500px;">
+                    <div class="modal-header">
+                        <h3>Replicar Roteiro</h3>
+                        <button class="modal-close" onclick="window.app.fecharModalReplicarRoteiro()">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <p style="margin-bottom: 16px; color: #6b7280;">
+                            Selecione o dia da semana que deseja usar como base para replicar o roteiro:
+                        </p>
+                        <div class="form-group">
+                            <label for="diaOrigemReplicacao">Copiar roteiro de:</label>
+                            <select id="diaOrigemReplicacao" class="form-control" style="width: 100%;">
+                                <option value="">Selecione um dia</option>
+                            </select>
+                        </div>
+                        <div id="previewReplicacao" style="margin-top: 16px; padding: 12px; background: #f9fafb; border-radius: 6px; display: none;">
+                            <p style="font-size: 14px; color: #374151; margin-bottom: 8px;"><strong>Prévia:</strong></p>
+                            <p id="infoReplicacao" style="font-size: 13px; color: #6b7280; margin: 0;"></p>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" onclick="window.app.fecharModalReplicarRoteiro()">Cancelar</button>
+                        <button class="btn btn-primary" id="btnConfirmarReplicacao">Replicar</button>
                     </div>
                 </div>
             </div>

@@ -2154,6 +2154,21 @@ class App {
             btnAddCidade.onclick = () => this.adicionarCidadeRoteiro();
         }
 
+        const btnReplicarRoteiro = document.getElementById('btnReplicarRoteiro');
+        if (btnReplicarRoteiro) {
+            btnReplicarRoteiro.onclick = () => this.abrirModalReplicarRoteiro();
+        }
+
+        const btnConfirmarReplicacao = document.getElementById('btnConfirmarReplicacao');
+        if (btnConfirmarReplicacao) {
+            btnConfirmarReplicacao.onclick = () => this.confirmarReplicacaoRoteiro();
+        }
+
+        const selectDiaReplicacao = document.getElementById('diaOrigemReplicacao');
+        if (selectDiaReplicacao) {
+            selectDiaReplicacao.addEventListener('change', () => this.atualizarPreviewReplicacao());
+        }
+
         const btnAddCliente = document.getElementById('btnAdicionarClienteRoteiro');
         if (btnAddCliente) {
             btnAddCliente.onclick = () => this.abrirModalAdicionarCliente();
@@ -2572,6 +2587,9 @@ class App {
             }
         }
 
+        // Verificar se deve mostrar botão de replicar roteiro
+        await this.verificarBotaoReplicarRoteiro();
+
         console.log('[ROTEIRO] Cidades renderizadas com sucesso! Total:', cidades.length);
         if (mensagem) mensagem.textContent = '';
         await this.carregarClientesRoteiro();
@@ -2615,6 +2633,199 @@ class App {
         } catch (error) {
             this.showNotification(error.message, 'error');
             throw error;
+        }
+    }
+
+    // ==================== REPLICAÇÃO DE ROTEIRO ====================
+
+    async verificarBotaoReplicarRoteiro() {
+        const btnReplicar = document.getElementById('btnReplicarRoteiro');
+        if (!btnReplicar) return;
+
+        const diaAtual = this.estadoRoteiro.diaSelecionado;
+        const repId = this.contextoRoteiro?.repo_cod;
+
+        if (!diaAtual || !repId) {
+            btnReplicar.style.display = 'none';
+            return;
+        }
+
+        // Verificar se existem roteiros em outros dias
+        const diasComRoteiro = [];
+        for (const dia of this.diasRoteiroDisponiveis) {
+            if (dia === diaAtual) continue;
+
+            const roteiroDia = await db.getRoteiroCidades(repId, dia);
+            if (roteiroDia && roteiroDia.length > 0) {
+                diasComRoteiro.push(dia);
+            }
+        }
+
+        // Mostrar botão apenas se houver roteiros em outros dias
+        btnReplicar.style.display = diasComRoteiro.length > 0 ? 'inline-block' : 'none';
+    }
+
+    async abrirModalReplicarRoteiro() {
+        const diaAtual = this.estadoRoteiro.diaSelecionado;
+        const repId = this.contextoRoteiro?.repo_cod;
+
+        if (!diaAtual || !repId) {
+            this.showNotification('Selecione um dia para replicar o roteiro', 'warning');
+            return;
+        }
+
+        // Verificar se o dia atual já tem roteiro
+        const roteiroAtual = await db.getRoteiroCidades(repId, diaAtual);
+        if (roteiroAtual && roteiroAtual.length > 0) {
+            if (!confirm('Este dia já possui roteiro cadastrado. Deseja substituí-lo?')) {
+                return;
+            }
+        }
+
+        // Carregar dias disponíveis para replicar
+        const selectDia = document.getElementById('diaOrigemReplicacao');
+        if (!selectDia) return;
+
+        const nomesDias = {
+            seg: 'Segunda-feira',
+            ter: 'Terça-feira',
+            qua: 'Quarta-feira',
+            qui: 'Quinta-feira',
+            sex: 'Sexta-feira',
+            sab: 'Sábado',
+            dom: 'Domingo'
+        };
+
+        selectDia.innerHTML = '<option value="">Selecione um dia</option>';
+
+        for (const dia of this.diasRoteiroDisponiveis) {
+            if (dia === diaAtual) continue;
+
+            const roteiroDia = await db.getRoteiroCidades(repId, dia);
+            if (roteiroDia && roteiroDia.length > 0) {
+                const option = document.createElement('option');
+                option.value = dia;
+                option.textContent = `${nomesDias[dia]} (${roteiroDia.length} cidade${roteiroDia.length > 1 ? 's' : ''})`;
+                option.dataset.qtdCidades = roteiroDia.length;
+                selectDia.appendChild(option);
+            }
+        }
+
+        // Limpar preview
+        const previewDiv = document.getElementById('previewReplicacao');
+        if (previewDiv) {
+            previewDiv.style.display = 'none';
+        }
+
+        // Abrir modal
+        const modal = document.getElementById('modalReplicarRoteiro');
+        if (modal) {
+            modal.classList.add('active');
+        }
+    }
+
+    fecharModalReplicarRoteiro() {
+        const modal = document.getElementById('modalReplicarRoteiro');
+        if (modal) {
+            modal.classList.remove('active');
+        }
+    }
+
+    async atualizarPreviewReplicacao() {
+        const selectDia = document.getElementById('diaOrigemReplicacao');
+        const previewDiv = document.getElementById('previewReplicacao');
+        const infoP = document.getElementById('infoReplicacao');
+
+        if (!selectDia || !previewDiv || !infoP) return;
+
+        const diaOrigem = selectDia.value;
+        if (!diaOrigem) {
+            previewDiv.style.display = 'none';
+            return;
+        }
+
+        const repId = this.contextoRoteiro?.repo_cod;
+        const roteiroDia = await db.getRoteiroCidades(repId, diaOrigem);
+
+        let totalClientes = 0;
+        for (const cidade of roteiroDia) {
+            const clientes = await db.getRoteiroClientes(cidade.rot_cid_id);
+            totalClientes += clientes.length;
+        }
+
+        const nomesDias = {
+            seg: 'Segunda-feira',
+            ter: 'Terça-feira',
+            qua: 'Quarta-feira',
+            qui: 'Quinta-feira',
+            sex: 'Sexta-feira',
+            sab: 'Sábado',
+            dom: 'Domingo'
+        };
+
+        const diaDestino = this.estadoRoteiro.diaSelecionado;
+        infoP.textContent = `Será copiado o roteiro de ${nomesDias[diaOrigem]} para ${nomesDias[diaDestino]}: ${roteiroDia.length} cidade${roteiroDia.length > 1 ? 's' : ''} e ${totalClientes} cliente${totalClientes > 1 ? 's' : ''}.`;
+
+        previewDiv.style.display = 'block';
+    }
+
+    async confirmarReplicacaoRoteiro() {
+        const selectDia = document.getElementById('diaOrigemReplicacao');
+        if (!selectDia || !selectDia.value) {
+            this.showNotification('Selecione um dia de origem para replicar', 'warning');
+            return;
+        }
+
+        const diaOrigem = selectDia.value;
+        const diaDestino = this.estadoRoteiro.diaSelecionado;
+        const repId = this.contextoRoteiro?.repo_cod;
+
+        try {
+            // Primeiro, remover o roteiro do dia de destino se existir
+            const roteiroDestino = await db.getRoteiroCidades(repId, diaDestino);
+            for (const cidade of roteiroDestino) {
+                await db.removerCidadeRoteiro(cidade.rot_cid_id, this.usuarioLogado?.username || 'desconhecido');
+            }
+
+            // Copiar roteiro do dia de origem
+            const roteiroOrigem = await db.getRoteiroCidades(repId, diaOrigem);
+
+            for (const cidadeOrigem of roteiroOrigem) {
+                // Adicionar cidade ao dia de destino
+                await db.adicionarCidadeRoteiro(
+                    repId,
+                    diaDestino,
+                    cidadeOrigem.rot_cidade,
+                    this.usuarioLogado?.username || 'desconhecido',
+                    cidadeOrigem.rot_ordem_cidade
+                );
+
+                // Buscar a cidade recém-criada
+                const cidadesDestino = await db.getRoteiroCidades(repId, diaDestino);
+                const cidadeDestino = cidadesDestino.find(c => c.rot_cidade === cidadeOrigem.rot_cidade);
+
+                if (cidadeDestino) {
+                    // Copiar clientes
+                    const clientesOrigem = await db.getRoteiroClientes(cidadeOrigem.rot_cid_id);
+
+                    for (const cliente of clientesOrigem) {
+                        await db.adicionarClienteRoteiro(
+                            cidadeDestino.rot_cid_id,
+                            cliente.rot_cliente_codigo,
+                            this.usuarioLogado?.username || 'desconhecido',
+                            { ordemVisita: cliente.rot_ordem_visita }
+                        );
+                    }
+                }
+            }
+
+            this.fecharModalReplicarRoteiro();
+            await this.carregarCidadesRoteiro();
+            this.marcarRoteiroPendente();
+            this.showNotification('Roteiro replicado com sucesso!', 'success');
+        } catch (error) {
+            console.error('Erro ao replicar roteiro:', error);
+            this.showNotification('Erro ao replicar roteiro: ' + error.message, 'error');
         }
     }
 
