@@ -4010,69 +4010,57 @@ export const pages = {
                                     </div>
                                 </section>
 
-                                <!-- Clientes/Grupos/Cidades Vinculados -->
+                                <!-- Cidades/Clientes Vinculados -->
                                 <section class="form-card" style="grid-column: 1 / -1;">
                                     <div class="form-card-header">
                                         <div>
                                             <p class="form-card-eyebrow">Vincular (opcional)</p>
-                                            <h4 class="form-card-title-inline">Filtrar por Grupo, Cliente ou Cidade</h4>
+                                            <h4 class="form-card-title-inline">Filtrar por Cidade ou Cliente</h4>
                                         </div>
                                     </div>
                                     <div class="form-card-body">
                                         <p class="text-muted" style="margin-bottom: 12px; font-size: 0.85rem;">
-                                            Busque e selecione os itens. Repositores serão filtrados automaticamente.
+                                            Selecione cidades ou clientes do roteiro. Repositores serão filtrados automaticamente.
                                         </p>
-                                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
-                                            <!-- Grupos -->
-                                            <div class="form-group">
-                                                <label style="font-weight: 500; margin-bottom: 6px; display: block;">Grupo de Clientes</label>
-                                                <div class="dropdown-selecao">
-                                                    <div style="display: flex; gap: 6px; margin-bottom: 8px;">
-                                                        <input type="text" id="pes_grupo_busca" class="form-control" placeholder="Buscar grupo..." style="flex: 1;">
-                                                        <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.buscarGruposPesquisa()">Buscar</button>
-                                                    </div>
-                                                    <div id="pes_grupo_dropdown" class="dropdown-lista-container">
-                                                        <div class="empty-state-mini">Digite para buscar grupos</div>
-                                                    </div>
-                                                    <div class="selecao-footer">
-                                                        <span id="pes_grupo_count" class="selecao-count">0 selecionados</span>
-                                                        <button type="button" class="btn-link-small" onclick="window.app.limparGruposPesquisa()">Limpar</button>
-                                                    </div>
-                                                </div>
-                                                <div id="pesquisaGruposLista" class="tags-selecionados" style="margin-top: 8px;"></div>
-                                            </div>
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                                             <!-- Cidades -->
                                             <div class="form-group">
-                                                <label style="font-weight: 500; margin-bottom: 6px; display: block;">Cidade</label>
-                                                <div class="dropdown-selecao">
-                                                    <div style="display: flex; gap: 6px; margin-bottom: 8px;">
-                                                        <input type="text" id="pes_cidade_busca" class="form-control" placeholder="Buscar cidade..." style="flex: 1;">
-                                                        <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.buscarCidadesPesquisa()">Buscar</button>
-                                                    </div>
-                                                    <div id="pes_cidade_dropdown" class="dropdown-lista-container">
-                                                        <div class="empty-state-mini">Digite para buscar cidades</div>
-                                                    </div>
-                                                    <div class="selecao-footer">
-                                                        <span id="pes_cidade_count" class="selecao-count">0 selecionadas</span>
-                                                        <button type="button" class="btn-link-small" onclick="window.app.limparCidadesPesquisa()">Limpar</button>
+                                                <label style="font-weight: 500; margin-bottom: 6px; display: block;">Cidade (do roteiro)</label>
+                                                <div class="dropdown-floating-wrapper">
+                                                    <input type="text" id="pes_cidade_busca" class="form-control dropdown-trigger"
+                                                        placeholder="Digite para buscar cidade..."
+                                                        autocomplete="off"
+                                                        onfocus="window.app.abrirDropdownCidades()"
+                                                        oninput="window.app.filtrarDropdownCidades(this.value)">
+                                                    <div id="pes_cidade_dropdown" class="dropdown-floating-list" style="display: none;">
+                                                        <div class="dropdown-floating-header">
+                                                            <span id="pes_cidade_count">0 selecionadas</span>
+                                                            <button type="button" class="btn-link-small" onclick="window.app.limparCidadesPesquisa()">Limpar</button>
+                                                        </div>
+                                                        <div id="pes_cidade_items" class="dropdown-floating-items">
+                                                            <div class="empty-state-mini">Carregando cidades...</div>
+                                                        </div>
                                                     </div>
                                                 </div>
                                                 <div id="pesquisaCidadesLista" class="tags-selecionados" style="margin-top: 8px;"></div>
                                             </div>
                                             <!-- Clientes -->
                                             <div class="form-group">
-                                                <label style="font-weight: 500; margin-bottom: 6px; display: block;">Cliente Individual</label>
-                                                <div class="dropdown-selecao">
-                                                    <div style="display: flex; gap: 6px; margin-bottom: 8px;">
-                                                        <input type="text" id="pes_cliente_busca" class="form-control" placeholder="Buscar cliente..." style="flex: 1;">
-                                                        <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.buscarClientePesquisa()">Buscar</button>
-                                                    </div>
-                                                    <div id="pes_cliente_dropdown" class="dropdown-lista-container">
-                                                        <div class="empty-state-mini">Digite para buscar clientes</div>
-                                                    </div>
-                                                    <div class="selecao-footer">
-                                                        <span id="pes_cliente_count" class="selecao-count">0 selecionados</span>
-                                                        <button type="button" class="btn-link-small" onclick="window.app.limparClientesPesquisa()">Limpar</button>
+                                                <label style="font-weight: 500; margin-bottom: 6px; display: block;">Cliente (do roteiro)</label>
+                                                <div class="dropdown-floating-wrapper">
+                                                    <input type="text" id="pes_cliente_busca" class="form-control dropdown-trigger"
+                                                        placeholder="Digite para buscar cliente..."
+                                                        autocomplete="off"
+                                                        onfocus="window.app.abrirDropdownClientes()"
+                                                        oninput="window.app.filtrarDropdownClientes(this.value)">
+                                                    <div id="pes_cliente_dropdown" class="dropdown-floating-list" style="display: none;">
+                                                        <div class="dropdown-floating-header">
+                                                            <span id="pes_cliente_count">0 selecionados</span>
+                                                            <button type="button" class="btn-link-small" onclick="window.app.limparClientesPesquisa()">Limpar</button>
+                                                        </div>
+                                                        <div id="pes_cliente_items" class="dropdown-floating-items">
+                                                            <div class="empty-state-mini">Carregando clientes...</div>
+                                                        </div>
                                                     </div>
                                                 </div>
                                                 <div id="pesquisaClientesLista" class="tags-selecionados" style="margin-top: 8px;"></div>
@@ -4353,20 +4341,49 @@ export const pages = {
                     line-height: 1;
                 }
 
-                .dropdown-selecao {
-                    border: 1px solid #e5e7eb;
-                    border-radius: 8px;
+                .dropdown-floating-wrapper {
+                    position: relative;
+                }
+
+                .dropdown-trigger {
+                    width: 100%;
+                }
+
+                .dropdown-floating-list {
+                    position: absolute;
+                    top: 100%;
+                    left: 0;
+                    right: 0;
+                    z-index: 1000;
                     background: #fff;
-                    overflow: hidden;
+                    border: 1px solid #d1d5db;
+                    border-radius: 8px;
+                    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+                    margin-top: 4px;
+                    max-height: 300px;
+                    display: flex;
+                    flex-direction: column;
                 }
 
-                .dropdown-lista-container {
-                    max-height: 200px;
+                .dropdown-floating-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 10px 14px;
+                    background: #f9fafb;
+                    border-bottom: 1px solid #e5e7eb;
+                    font-size: 0.85rem;
+                    color: #6b7280;
+                    flex-shrink: 0;
+                }
+
+                .dropdown-floating-items {
                     overflow-y: auto;
-                    border-top: 1px solid #e5e7eb;
+                    max-height: 250px;
+                    flex: 1;
                 }
 
-                .dropdown-lista-item {
+                .dropdown-floating-item {
                     padding: 10px 14px;
                     cursor: pointer;
                     border-bottom: 1px solid #f3f4f6;
@@ -4377,19 +4394,19 @@ export const pages = {
                     gap: 10px;
                 }
 
-                .dropdown-lista-item:last-child {
+                .dropdown-floating-item:last-child {
                     border-bottom: none;
                 }
 
-                .dropdown-lista-item:hover {
-                    background: #f9fafb;
+                .dropdown-floating-item:hover {
+                    background: #f0f9ff;
                 }
 
-                .dropdown-lista-item.selecionado {
+                .dropdown-floating-item.selecionado {
                     background: #ecfdf5;
                 }
 
-                .dropdown-lista-item .checkbox-icon {
+                .dropdown-floating-item .checkbox-icon {
                     width: 18px;
                     height: 18px;
                     border: 2px solid #d1d5db;
@@ -4402,31 +4419,17 @@ export const pages = {
                     transition: all 0.15s;
                 }
 
-                .dropdown-lista-item.selecionado .checkbox-icon {
+                .dropdown-floating-item.selecionado .checkbox-icon {
                     background: #059669;
                     border-color: #059669;
                     color: white;
                 }
 
-                .dropdown-lista-item .item-texto {
+                .dropdown-floating-item .item-texto {
                     flex: 1;
                     white-space: nowrap;
                     overflow: hidden;
                     text-overflow: ellipsis;
-                }
-
-                .selecao-footer {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    padding: 8px 12px;
-                    background: #f9fafb;
-                    border-top: 1px solid #e5e7eb;
-                    font-size: 0.8rem;
-                }
-
-                .selecao-count {
-                    color: #6b7280;
                 }
 
                 .btn-link-small {
