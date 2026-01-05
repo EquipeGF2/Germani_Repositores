@@ -8878,12 +8878,15 @@ class App {
         };
 
         // Validar distância apenas para checkin
+        console.log('Validação de distância - tipoPadrao:', tipoPadrao, 'enderecoCadastro:', enderecoCadastro);
         if (tipoPadrao === 'checkin' && enderecoCadastro) {
+            console.log('Iniciando validação de distância para:', enderecoCadastro);
             const validacao = await this.validarDistanciaCheckin(
                 posicao.lat,
                 posicao.lng,
                 enderecoCadastro
             );
+            console.log('Resultado da validação:', validacao);
 
             if (!validacao.valido) {
                 this.showNotification(validacao.aviso, 'error');
