@@ -619,23 +619,6 @@ export const pages = {
 
         const repositor = contexto;
 
-        if (repositor.repo_vinculo === 'agencia') {
-            return `
-                <div class="card">
-                    <div class="card-header">
-                        <h3>Roteirização não disponível para agências</h3>
-                    </div>
-                    <div class="card-body">
-                        <div class="empty-state">
-                            <div class="empty-state-icon">🏢</div>
-                            <p>${repositor.repo_nome} está cadastrado como agência.</p>
-                            <small>O modelo atual de roteiro por jornada se aplica apenas a repositores individuais.</small>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-
         const representanteLabel = repositor.rep_representante_codigo
             ? `${repositor.rep_representante_codigo}${repositor.rep_representante_nome ? ' - ' + repositor.rep_representante_nome : ''}`
             : (repositor.rep_representante_nome || '-');
