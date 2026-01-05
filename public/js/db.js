@@ -1352,6 +1352,72 @@ class TursoDatabase {
         }
     }
 
+    // Buscar cidades do roteiro (banco principal)
+    async getCidadesDoRoteiro() {
+        try {
+            const resultado = await this.mainClient.execute({
+                sql: `
+                    SELECT DISTINCT rot_cidade as cidade
+                    FROM rot_roteiro_cidade
+                    WHERE rot_cidade IS NOT NULL AND rot_cidade != ''
+                    ORDER BY rot_cidade
+                `
+            });
+            return resultado.rows;
+        } catch (error) {
+            console.error('Erro ao buscar cidades do roteiro:', error);
+            return [];
+        }
+    }
+
+    // Buscar clientes do roteiro (banco principal + comercial para nomes)
+    async getClientesDoRoteiro() {
+        try {
+            // Buscar códigos de clientes do roteiro
+            const resultado = await this.mainClient.execute({
+                sql: `
+                    SELECT DISTINCT cli.rot_cliente_codigo as cliente, cid.rot_cidade as cidade
+                    FROM rot_roteiro_cliente cli
+                    JOIN rot_roteiro_cidade cid ON cid.rot_cid_id = cli.rot_cid_id
+                    ORDER BY cli.rot_cliente_codigo
+                `
+            });
+
+            const clientes = resultado.rows;
+
+            // Tentar buscar nomes do banco comercial
+            await this.connectComercial();
+            if (this.comercialClient && clientes.length > 0) {
+                const codigos = clientes.map(c => c.cliente);
+                const placeholders = codigos.map(() => '?').join(',');
+
+                try {
+                    const nomes = await this.comercialClient.execute({
+                        sql: `SELECT cliente, nome, fantasia FROM tab_cliente WHERE cliente IN (${placeholders})`,
+                        args: codigos
+                    });
+
+                    const nomesMap = {};
+                    nomes.rows.forEach(n => {
+                        nomesMap[n.cliente] = n.nome || n.fantasia || '';
+                    });
+
+                    return clientes.map(c => ({
+                        ...c,
+                        nome: nomesMap[c.cliente] || ''
+                    }));
+                } catch (e) {
+                    console.warn('Erro ao buscar nomes dos clientes:', e);
+                }
+            }
+
+            return clientes;
+        } catch (error) {
+            console.error('Erro ao buscar clientes do roteiro:', error);
+            return [];
+        }
+    }
+
     async buscarClientesPorGrupo(grupoDesc) {
         await this.connectComercial();
         if (!this.comercialClient || !grupoDesc) return [];
@@ -3300,6 +3366,72 @@ class TursoDatabase {
             return result.rows;
         } catch (error) {
             console.error('Erro ao buscar repositores por clientes/grupos:', error);
+            return [];
+        }
+    }
+
+    async getRepositoresPorClientesOuCidades(clientesCodigos = [], cidadesNomes = []) {
+        try {
+            // Se não há filtros, retornar todos os repositores ativos
+            if (clientesCodigos.length === 0 && cidadesNomes.length === 0) {
+                return await this.getRepositoresDetalhados({ status: 'ativos' });
+            }
+
+            const hoje = new Date().toISOString().split('T')[0];
+            let repositoresCodigos = new Set();
+
+            // Buscar repositores por clientes selecionados
+            if (clientesCodigos.length > 0) {
+                const placeholdersClientes = clientesCodigos.map(() => '?').join(',');
+                const resultClientes = await this.mainClient.execute({
+                    sql: `
+                        SELECT DISTINCT rc.rot_repositor_id
+                        FROM rot_roteiro_cidade rc
+                        JOIN rot_roteiro_cliente cli ON cli.rot_cid_id = rc.rot_cid_id
+                        WHERE cli.rot_cliente_codigo IN (${placeholdersClientes})
+                    `,
+                    args: clientesCodigos
+                });
+                resultClientes.rows.forEach(r => repositoresCodigos.add(r.rot_repositor_id));
+            }
+
+            // Buscar repositores por cidades selecionadas
+            if (cidadesNomes.length > 0) {
+                const placeholdersCidades = cidadesNomes.map(() => '?').join(',');
+                const resultCidades = await this.mainClient.execute({
+                    sql: `
+                        SELECT DISTINCT rot_repositor_id
+                        FROM rot_roteiro_cidade
+                        WHERE rot_cidade IN (${placeholdersCidades})
+                    `,
+                    args: cidadesNomes
+                });
+                resultCidades.rows.forEach(r => repositoresCodigos.add(r.rot_repositor_id));
+            }
+
+            if (repositoresCodigos.size === 0) {
+                return [];
+            }
+
+            // Buscar dados dos repositores encontrados
+            const codigosArray = Array.from(repositoresCodigos);
+            const placeholders = codigosArray.map(() => '?').join(',');
+            const result = await this.mainClient.execute({
+                sql: `
+                    SELECT repo_cod, repo_nome
+                    FROM cad_repositor
+                    WHERE repo_cod IN (${placeholders})
+                      AND repo_data_inicio IS NOT NULL
+                      AND DATE(repo_data_inicio) <= DATE(?)
+                      AND (repo_data_fim IS NULL OR DATE(repo_data_fim) >= DATE(?))
+                    ORDER BY repo_nome
+                `,
+                args: [...codigosArray, hoje, hoje]
+            });
+
+            return result.rows;
+        } catch (error) {
+            console.error('Erro ao buscar repositores por clientes/cidades:', error);
             return [];
         }
     }
