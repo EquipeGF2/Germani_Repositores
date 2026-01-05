@@ -1117,18 +1117,19 @@ class App {
     async inicializarConfiguracoesSistema() {
         const btnSalvar = document.getElementById('btnSalvarConfigSistema');
         const inputDistancia = document.getElementById('configDistanciaMaxima');
+        const btnCarregarSessoes = document.getElementById('btnCarregarSessoesAbertas');
+        const selectRepositor = document.getElementById('configFiltroRepositor');
 
+        // Salvar configurações de distância
         if (btnSalvar) {
             btnSalvar.addEventListener('click', () => {
                 const distancia = parseInt(inputDistancia?.value, 10) || 30;
 
-                // Validar limites
                 if (distancia < 1 || distancia > 500) {
                     this.showNotification('A distância deve estar entre 1 e 500 km.', 'error');
                     return;
                 }
 
-                // Salvar no localStorage
                 const config = {
                     distanciaMaximaCheckin: distancia
                 };
@@ -1136,6 +1137,128 @@ class App {
 
                 this.showNotification('Configurações salvas com sucesso!', 'success');
             });
+        }
+
+        // Carregar lista de repositores
+        if (selectRepositor) {
+            try {
+                const repositores = await db.getRepositores();
+                repositores.forEach(rep => {
+                    const opt = document.createElement('option');
+                    opt.value = rep.rep_id;
+                    opt.textContent = `${rep.rep_id} - ${rep.rep_nome}`;
+                    selectRepositor.appendChild(opt);
+                });
+            } catch (error) {
+                console.error('Erro ao carregar repositores:', error);
+            }
+        }
+
+        // Carregar sessões abertas
+        if (btnCarregarSessoes) {
+            btnCarregarSessoes.addEventListener('click', () => this.carregarSessoesAbertasConfig());
+        }
+    }
+
+    async carregarSessoesAbertasConfig() {
+        const container = document.getElementById('listaSessoesAbertas');
+        const selectRepositor = document.getElementById('configFiltroRepositor');
+        const repIdFiltro = selectRepositor?.value || '';
+
+        if (!container) return;
+
+        container.innerHTML = '<p class="text-muted">Carregando sessões...</p>';
+
+        try {
+            const backendUrl = this.registroRotaState?.backendUrl || 'https://repositor-backend.onrender.com';
+            const params = new URLSearchParams();
+            if (repIdFiltro) params.append('rep_id', repIdFiltro);
+
+            const data = await fetchJson(`${backendUrl}/api/registro-rota/sessoes-abertas?${params.toString()}`);
+            const sessoes = data?.sessoes || [];
+
+            if (sessoes.length === 0) {
+                container.innerHTML = '<p class="text-muted" style="color: #16a34a;">✓ Nenhuma sessão aberta encontrada.</p>';
+                return;
+            }
+
+            // Agrupar por repositor para detectar múltiplos check-ins
+            const porRepositor = new Map();
+            sessoes.forEach(s => {
+                const repId = s.rep_id;
+                if (!porRepositor.has(repId)) porRepositor.set(repId, []);
+                porRepositor.get(repId).push(s);
+            });
+
+            let html = `
+                <div style="margin-bottom: 12px; padding: 12px; background: #fef2f2; border-radius: 8px; border: 1px solid #fecaca;">
+                    <strong style="color: #b91c1c;">Total: ${sessoes.length} sessões abertas</strong>
+                </div>
+                <div style="overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                    <thead>
+                        <tr style="background: var(--bg-secondary); border-bottom: 2px solid var(--border-color);">
+                            <th style="padding: 8px; text-align: left;">Repositor</th>
+                            <th style="padding: 8px; text-align: left;">Cliente</th>
+                            <th style="padding: 8px; text-align: left;">Data Planejada</th>
+                            <th style="padding: 8px; text-align: left;">Check-in</th>
+                            <th style="padding: 8px; text-align: center;">Alerta</th>
+                            <th style="padding: 8px; text-align: center;">Ação</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            sessoes.forEach(s => {
+                const repSessoes = porRepositor.get(s.rep_id) || [];
+                const multiplos = repSessoes.length > 1;
+                const checkinData = s.checkin_at ? new Date(s.checkin_at).toLocaleString('pt-BR') : '-';
+                const dataPlanj = s.data_planejada || '-';
+
+                html += `
+                    <tr style="border-bottom: 1px solid var(--border-color); ${multiplos ? 'background: #fef2f2;' : ''}">
+                        <td style="padding: 8px;">${s.rep_id}</td>
+                        <td style="padding: 8px;">${s.cliente_id} - ${s.cliente_nome || ''}</td>
+                        <td style="padding: 8px;">${dataPlanj}</td>
+                        <td style="padding: 8px;">${checkinData}</td>
+                        <td style="padding: 8px; text-align: center;">
+                            ${multiplos ? '<span style="color: #b91c1c; font-weight: bold;">⚠️ MÚLTIPLO</span>' : '-'}
+                        </td>
+                        <td style="padding: 8px; text-align: center;">
+                            <button onclick="app.excluirSessaoAberta('${s.sessao_id}')"
+                                    class="btn btn-danger" style="font-size: 12px; padding: 4px 8px;">
+                                🗑️ Excluir
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+
+        } catch (error) {
+            console.error('Erro ao carregar sessões abertas:', error);
+            container.innerHTML = `<p style="color: #b91c1c;">Erro ao carregar: ${error.message}</p>`;
+        }
+    }
+
+    async excluirSessaoAberta(sessaoId) {
+        if (!confirm(`Tem certeza que deseja excluir a sessão ${sessaoId}?\n\nIsso removerá o check-in e todas as atividades associadas.`)) {
+            return;
+        }
+
+        try {
+            const backendUrl = this.registroRotaState?.backendUrl || 'https://repositor-backend.onrender.com';
+            await fetchJson(`${backendUrl}/api/registro-rota/sessoes/${sessaoId}`, {
+                method: 'DELETE'
+            });
+
+            this.showNotification('Sessão excluída com sucesso!', 'success');
+            await this.carregarSessoesAbertasConfig();
+        } catch (error) {
+            console.error('Erro ao excluir sessão:', error);
+            this.showNotification(`Erro ao excluir: ${error.message}`, 'error');
         }
     }
 
@@ -8859,9 +8982,25 @@ class App {
             return;
         }
 
-        const sessaoAberta = await this.buscarSessaoAberta(repId, dataVisita);
+        // CRÍTICO: Para check-in, buscar QUALQUER sessão aberta do repositor (sem filtro de data)
+        // para garantir que não há múltiplos check-ins
+        let sessaoAberta = null;
+        if (tipoPadrao === 'checkin') {
+            // Buscar atendimento aberto sem filtro de data
+            const atendimentoAberto = await this.buscarAtendimentoAberto(repId);
+            if (atendimentoAberto?.existe && atendimentoAberto?.rv_id) {
+                sessaoAberta = {
+                    sessao_id: atendimentoAberto.rv_id,
+                    cliente_id: atendimentoAberto.cliente_id,
+                    cliente_nome: atendimentoAberto.cliente_nome
+                };
+            }
+        } else {
+            sessaoAberta = await this.buscarSessaoAberta(repId, dataVisita);
+        }
+
         if (sessaoAberta && tipoPadrao === 'checkin' && normalizeClienteId(sessaoAberta.cliente_id) !== clienteIdNorm) {
-            this.showNotification(`Finalize o checkout do cliente ${sessaoAberta.cliente_id} antes de novo check-in.`, 'warning');
+            this.showNotification(`⚠️ BLOQUEADO: Finalize o checkout do cliente ${sessaoAberta.cliente_id} (${sessaoAberta.cliente_nome || ''}) antes de novo check-in.`, 'error');
             return;
         }
         if (['checkout', 'campanha'].includes(tipoPadrao) && sessaoAberta && normalizeClienteId(sessaoAberta.cliente_id) !== clienteIdNorm) {
@@ -9759,6 +9898,12 @@ class App {
             const rvResposta = resposta?.rv_id || resposta?.sessao_id || rvSessaoId;
             const statusResposta = resposta?.__status || 200;
             const uploadPendente = statusResposta === 202 || resposta?.code === 'UPLOAD_PENDENTE';
+
+            // CRÍTICO: Para CHECK-IN, NÃO aceitar upload pendente - foto é obrigatória
+            if (tipoRegistro === 'checkin' && uploadPendente) {
+                this.showNotification('Falha no envio da foto. O check-in NÃO foi registrado. Tente novamente.', 'error');
+                return;
+            }
 
             if (tipoRegistro === 'checkin') {
                 if (!rvResposta) {
