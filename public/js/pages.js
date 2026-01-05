@@ -2635,10 +2635,37 @@ export const pages = {
                                 O check-in será bloqueado se a distância for maior que este valor.
                             </small>
                         </div>
+
+                        <div class="modal-footer" style="justify-content: flex-start; margin-top: 16px; padding: 0;">
+                            <button type="button" class="btn btn-primary" id="btnSalvarConfigSistema">Salvar Configurações</button>
+                        </div>
                     </div>
 
-                    <div class="modal-footer" style="justify-content: flex-end; margin-top: 24px;">
-                        <button type="button" class="btn btn-primary" id="btnSalvarConfigSistema">Salvar Configurações</button>
+                    <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border-color);">
+
+                    <div class="config-section">
+                        <h4 style="margin-bottom: 8px; color: var(--text-primary);">Gerenciamento de Sessões</h4>
+                        <p class="text-muted" style="margin-bottom: 16px; font-size: 13px;">
+                            Visualize e exclua sessões de check-in abertas (sem checkout).
+                            <strong style="color: #b91c1c;">ATENÇÃO: Cada repositor deve ter no máximo 1 check-in aberto.</strong>
+                        </p>
+
+                        <div class="form-group" style="max-width: 300px; margin-bottom: 16px;">
+                            <label for="configFiltroRepositor">Filtrar por Repositor</label>
+                            <select id="configFiltroRepositor" style="width: 100%;">
+                                <option value="">Todos os repositores</option>
+                            </select>
+                        </div>
+
+                        <div style="margin-bottom: 12px;">
+                            <button type="button" class="btn btn-secondary" id="btnCarregarSessoesAbertas">
+                                🔄 Carregar Sessões Abertas
+                            </button>
+                        </div>
+
+                        <div id="listaSessoesAbertas" style="margin-top: 16px;">
+                            <p class="text-muted">Clique em "Carregar Sessões Abertas" para visualizar.</p>
+                        </div>
                     </div>
                 </div>
             </div>
