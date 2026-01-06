@@ -454,6 +454,15 @@ class TursoService {
     return this.client;
   }
 
+  // Aliases para compatibilidade com endpoints de coordenadas
+  getMainClient() {
+    return this.getClient();
+  }
+
+  getComercialClient() {
+    return this.getClient();
+  }
+
   async execute(sql, args = []) {
     if (typeof sql !== 'string') {
       const error = new TypeError(`SQL_INVALID_TYPE: expected string, got ${typeof sql}`);
@@ -1118,6 +1127,22 @@ class TursoService {
     diaPrevisto,
     roteiroId
   }) {
+    const clienteIdNorm = normalizeClienteId(clienteId);
+
+    // Verificação extra: verificar se já existe sessão aberta para este repositor/cliente
+    const sessaoAbertaExistente = await this.obterSessaoEmAndamento(repId, clienteIdNorm);
+    if (sessaoAbertaExistente) {
+      console.warn('⚠️  SESSAO_DUPLICADA_BLOQUEADA:', JSON.stringify({
+        code: 'DUPLICATE_SESSION_BLOCKED',
+        rep_id: repId,
+        cliente_id: clienteIdNorm,
+        sessao_existente: sessaoAbertaExistente.sessao_id,
+        nova_sessao_id: sessaoId
+      }));
+      // Retorna a sessão existente ao invés de criar duplicada
+      return sessaoAbertaExistente;
+    }
+
     const sql = `
       INSERT INTO cc_visita_sessao (
         sessao_id, rep_id, cliente_id, cliente_nome, endereco_cliente, data_planejada, checkin_at, endereco_checkin, status,
@@ -1125,18 +1150,34 @@ class TursoService {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ABERTA', ?, ?)
     `;
 
-    await this.execute(sql, [
-      sessaoId,
-      repId,
-      normalizeClienteId(clienteId),
-      clienteNome,
-      enderecoCliente,
-      dataPlanejada,
-      checkinAt,
-      enderecoCheckin || null,
-      diaPrevisto || null,
-      roteiroId || null
-    ]);
+    try {
+      await this.execute(sql, [
+        sessaoId,
+        repId,
+        clienteIdNorm,
+        clienteNome,
+        enderecoCliente,
+        dataPlanejada,
+        checkinAt,
+        enderecoCheckin || null,
+        diaPrevisto || null,
+        roteiroId || null
+      ]);
+    } catch (error) {
+      // Se o erro for de unicidade, retorna a sessão existente
+      if (error.message && error.message.includes('UNIQUE constraint failed')) {
+        console.warn('⚠️  SESSAO_DUPLICADA_CONSTRAINT:', JSON.stringify({
+          code: 'DUPLICATE_SESSION_CONSTRAINT',
+          rep_id: repId,
+          cliente_id: clienteIdNorm,
+          sessao_id: sessaoId,
+          error: error.message
+        }));
+        const sessaoExistente = await this.obterSessaoEmAndamento(repId, clienteIdNorm);
+        if (sessaoExistente) return sessaoExistente;
+      }
+      throw error;
+    }
 
     return this.obterSessaoPorId(sessaoId);
   }
@@ -1478,6 +1519,20 @@ class TursoService {
       } catch (error) {
         console.warn('⚠️  Erro ao criar índice de sessão de visita:', error.message || error);
       }
+    }
+
+    // Índice único parcial para evitar múltiplas sessões abertas para o mesmo cliente
+    // Permite apenas uma sessão "ABERTA" ou com checkout_at NULL por repositor
+    try {
+      await client.execute({
+        sql: `CREATE UNIQUE INDEX IF NOT EXISTS idx_sessao_aberta_unica
+              ON cc_visita_sessao(rep_id, cliente_id)
+              WHERE status = 'ABERTA' AND checkout_at IS NULL AND cancelado_em IS NULL`,
+        args: []
+      });
+    } catch (error) {
+      // SQLite pode não suportar índices parciais em todas as versões, então ignoramos se falhar
+      console.warn('⚠️  Índice parcial de sessão aberta não suportado:', error.message || error);
     }
   }
 

@@ -5095,3 +5095,152 @@ body.modal-open {
         gap: 12px;
     }
 }
+
+/* ==================== DROPDOWN FLUTUANTE (Multi-seleção) ==================== */
+.dropdown-floating-wrapper {
+    position: relative;
+}
+
+.dropdown-floating-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    max-height: 350px;
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.dropdown-floating-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+    font-size: 0.85rem;
+    color: #6b7280;
+}
+
+.dropdown-floating-items {
+    overflow-y: auto;
+    max-height: 280px;
+    padding: 4px 0;
+}
+
+.dropdown-floating-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: background 0.15s;
+    border-bottom: 1px solid #f3f4f6;
+}
+
+.dropdown-floating-item:last-child {
+    border-bottom: none;
+}
+
+.dropdown-floating-item:hover {
+    background: #f3f4f6;
+}
+
+.dropdown-floating-item.selecionado {
+    background: #eff6ff;
+    font-weight: 500;
+}
+
+.dropdown-floating-item .checkbox-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border: 2px solid #d1d5db;
+    border-radius: 4px;
+    font-size: 12px;
+    color: white;
+    background: white;
+    flex-shrink: 0;
+}
+
+.dropdown-floating-item.selecionado .checkbox-icon {
+    background: #2563eb;
+    border-color: #2563eb;
+}
+
+.dropdown-floating-item .item-texto {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.9rem;
+}
+
+.btn-link-small {
+    background: none;
+    border: none;
+    color: #2563eb;
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 0;
+}
+
+.btn-link-small:hover {
+    text-decoration: underline;
+}
+
+.empty-state-mini {
+    padding: 16px;
+    text-align: center;
+    color: #9ca3af;
+    font-size: 0.9rem;
+}
+
+/* Tags de itens selecionados */
+.tags-selecionados {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.tag-selecionado {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    color: #1e40af;
+    max-width: 200px;
+}
+
+.tag-selecionado span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tag-selecionado button {
+    background: none;
+    border: none;
+    color: #3b82f6;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.tag-selecionado button:hover {
+    color: #dc2626;
+}
