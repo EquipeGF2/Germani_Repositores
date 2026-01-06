@@ -9402,13 +9402,15 @@ class App {
 
             if (data && data.length > 0) {
                 console.log('Geocodificação OK:', data[0].display_name);
-                const coords = {
+                const result = {
                     lat: parseFloat(data[0].lat),
-                    lng: parseFloat(data[0].lon)
+                    lng: parseFloat(data[0].lon),
+                    aproximado: false,
+                    fonte: 'endereco_completo'
                 };
                 // Salvar no cache
-                this.geocodeCache[cacheKey] = { coords, timestamp: Date.now() };
-                return coords;
+                this.geocodeCache[cacheKey] = { coords: result, timestamp: Date.now() };
+                return result;
             }
 
             // Se não encontrou, tentar apenas com cidade/UF
@@ -9433,14 +9435,17 @@ class App {
                 });
 
                 if (dataCidade && dataCidade.length > 0) {
-                    console.log('Geocodificação por cidade OK:', dataCidade[0].display_name);
-                    const coords = {
+                    console.log('Geocodificação por cidade (APROXIMADO):', dataCidade[0].display_name);
+                    const result = {
                         lat: parseFloat(dataCidade[0].lat),
-                        lng: parseFloat(dataCidade[0].lon)
+                        lng: parseFloat(dataCidade[0].lon),
+                        aproximado: true,
+                        fonte: 'cidade',
+                        cidade: cidadeParte
                     };
                     // Salvar no cache
-                    this.geocodeCache[cacheKey] = { coords, timestamp: Date.now() };
-                    return coords;
+                    this.geocodeCache[cacheKey] = { coords: result, timestamp: Date.now() };
+                    return result;
                 }
             }
 
@@ -9597,13 +9602,18 @@ class App {
 
                 const distanciaKm = (distanciaMetros / 1000).toFixed(1);
                 const foraDoPer = distanciaMetros > (distanciaMaximaKm * 1000);
+                const ehAproximado = coordsCliente.aproximado === true;
 
                 // Atualizar display da distância
-                if (foraDoPer) {
+                if (ehAproximado) {
+                    // Distância aproximada (baseada só na cidade) - não bloqueia check-in
+                    elDistancia.innerHTML = `📍 ~${distanciaKm} km <span style="font-size:10px;color:#6b7280;">(aprox. via ${coordsCliente.cidade || 'cidade'})</span>`;
+                    elDistancia.style.color = '#f59e0b'; // amarelo/laranja
+                } else if (foraDoPer) {
                     elDistancia.innerHTML = `📍 <strong style="color:#b91c1c;">${distanciaKm} km</strong> (fora do perímetro de ${distanciaMaximaKm}km)`;
                     elDistancia.style.color = '#b91c1c';
 
-                    // Desabilitar botão de check-in se estiver fora do perímetro
+                    // Desabilitar botão de check-in APENAS se distância for precisa e fora do perímetro
                     this.desabilitarCheckinCliente(itemElement, cliId, distanciaKm, distanciaMaximaKm);
                 } else {
                     elDistancia.innerHTML = `📍 ${distanciaKm} km`;
