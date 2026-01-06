@@ -481,6 +481,40 @@ class TursoService {
     return columns;
   }
 
+  // Sanitiza valores para serem compatíveis com Turso/SQLite
+  _sanitizeValue(value) {
+    // undefined e null -> null
+    if (value === undefined || value === null) {
+      return null;
+    }
+    // Tipos primitivos suportados
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      return value;
+    }
+    // BigInt -> string
+    if (typeof value === 'bigint') {
+      return value.toString();
+    }
+    // Date -> ISO string
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+    // Buffer -> base64 string
+    if (Buffer.isBuffer(value)) {
+      return value.toString('base64');
+    }
+    // Arrays e objetos -> JSON string (ou null se vazio/inválido)
+    if (typeof value === 'object') {
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return null;
+      }
+    }
+    // Qualquer outro tipo não suportado -> null
+    return null;
+  }
+
   async _insertDynamic(tableName, dataObj) {
     const availableColumns = await this._getTableColumns(tableName);
     const entries = Object.entries(dataObj).filter(([key]) => availableColumns.includes(key));
@@ -490,7 +524,8 @@ class TursoService {
     }
 
     const columns = entries.map(([key]) => key);
-    const values = entries.map(([, value]) => value);
+    // Sanitizar valores para evitar "Unsupported type of value"
+    const values = entries.map(([, value]) => this._sanitizeValue(value));
     const placeholders = columns.map(() => '?').join(', ');
 
     const sql = `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`;
@@ -509,8 +544,9 @@ class TursoService {
     }
 
     const setters = entries.map(([key]) => `${key} = ?`).join(', ');
-    const values = entries.map(([, value]) => value);
-    values.push(keyValue);
+    // Sanitizar valores para evitar "Unsupported type of value"
+    const values = entries.map(([, value]) => this._sanitizeValue(value));
+    values.push(this._sanitizeValue(keyValue));
 
     const sql = `UPDATE ${tableName} SET ${setters} WHERE ${keyColumn} = ?`;
     const result = await this.execute(sql, values);
