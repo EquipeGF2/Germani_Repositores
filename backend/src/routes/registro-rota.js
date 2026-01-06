@@ -5,6 +5,7 @@ import { LibsqlError } from '@libsql/client';
 import { tursoService, DatabaseNotConfiguredError, normalizeClienteId } from '../services/turso.js';
 import { googleDriveService, OAuthNotConfiguredError, IntegrationAuthError } from '../services/googleDrive.js';
 import { emailService } from '../services/email.js';
+import { geocodificarEndereco, getApiStatus } from '../services/geocoding.js';
 
 const router = express.Router();
 const TIME_ZONE = 'America/Sao_Paulo';
@@ -2367,6 +2368,235 @@ router.get('/imagens-campanha', async (req, res) => {
     res.status(500).json({
       ok: false,
       message: 'Erro ao buscar imagens',
+      error: error.message
+    });
+  }
+});
+
+// ==================== GEOCODIFICAÇÃO DE CLIENTES ====================
+
+/**
+ * GET /coordenadas/status - Verifica status das APIs de geocodificação
+ */
+router.get('/coordenadas/status', async (req, res) => {
+  try {
+    const status = getApiStatus();
+    res.json({
+      ok: true,
+      apis: status,
+      prioridade: ['google', 'here', 'nominatim'].filter(api => status[api])
+    });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * POST /coordenadas/geocodificar - Geocodifica um endereço e salva no cache
+ * Body: { cliente_id, endereco }
+ */
+router.post('/coordenadas/geocodificar', async (req, res) => {
+  try {
+    const { cliente_id, endereco } = req.body;
+
+    if (!cliente_id || !endereco) {
+      return res.status(400).json({
+        ok: false,
+        message: 'cliente_id e endereco são obrigatórios'
+      });
+    }
+
+    const clienteIdNorm = normalizeClienteId(cliente_id);
+
+    // Verificar se já tem no cache (e se endereço não mudou)
+    const cacheado = await tursoService.buscarCoordenadasCliente(clienteIdNorm, endereco);
+    if (cacheado) {
+      console.log(`📍 Coordenadas do cliente ${clienteIdNorm} encontradas no cache`);
+      return res.json({
+        ok: true,
+        fonte: 'cache',
+        coordenadas: cacheado
+      });
+    }
+
+    // Geocodificar usando providers em cascata
+    const resultado = await geocodificarEndereco(endereco);
+
+    if (!resultado) {
+      return res.status(404).json({
+        ok: false,
+        message: 'Não foi possível geocodificar o endereço'
+      });
+    }
+
+    // Salvar no banco para cache permanente
+    await tursoService.salvarCoordenadasCliente(
+      clienteIdNorm,
+      endereco,
+      resultado.lat,
+      resultado.lng,
+      resultado.fonte,
+      resultado.precisao,
+      { cidade: resultado.cidade, bairro: resultado.bairro }
+    );
+
+    res.json({
+      ok: true,
+      fonte: resultado.fonte,
+      coordenadas: {
+        clienteId: clienteIdNorm,
+        latitude: resultado.lat,
+        longitude: resultado.lng,
+        fonte: resultado.fonte,
+        precisao: resultado.precisao,
+        cidade: resultado.cidade,
+        bairro: resultado.bairro,
+        aproximado: resultado.precisao !== 'endereco' && resultado.precisao !== 'rua'
+      }
+    });
+
+  } catch (error) {
+    console.error('Erro ao geocodificar:', error);
+    res.status(500).json({
+      ok: false,
+      message: 'Erro ao geocodificar endereço',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /coordenadas/lote - Geocodifica múltiplos clientes de uma vez
+ * Body: { clientes: [{ cliente_id, endereco }, ...] }
+ */
+router.post('/coordenadas/lote', async (req, res) => {
+  try {
+    const { clientes } = req.body;
+
+    if (!clientes || !Array.isArray(clientes) || clientes.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        message: 'clientes deve ser um array não vazio'
+      });
+    }
+
+    // Limitar a 50 clientes por requisição
+    if (clientes.length > 50) {
+      return res.status(400).json({
+        ok: false,
+        message: 'Máximo de 50 clientes por requisição'
+      });
+    }
+
+    const resultados = [];
+    const clienteIds = clientes.map(c => normalizeClienteId(c.cliente_id));
+
+    // Buscar todos do cache de uma vez
+    const cacheados = await tursoService.buscarCoordenadasMultiplos(clienteIds);
+
+    for (const cliente of clientes) {
+      const clienteIdNorm = normalizeClienteId(cliente.cliente_id);
+      const endereco = cliente.endereco;
+
+      // Verificar cache (e se endereço mudou)
+      const cacheado = cacheados.get(clienteIdNorm);
+      if (cacheado && cacheado.enderecoOriginal?.toLowerCase().trim() === endereco?.toLowerCase().trim()) {
+        resultados.push({
+          cliente_id: clienteIdNorm,
+          ok: true,
+          fonte: 'cache',
+          coordenadas: cacheado
+        });
+        continue;
+      }
+
+      // Geocodificar
+      const resultado = await geocodificarEndereco(endereco);
+
+      if (resultado) {
+        // Salvar no cache
+        await tursoService.salvarCoordenadasCliente(
+          clienteIdNorm,
+          endereco,
+          resultado.lat,
+          resultado.lng,
+          resultado.fonte,
+          resultado.precisao,
+          { cidade: resultado.cidade, bairro: resultado.bairro }
+        );
+
+        resultados.push({
+          cliente_id: clienteIdNorm,
+          ok: true,
+          fonte: resultado.fonte,
+          coordenadas: {
+            latitude: resultado.lat,
+            longitude: resultado.lng,
+            fonte: resultado.fonte,
+            precisao: resultado.precisao,
+            aproximado: resultado.precisao !== 'endereco' && resultado.precisao !== 'rua'
+          }
+        });
+      } else {
+        resultados.push({
+          cliente_id: clienteIdNorm,
+          ok: false,
+          erro: 'Não foi possível geocodificar'
+        });
+      }
+
+      // Delay entre requisições para evitar rate limit
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+
+    const sucesso = resultados.filter(r => r.ok).length;
+    const falha = resultados.filter(r => !r.ok).length;
+
+    res.json({
+      ok: true,
+      total: clientes.length,
+      sucesso,
+      falha,
+      resultados
+    });
+
+  } catch (error) {
+    console.error('Erro ao geocodificar lote:', error);
+    res.status(500).json({
+      ok: false,
+      message: 'Erro ao geocodificar lote',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /coordenadas/:cliente_id - Busca coordenadas de um cliente do cache
+ */
+router.get('/coordenadas/:cliente_id', async (req, res) => {
+  try {
+    const { cliente_id } = req.params;
+    const { endereco } = req.query; // Opcional: para verificar se mudou
+
+    const clienteIdNorm = normalizeClienteId(cliente_id);
+    const coordenadas = await tursoService.buscarCoordenadasCliente(clienteIdNorm, endereco);
+
+    if (!coordenadas) {
+      return res.status(404).json({
+        ok: false,
+        message: 'Coordenadas não encontradas para este cliente'
+      });
+    }
+
+    res.json({
+      ok: true,
+      coordenadas
+    });
+
+  } catch (error) {
+    console.error('Erro ao buscar coordenadas:', error);
+    res.status(500).json({
+      ok: false,
       error: error.message
     });
   }

@@ -153,6 +153,7 @@ async function inicializar() {
     await tursoService.ensureSchemaRegistroRota();
     await tursoService.ensureSchemaDocumentos();
     await tursoService.ensureUsuariosSchema();
+    await tursoService.ensureSchemaClientesCoordenadas();
 
     // Criar usuário administrador inicial se não existir
     try {

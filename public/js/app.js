@@ -9128,7 +9128,8 @@ class App {
             const validacao = await this.validarDistanciaCheckin(
                 posicao.lat,
                 posicao.lng,
-                enderecoCadastro
+                enderecoCadastro,
+                clienteIdNorm
             );
             console.log('Resultado da validação:', validacao);
 
@@ -9360,154 +9361,64 @@ class App {
         }
     }
 
-    async obterCoordenadasPorEndereco(endereco) {
+    /**
+     * Obtém coordenadas de um endereço via backend (com cache no banco)
+     * O backend usa Google Maps → Here Maps → Nominatim em cascata
+     * e salva as coordenadas permanentemente no banco de dados
+     */
+    async obterCoordenadasPorEndereco(endereco, clienteId = null) {
         if (!endereco || typeof endereco !== 'string') return null;
 
-        // Inicializar cache se não existir
+        // Cache local em memória (evita chamadas repetidas na mesma sessão)
         if (!this.geocodeCache) {
             this.geocodeCache = {};
         }
 
-        // Verificar cache (válido por 10 minutos)
-        const cacheKey = endereco.toLowerCase().trim();
+        const cacheKey = (clienteId || endereco).toLowerCase().trim();
         const cached = this.geocodeCache[cacheKey];
         if (cached && (Date.now() - cached.timestamp) < 600000) {
-            console.log('Geocodificação (cache):', endereco);
+            console.log('📍 Geocodificação (cache local):', endereco);
             return cached.coords;
         }
 
-        // Função auxiliar para fazer busca no Nominatim
-        const buscarNominatim = async (query) => {
-            const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=br`;
-            return await fetchJson(url, {
-                headers: { 'User-Agent': 'RepositorApp/1.0' }
-            });
-        };
-
         try {
-            // Detectar formato do endereço
-            // Formato 1: "CIDADE • RUA, NÚMERO, BAIRRO"
-            // Formato 2: "CIDADE - RUA, NÚMERO, BAIRRO"
-            // Formato 3: "CIDADE/UF - RUA, NÚMERO, BAIRRO"
-
-            let cidade = '';
-            let ruaCompleta = '';
-
-            // Tentar separar por • (bullet) ou - (hífen)
-            if (endereco.includes('•')) {
-                const partes = endereco.split('•').map(p => p.trim());
-                cidade = partes[0];
-                ruaCompleta = partes[1] || '';
-            } else if (endereco.includes(' - ')) {
-                const partes = endereco.split(' - ').map(p => p.trim());
-                cidade = partes[0];
-                ruaCompleta = partes.slice(1).join(', ');
-            } else {
-                // Formato não reconhecido, usar endereço como está
-                ruaCompleta = endereco;
+            // Chamar o backend para geocodificar (ele cuida do cache persistente)
+            const payload = { endereco };
+            if (clienteId) {
+                payload.cliente_id = clienteId;
             }
 
-            // Limpar cidade (remover UF se tiver)
-            if (cidade.includes('/')) {
-                cidade = cidade.split('/')[0].trim();
+            console.log('📍 Geocodificando via backend:', endereco);
+
+            const response = await fetchJson(`${this.registroRotaState.backendUrl}/api/registro-rota/coordenadas/geocodificar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (response && response.ok && response.coordenadas) {
+                const coord = response.coordenadas;
+                const result = {
+                    lat: coord.latitude,
+                    lng: coord.longitude,
+                    aproximado: coord.aproximado,
+                    fonte: coord.fonte,
+                    precisao: coord.precisao,
+                    cidade: coord.cidade,
+                    bairro: coord.bairro
+                };
+
+                // Salvar no cache local
+                this.geocodeCache[cacheKey] = { coords: result, timestamp: Date.now() };
+
+                console.log(`✓ Geocodificação OK (${response.fonte}/${coord.precisao}):`, coord.latitude, coord.longitude);
+                return result;
             }
 
-            console.log('Geocodificando:', { cidade, ruaCompleta, original: endereco });
-
-            // Extrair componentes do endereço: "RUA NOME, NÚMERO, BAIRRO"
-            const partesRua = ruaCompleta.split(',').map(p => p.trim());
-            const rua = partesRua[0] || '';
-            const numero = partesRua[1] || '';
-            const bairro = partesRua[2] || '';
-
-            // ESTRATÉGIA 1: Busca estruturada (melhor para Nominatim)
-            // Formato: "Rua Nome Número, Bairro, Cidade, RS, Brasil"
-            if (rua && cidade) {
-                let buscaEstruturada = rua;
-                if (numero) buscaEstruturada += ' ' + numero;
-                if (bairro) buscaEstruturada += ', ' + bairro;
-                buscaEstruturada += ', ' + cidade + ', RS, Brasil';
-
-                console.log('Tentativa 1 (estruturada):', buscaEstruturada);
-                const data1 = await buscarNominatim(buscaEstruturada);
-
-                if (data1 && data1.length > 0) {
-                    console.log('✓ Geocodificação OK (estruturada):', data1[0].display_name);
-                    const result = {
-                        lat: parseFloat(data1[0].lat),
-                        lng: parseFloat(data1[0].lon),
-                        aproximado: false,
-                        fonte: 'endereco_completo'
-                    };
-                    this.geocodeCache[cacheKey] = { coords: result, timestamp: Date.now() };
-                    return result;
-                }
-            }
-
-            // ESTRATÉGIA 2: Rua + Cidade (sem número e bairro)
-            if (rua && cidade) {
-                const buscaRuaCidade = `${rua}, ${cidade}, RS, Brasil`;
-                console.log('Tentativa 2 (rua+cidade):', buscaRuaCidade);
-                const data2 = await buscarNominatim(buscaRuaCidade);
-
-                if (data2 && data2.length > 0) {
-                    console.log('✓ Geocodificação OK (rua+cidade):', data2[0].display_name);
-                    const result = {
-                        lat: parseFloat(data2[0].lat),
-                        lng: parseFloat(data2[0].lon),
-                        aproximado: false,
-                        fonte: 'rua_cidade'
-                    };
-                    this.geocodeCache[cacheKey] = { coords: result, timestamp: Date.now() };
-                    return result;
-                }
-            }
-
-            // ESTRATÉGIA 3: Bairro + Cidade
-            if (bairro && cidade) {
-                const buscaBairroCidade = `${bairro}, ${cidade}, RS, Brasil`;
-                console.log('Tentativa 3 (bairro+cidade):', buscaBairroCidade);
-                const data3 = await buscarNominatim(buscaBairroCidade);
-
-                if (data3 && data3.length > 0) {
-                    console.log('✓ Geocodificação OK (bairro+cidade):', data3[0].display_name);
-                    const result = {
-                        lat: parseFloat(data3[0].lat),
-                        lng: parseFloat(data3[0].lon),
-                        aproximado: true,  // Bairro é menos preciso que rua
-                        fonte: 'bairro',
-                        cidade: cidade,
-                        bairro: bairro
-                    };
-                    this.geocodeCache[cacheKey] = { coords: result, timestamp: Date.now() };
-                    return result;
-                }
-            }
-
-            // ESTRATÉGIA 4 (FALLBACK): Apenas cidade
-            if (cidade) {
-                const cidadeBusca = cidade + ', RS, Brasil';
-                console.log('Tentativa 4 (fallback cidade):', cidadeBusca);
-                const dataCidade = await buscarNominatim(cidadeBusca);
-
-                if (dataCidade && dataCidade.length > 0) {
-                    console.log('⚠ Geocodificação por cidade (APROXIMADO):', dataCidade[0].display_name);
-                    const result = {
-                        lat: parseFloat(dataCidade[0].lat),
-                        lng: parseFloat(dataCidade[0].lon),
-                        aproximado: true,
-                        fonte: 'cidade',
-                        cidade: cidade
-                    };
-                    this.geocodeCache[cacheKey] = { coords: result, timestamp: Date.now() };
-                    return result;
-                }
-            }
-
-            console.warn('Não foi possível geocodificar:', endereco);
+            console.warn('❌ Não foi possível geocodificar:', endereco);
             return null;
         } catch (error) {
-            console.error('Erro ao buscar coordenadas:', error);
+            console.error('Erro ao geocodificar via backend:', error);
             return null;
         }
     }
@@ -9528,10 +9439,10 @@ class App {
         return R * c; // Distância em metros
     }
 
-    async validarDistanciaCheckin(latCheckin, lngCheckin, enderecoCliente) {
+    async validarDistanciaCheckin(latCheckin, lngCheckin, enderecoCliente, clienteId = null) {
         try {
-            // Tenta obter coordenadas do endereço do cliente
-            const coordsCliente = await this.obterCoordenadasPorEndereco(enderecoCliente);
+            // Tenta obter coordenadas do endereço do cliente (passa clienteId para cache no banco)
+            const coordsCliente = await this.obterCoordenadasPorEndereco(enderecoCliente, clienteId);
 
             if (!coordsCliente) {
                 // Se não conseguiu geocodificar, BLOQUEIA o checkin
@@ -9633,13 +9544,13 @@ class App {
             }
 
             try {
-                // Aguardar um pouco entre requisições para não sobrecarregar API (1.5 segundos)
+                // Aguardar um pouco entre requisições (300ms - backend tem cache)
                 if (i > 0) {
-                    await new Promise(resolve => setTimeout(resolve, 1500));
+                    await new Promise(resolve => setTimeout(resolve, 300));
                 }
 
-                // Geocodificar endereço do cliente
-                const coordsCliente = await this.obterCoordenadasPorEndereco(enderecoCadastro);
+                // Geocodificar endereço do cliente (passa clienteId para cache no banco)
+                const coordsCliente = await this.obterCoordenadasPorEndereco(enderecoCadastro, cliId);
 
                 if (!coordsCliente) {
                     elDistancia.innerHTML = '📍 Não foi possível localizar';
