@@ -1806,6 +1806,163 @@ class TursoService {
   async ensureSchemaRegistroRota() {
     await this.ensureRegistroVisitaSchema();
   }
+
+  // ==================== COORDENADAS DE CLIENTES (CACHE DE GEOCODIFICAÇÃO) ====================
+
+  async ensureSchemaClientesCoordenadas() {
+    const client = this.getClient();
+
+    // Tabela para cache de coordenadas geocodificadas
+    await client.execute({
+      sql: `
+        CREATE TABLE IF NOT EXISTS cc_clientes_coordenadas (
+          cliente_id TEXT PRIMARY KEY,
+          endereco_original TEXT NOT NULL,
+          latitude REAL NOT NULL,
+          longitude REAL NOT NULL,
+          fonte TEXT NOT NULL DEFAULT 'nominatim',
+          precisao TEXT DEFAULT 'endereco',
+          cidade TEXT,
+          bairro TEXT,
+          geocodificado_em TEXT DEFAULT (datetime('now')),
+          atualizado_em TEXT DEFAULT (datetime('now'))
+        )
+      `,
+      args: []
+    });
+
+    // Índice para busca por endereço (para detectar mudanças)
+    try {
+      await client.execute({
+        sql: 'CREATE INDEX IF NOT EXISTS idx_coord_endereco ON cc_clientes_coordenadas(endereco_original)',
+        args: []
+      });
+    } catch (error) {
+      console.warn('⚠️  Erro ao criar índice de coordenadas:', error.message || error);
+    }
+
+    console.log('✅ Schema cc_clientes_coordenadas verificado');
+  }
+
+  /**
+   * Busca coordenadas de um cliente no cache
+   * @param {string} clienteId - ID do cliente
+   * @param {string} enderecoAtual - Endereço atual para verificar se mudou
+   * @returns {Object|null} - Coordenadas ou null se não encontrado/desatualizado
+   */
+  async buscarCoordenadasCliente(clienteId, enderecoAtual = null) {
+    const normalizado = normalizeClienteId(clienteId);
+
+    const result = await this.execute(
+      'SELECT * FROM cc_clientes_coordenadas WHERE cliente_id = ? LIMIT 1',
+      [normalizado]
+    );
+
+    if (!result || result.length === 0) {
+      return null;
+    }
+
+    const coord = result[0];
+
+    // Se foi passado endereço atual, verificar se mudou
+    if (enderecoAtual) {
+      const enderecoNormalizado = enderecoAtual.toLowerCase().trim();
+      const enderecoSalvo = (coord.endereco_original || '').toLowerCase().trim();
+
+      if (enderecoNormalizado !== enderecoSalvo) {
+        console.log(`📍 Endereço do cliente ${normalizado} mudou, precisa regeocofidicar`);
+        return null; // Endereço mudou, precisa buscar novamente
+      }
+    }
+
+    return {
+      clienteId: coord.cliente_id,
+      latitude: coord.latitude,
+      longitude: coord.longitude,
+      fonte: coord.fonte,
+      precisao: coord.precisao,
+      cidade: coord.cidade,
+      bairro: coord.bairro,
+      aproximado: coord.precisao !== 'endereco' && coord.precisao !== 'rua',
+      geocodificadoEm: coord.geocodificado_em
+    };
+  }
+
+  /**
+   * Salva coordenadas geocodificadas de um cliente
+   * @param {string} clienteId - ID do cliente
+   * @param {string} endereco - Endereço original usado na geocodificação
+   * @param {number} latitude - Latitude
+   * @param {number} longitude - Longitude
+   * @param {string} fonte - Fonte da geocodificação (google, here, nominatim)
+   * @param {string} precisao - Precisão (endereco, rua, bairro, cidade)
+   * @param {Object} extras - Dados extras (cidade, bairro)
+   */
+  async salvarCoordenadasCliente(clienteId, endereco, latitude, longitude, fonte = 'nominatim', precisao = 'endereco', extras = {}) {
+    const normalizado = normalizeClienteId(clienteId);
+
+    const sql = `
+      INSERT INTO cc_clientes_coordenadas (
+        cliente_id, endereco_original, latitude, longitude, fonte, precisao, cidade, bairro, geocodificado_em, atualizado_em
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ON CONFLICT(cliente_id) DO UPDATE SET
+        endereco_original = excluded.endereco_original,
+        latitude = excluded.latitude,
+        longitude = excluded.longitude,
+        fonte = excluded.fonte,
+        precisao = excluded.precisao,
+        cidade = excluded.cidade,
+        bairro = excluded.bairro,
+        atualizado_em = datetime('now')
+    `;
+
+    await this.execute(sql, [
+      normalizado,
+      endereco,
+      latitude,
+      longitude,
+      fonte,
+      precisao,
+      extras.cidade || null,
+      extras.bairro || null
+    ]);
+
+    console.log(`📍 Coordenadas salvas para cliente ${normalizado}: ${latitude}, ${longitude} (${fonte}/${precisao})`);
+  }
+
+  /**
+   * Busca coordenadas de múltiplos clientes de uma vez
+   * @param {Array} clienteIds - Lista de IDs de clientes
+   * @returns {Map} - Mapa de clienteId -> coordenadas
+   */
+  async buscarCoordenadasMultiplos(clienteIds) {
+    if (!clienteIds || clienteIds.length === 0) return new Map();
+
+    const normalizados = clienteIds.map(id => normalizeClienteId(id));
+    const placeholders = normalizados.map(() => '?').join(',');
+
+    const result = await this.execute(
+      `SELECT * FROM cc_clientes_coordenadas WHERE cliente_id IN (${placeholders})`,
+      normalizados
+    );
+
+    const mapa = new Map();
+    for (const coord of (result || [])) {
+      mapa.set(coord.cliente_id, {
+        clienteId: coord.cliente_id,
+        latitude: coord.latitude,
+        longitude: coord.longitude,
+        fonte: coord.fonte,
+        precisao: coord.precisao,
+        cidade: coord.cidade,
+        bairro: coord.bairro,
+        aproximado: coord.precisao !== 'endereco' && coord.precisao !== 'rua',
+        enderecoOriginal: coord.endereco_original
+      });
+    }
+
+    return mapa;
+  }
 }
 
 export const tursoService = new TursoService();
