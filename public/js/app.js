@@ -14580,8 +14580,7 @@ class App {
                     Foto <span style="color: #ef4444;">*</span>
                 </label>
                 <div id="pesquisaFotoPreview" style="margin-bottom: 10px;"></div>
-                <input type="file" id="pesquisaFotoInput" accept="image/*" capture="environment" style="display: none;" onchange="window.app.capturarFotoPesquisa(event)">
-                <button type="button" class="btn btn-secondary" onclick="document.getElementById('pesquisaFotoInput').click()">
+                <button type="button" class="btn btn-secondary" onclick="window.app.abrirCameraPesquisa()">
                     📷 Capturar Foto
                 </button>
             </div>
@@ -14607,17 +14606,318 @@ class App {
         `;
     }
 
-    capturarFotoPesquisa(event) {
-        const file = event.target.files[0];
-        if (!file) return;
+    // ===============================================
+    // Câmera para Pesquisa (sem upload de arquivo)
+    // ===============================================
 
+    abrirCameraPesquisa() {
+        // Criar modal de câmera se não existir
+        let modal = document.getElementById('modalCameraPesquisa');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.className = 'modal modal-camera-pesquisa';
+            modal.id = 'modalCameraPesquisa';
+            modal.innerHTML = `
+                <div class="modal-content" style="max-width: 500px;">
+                    <div class="modal-header">
+                        <h3>Capturar Foto</h3>
+                        <button class="modal-close" onclick="window.app.fecharCameraPesquisa()">&times;</button>
+                    </div>
+                    <div class="modal-body" style="padding: 16px;">
+                        <div id="cameraPesquisaArea" style="position: relative; background: #1f2937; border-radius: 8px; overflow: hidden; min-height: 300px;">
+                            <div id="cameraPesquisaPlaceholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 300px; color: #9ca3af;">
+                                <p style="margin: 10px 0;">Aguardando câmera...</p>
+                            </div>
+                            <video id="videoPesquisaPreview" autoplay playsinline muted style="display: none; width: 100%; border-radius: 8px;"></video>
+                            <canvas id="canvasPesquisaCaptura" style="display: none; width: 100%; border-radius: 8px;"></canvas>
+                            <div id="cameraPesquisaErro" style="display: none; color: #ef4444; padding: 20px; text-align: center;"></div>
+                        </div>
+                        <div style="display: flex; gap: 10px; justify-content: center; margin-top: 16px;">
+                            <button type="button" id="btnCapturarPesquisa" class="btn btn-primary" onclick="window.app.capturarFotoPesquisa()">
+                                📷 Capturar
+                            </button>
+                            <button type="button" id="btnRefazerPesquisa" class="btn btn-secondary" style="display: none;" onclick="window.app.refazerFotoPesquisa()">
+                                🔄 Refazer
+                            </button>
+                            <button type="button" id="btnConfirmarPesquisa" class="btn btn-success" style="display: none;" onclick="window.app.confirmarFotoPesquisa()">
+                                ✅ Confirmar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        // Limpar estado anterior
+        this.pesquisaVisitaState.cameraPesquisaStream = null;
+        this.pesquisaVisitaState.fotoPesquisaBlob = null;
+        this.pesquisaVisitaState.fotoPesquisaUrl = null;
+
+        // Reset UI
+        const video = document.getElementById('videoPesquisaPreview');
+        const canvas = document.getElementById('canvasPesquisaCaptura');
+        const placeholder = document.getElementById('cameraPesquisaPlaceholder');
+        const erro = document.getElementById('cameraPesquisaErro');
+        const btnCapturar = document.getElementById('btnCapturarPesquisa');
+        const btnRefazer = document.getElementById('btnRefazerPesquisa');
+        const btnConfirmar = document.getElementById('btnConfirmarPesquisa');
+
+        if (video) { video.style.display = 'none'; video.srcObject = null; }
+        if (canvas) canvas.style.display = 'none';
+        if (placeholder) placeholder.style.display = 'flex';
+        if (erro) erro.style.display = 'none';
+        if (btnCapturar) { btnCapturar.style.display = 'inline-flex'; btnCapturar.disabled = false; }
+        if (btnRefazer) btnRefazer.style.display = 'none';
+        if (btnConfirmar) btnConfirmar.style.display = 'none';
+
+        modal.classList.add('active');
+
+        // Ativar câmera
+        this.ativarCameraPesquisa();
+    }
+
+    async ativarCameraPesquisa() {
+        try {
+            const video = document.getElementById('videoPesquisaPreview');
+            const placeholder = document.getElementById('cameraPesquisaPlaceholder');
+            const erro = document.getElementById('cameraPesquisaErro');
+
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: 'environment',
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
+            });
+
+            this.pesquisaVisitaState.cameraPesquisaStream = stream;
+            video.srcObject = stream;
+
+            video.onloadedmetadata = () => {
+                video.play();
+                video.style.display = 'block';
+                if (placeholder) placeholder.style.display = 'none';
+                if (erro) erro.style.display = 'none';
+            };
+        } catch (error) {
+            console.error('Erro ao ativar câmera da pesquisa:', error);
+            const erro = document.getElementById('cameraPesquisaErro');
+            const placeholder = document.getElementById('cameraPesquisaPlaceholder');
+            if (erro) {
+                erro.style.display = 'flex';
+                erro.textContent = 'Não foi possível ativar a câmera. Permita o acesso e tente novamente.';
+            }
+            if (placeholder) placeholder.style.display = 'none';
+        }
+    }
+
+    capturarFotoPesquisa() {
+        try {
+            const video = document.getElementById('videoPesquisaPreview');
+            const canvas = document.getElementById('canvasPesquisaCaptura');
+            const btnCapturar = document.getElementById('btnCapturarPesquisa');
+            const btnRefazer = document.getElementById('btnRefazerPesquisa');
+            const btnConfirmar = document.getElementById('btnConfirmarPesquisa');
+
+            if (!video || !canvas) return;
+
+            const ctx = canvas.getContext('2d');
+            const largura = video.videoWidth || video.clientWidth || 640;
+            const altura = video.videoHeight || video.clientHeight || 480;
+            canvas.width = largura;
+            canvas.height = altura;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            canvas.toBlob(async (blob) => {
+                if (!blob) {
+                    this.showNotification('Não foi possível capturar a foto.', 'error');
+                    return;
+                }
+
+                // Aplicar watermark
+                const blobComWatermark = await this.aplicarWatermarkPesquisa(blob);
+
+                this.pesquisaVisitaState.fotoPesquisaBlob = blobComWatermark;
+
+                // Mostrar preview no canvas
+                const imgPreview = new Image();
+                imgPreview.onload = () => {
+                    canvas.width = imgPreview.width;
+                    canvas.height = imgPreview.height;
+                    ctx.drawImage(imgPreview, 0, 0);
+                    URL.revokeObjectURL(imgPreview.src);
+                };
+                imgPreview.src = URL.createObjectURL(blobComWatermark);
+
+                // Atualizar UI
+                video.style.display = 'none';
+                canvas.style.display = 'block';
+                if (btnCapturar) btnCapturar.style.display = 'none';
+                if (btnRefazer) btnRefazer.style.display = 'inline-flex';
+                if (btnConfirmar) btnConfirmar.style.display = 'inline-flex';
+
+                this.showNotification('Foto capturada', 'success');
+            }, 'image/jpeg', 0.9);
+        } catch (error) {
+            console.error('Erro ao capturar foto da pesquisa:', error);
+            this.showNotification('Erro ao capturar foto: ' + error.message, 'error');
+        }
+    }
+
+    async aplicarWatermarkPesquisa(blob) {
+        const img = await new Promise((resolve, reject) => {
+            const url = URL.createObjectURL(blob);
+            const image = new Image();
+            image.onload = () => { URL.revokeObjectURL(url); resolve(image); };
+            image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Falha ao carregar imagem')); };
+            image.src = url;
+        });
+
+        // Redimensionar se muito grande
+        const MAX_WIDTH = 1920;
+        const MAX_HEIGHT = 1920;
+        let targetWidth = img.width;
+        let targetHeight = img.height;
+
+        if (img.width > MAX_WIDTH || img.height > MAX_HEIGHT) {
+            const aspectRatio = img.width / img.height;
+            if (img.width > img.height) {
+                targetWidth = MAX_WIDTH;
+                targetHeight = Math.round(MAX_WIDTH / aspectRatio);
+            } else {
+                targetHeight = MAX_HEIGHT;
+                targetWidth = Math.round(MAX_HEIGHT * aspectRatio);
+            }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const ctx = canvas.getContext('2d');
+
+        // Desenhar imagem
+        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+        // Criar linhas do watermark
+        const dtLocal = new Date();
+        const formatter = new Intl.DateTimeFormat('pt-BR', {
+            timeZone: 'America/Sao_Paulo',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+        const parts = Object.fromEntries(formatter.formatToParts(dtLocal).map((p) => [p.type, p.value]));
+        const dataTxt = `${parts.day}/${parts.month}/${parts.year} ${parts.hour}:${parts.minute}:${parts.second}`;
+
+        const linhasTexto = [`PESQUISA - ${dataTxt}`];
+
+        // Adicionar coordenadas se disponíveis
+        const gpsCoords = this.registroRotaState.gpsCoords;
+        if (gpsCoords) {
+            const latTxt = Number(gpsCoords.latitude).toFixed(6);
+            const lonTxt = Number(gpsCoords.longitude).toFixed(6);
+            linhasTexto.push(`Coordenadas: ${latTxt}, ${lonTxt}`);
+        }
+
+        // Adicionar endereço se disponível
+        const enderecoResolvido = this.registroRotaState.enderecoResolvido;
+        if (enderecoResolvido) {
+            linhasTexto.push(`Local: ${enderecoResolvido}`);
+        }
+
+        // Adicionar cliente se disponível
+        const contexto = this.pesquisaVisitaState.contextoVisita;
+        if (contexto?.clienteNome) {
+            linhasTexto.push(`Cliente: ${contexto.clienteId} - ${contexto.clienteNome}`);
+        }
+
+        // Desenhar caixa e texto do watermark
+        const margin = Math.round(canvas.width * 0.02);
+        const fontSize = Math.max(14, Math.round(canvas.width * 0.028));
+        const lineH = Math.round(fontSize * 1.25);
+        const boxH = margin * 2 + lineH * linhasTexto.length;
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+        ctx.fillRect(0, canvas.height - boxH, canvas.width, boxH);
+
+        ctx.font = `${fontSize}px Arial`;
+        ctx.fillStyle = '#fff';
+        ctx.textBaseline = 'top';
+
+        let y = canvas.height - boxH + margin;
+        for (const linha of linhasTexto) {
+            ctx.fillText(linha, margin, y);
+            y += lineH;
+        }
+
+        // Converter para blob
+        const stampedBlob = await new Promise((resolve) => {
+            canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.75);
+        });
+
+        return stampedBlob || blob;
+    }
+
+    refazerFotoPesquisa() {
+        const video = document.getElementById('videoPesquisaPreview');
+        const canvas = document.getElementById('canvasPesquisaCaptura');
+        const btnCapturar = document.getElementById('btnCapturarPesquisa');
+        const btnRefazer = document.getElementById('btnRefazerPesquisa');
+        const btnConfirmar = document.getElementById('btnConfirmarPesquisa');
+
+        // Limpar blob anterior
+        this.pesquisaVisitaState.fotoPesquisaBlob = null;
+
+        // Mostrar vídeo novamente
+        if (video) video.style.display = 'block';
+        if (canvas) canvas.style.display = 'none';
+        if (btnCapturar) btnCapturar.style.display = 'inline-flex';
+        if (btnRefazer) btnRefazer.style.display = 'none';
+        if (btnConfirmar) btnConfirmar.style.display = 'none';
+    }
+
+    confirmarFotoPesquisa() {
+        const blob = this.pesquisaVisitaState.fotoPesquisaBlob;
+        if (!blob) {
+            this.showNotification('Nenhuma foto capturada', 'warning');
+            return;
+        }
+
+        // Criar arquivo a partir do blob
+        const arquivo = new File([blob], `pesquisa-foto-${Date.now()}.jpg`, { type: 'image/jpeg' });
+        this.pesquisaVisitaState.fotoPesquisa = arquivo;
+
+        // Atualizar preview no modal de pesquisa
         const preview = document.getElementById('pesquisaFotoPreview');
         if (preview) {
-            const url = URL.createObjectURL(file);
+            if (this.pesquisaVisitaState.fotoPesquisaUrl) {
+                URL.revokeObjectURL(this.pesquisaVisitaState.fotoPesquisaUrl);
+            }
+            const url = URL.createObjectURL(blob);
+            this.pesquisaVisitaState.fotoPesquisaUrl = url;
             preview.innerHTML = `<img src="${url}" style="max-width: 100%; max-height: 200px; border-radius: 8px;">`;
         }
 
-        this.pesquisaVisitaState.fotoPesquisa = file;
+        // Fechar modal de câmera
+        this.fecharCameraPesquisa();
+        this.showNotification('Foto confirmada', 'success');
+    }
+
+    fecharCameraPesquisa() {
+        // Parar stream da câmera
+        if (this.pesquisaVisitaState.cameraPesquisaStream) {
+            this.pesquisaVisitaState.cameraPesquisaStream.getTracks().forEach((track) => track.stop());
+            this.pesquisaVisitaState.cameraPesquisaStream = null;
+        }
+
+        const modal = document.getElementById('modalCameraPesquisa');
+        if (modal) {
+            modal.classList.remove('active');
+        }
     }
 
     async enviarRespostaPesquisaVisita(event) {
@@ -14726,6 +15026,9 @@ class App {
     }
 
     cancelarPesquisaVisita() {
+        // Fechar câmera se estiver aberta
+        this.fecharCameraPesquisa();
+
         const modal = document.getElementById('modalPesquisaVisita');
         if (modal) {
             modal.classList.remove('active');
@@ -14734,6 +15037,9 @@ class App {
     }
 
     fecharModalPesquisaVisita() {
+        // Fechar câmera se estiver aberta
+        this.fecharCameraPesquisa();
+
         const modal = document.getElementById('modalPesquisaVisita');
         if (modal) {
             modal.classList.remove('active');
