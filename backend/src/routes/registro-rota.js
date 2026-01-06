@@ -2613,12 +2613,13 @@ router.get('/coordenadas/listar', async (req, res) => {
 
     // Buscar coordenadas existentes do cache
     const db = tursoService.getMainClient();
+    // Nota: 'aproximado' é calculado baseado em precisao (não é coluna direta)
     let coordQuery = `
       SELECT
         cc.cliente_id,
         cc.latitude,
         cc.longitude,
-        cc.aproximado,
+        CASE WHEN cc.precisao NOT IN ('endereco', 'rua', 'manual') THEN 1 ELSE 0 END AS aproximado,
         cc.precisao,
         cc.fonte,
         cc.endereco_original,
@@ -2636,11 +2637,11 @@ router.get('/coordenadas/listar', async (req, res) => {
     }
 
     if (precisao === 'aproximado') {
-      coordQuery += ` AND cc.aproximado = 1`;
+      coordQuery += ` AND cc.precisao NOT IN ('endereco', 'rua', 'manual')`;
     } else if (precisao === 'manual') {
       coordQuery += ` AND cc.precisao = 'manual'`;
     } else if (precisao === 'endereco') {
-      coordQuery += ` AND cc.aproximado = 0 AND cc.precisao != 'manual'`;
+      coordQuery += ` AND cc.precisao IN ('endereco', 'rua')`;
     }
 
     coordQuery += ` ORDER BY cc.atualizado_em DESC LIMIT ?`;
