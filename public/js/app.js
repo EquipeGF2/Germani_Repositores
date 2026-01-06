@@ -1142,7 +1142,7 @@ class App {
         // Carregar lista de repositores
         if (selectRepositor) {
             try {
-                const repositores = await db.getRepositores();
+                const repositores = await db.getRepositoresDetalhados({ status: 'ativos' });
                 repositores.forEach(rep => {
                     const opt = document.createElement('option');
                     opt.value = rep.rep_id;
@@ -8766,7 +8766,7 @@ class App {
                 ? `<button onclick="app.confirmarCancelarAtendimento(${repId}, '${cliId}', '${nomeEsc}')" class="btn-small btn-danger" title="Cancelar atendimento em aberto">🛑 Cancelar</button>`
                 : '';
 
-            const botoes = `${btnNovaVisita}${btnCheckin}${btnAtividades}${btnCheckout}${btnCampanha}${btnCancelar}`;
+            const botoes = `${btnNovaVisita}${btnCheckin}${btnAtividades}${btnCampanha}${btnCheckout}${btnCancelar}`;
             const avisoAtraso = checkinBloqueadoPorAtraso
                 ? '<span style="display:block;color:#b91c1c;font-size:12px;margin-top:6px;">Atraso superior a 7 dias. Check-in bloqueado.</span>'
                 : '';
@@ -9105,7 +9105,7 @@ class App {
             ? `<button onclick="app.abrirModalCaptura(${repId}, '${clienteIdNorm}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'checkin', '${cadastroEsc}', true)" class="btn-small">🆕 Nova visita</button>`
             : '';
 
-        const botoes = `${btnNovaVisita}${btnCheckin}${btnAtividades}${btnPesquisa}${btnCheckout}${btnCampanha}`;
+        const botoes = `${btnNovaVisita}${btnCheckin}${btnAtividades}${btnPesquisa}${btnCampanha}${btnCheckout}`;
         const avisoAtraso = checkinBloqueadoPorAtraso
             ? '<span style="display:block;color:#b91c1c;font-size:12px;margin-top:6px;">Atraso superior a 7 dias. Check-in bloqueado.</span>'
             : '';
@@ -9888,6 +9888,7 @@ class App {
     /**
      * Verifica pesquisas pendentes para cada cliente do roteiro em atendimento
      * Atualiza o card para mostrar botão de pesquisa quando necessário
+     * Busca TODAS as pesquisas (obrigatórias e não obrigatórias)
      */
     async verificarPesquisasDoRoteiro(roteiro, repId, dataVisita) {
         if (!roteiro || roteiro.length === 0) return;
@@ -9908,13 +9909,16 @@ class App {
             if (statusCliente.status !== 'em_atendimento') continue;
 
             try {
-                const pesquisasPendentes = await this.verificarPesquisasObrigatoriasPendentes(repId, cliId, dataVisita);
+                // Busca TODAS as pesquisas (obrigatórias e não obrigatórias)
+                const pesquisasPendentes = await this.buscarPesquisasPendentes(repId, cliId, dataVisita, false);
 
                 if (pesquisasPendentes && pesquisasPendentes.length > 0) {
                     this.registroRotaState.pesquisasPendentesMap.set(cliId, pesquisasPendentes);
                     // Atualizar o card para mostrar botão de pesquisa
                     this.atualizarCardCliente(cliId);
-                    console.log(`Cliente ${cliId}: ${pesquisasPendentes.length} pesquisa(s) pendente(s)`);
+                    const obrigatorias = pesquisasPendentes.filter(p => p.pes_obrigatorio).length;
+                    const opcionais = pesquisasPendentes.length - obrigatorias;
+                    console.log(`Cliente ${cliId}: ${pesquisasPendentes.length} pesquisa(s) - ${obrigatorias} obrigatória(s), ${opcionais} opcional(is)`);
                 } else {
                     this.registroRotaState.pesquisasPendentesMap.delete(cliId);
                 }
@@ -14676,16 +14680,28 @@ class App {
         fotoPesquisa: null
     };
 
+    /**
+     * Verifica apenas pesquisas OBRIGATÓRIAS pendentes (usado antes do checkout)
+     */
     async verificarPesquisasObrigatoriasPendentes(repId, clienteId, dataVisita) {
+        return this.buscarPesquisasPendentes(repId, clienteId, dataVisita, true);
+    }
+
+    /**
+     * Busca TODAS as pesquisas pendentes (obrigatórias e não obrigatórias)
+     * @param {boolean} apenasObrigatorias - Se true, retorna apenas obrigatórias
+     */
+    async buscarPesquisasPendentes(repId, clienteId, dataVisita, apenasObrigatorias = false) {
         try {
             // Passa o clienteId para filtrar pesquisas por cliente/grupo
             const pesquisas = await db.getPesquisasPendentesRepositor(repId, clienteId);
             const hoje = new Date().toISOString().split('T')[0];
 
-            // Filtrar pesquisas obrigatórias que ainda não foram respondidas
+            // Filtrar pesquisas que ainda não foram respondidas
             const pendentes = [];
             for (const pesquisa of pesquisas) {
-                if (!pesquisa.pes_obrigatorio) continue;
+                // Se apenasObrigatorias, pula as não obrigatórias
+                if (apenasObrigatorias && !pesquisa.pes_obrigatorio) continue;
 
                 // Verificar se está no período válido
                 if (pesquisa.pes_data_inicio && pesquisa.pes_data_inicio > hoje) continue;
@@ -14704,6 +14720,13 @@ class App {
                 }
             }
 
+            // Ordenar: obrigatórias primeiro, depois por título
+            pendentes.sort((a, b) => {
+                if (a.pes_obrigatorio && !b.pes_obrigatorio) return -1;
+                if (!a.pes_obrigatorio && b.pes_obrigatorio) return 1;
+                return (a.pes_titulo || '').localeCompare(b.pes_titulo || '');
+            });
+
             return pendentes;
         } catch (error) {
             console.error('Erro ao verificar pesquisas pendentes:', error);
@@ -14714,26 +14737,98 @@ class App {
     /**
      * Abre o modal de pesquisa para um cliente específico
      * Chamado pelo botão de pesquisa no card do cliente
+     * Mostra TODAS as pesquisas disponíveis (obrigatórias e não obrigatórias)
      */
     async abrirPesquisaCliente(repId, clienteId, clienteNome, dataVisita) {
-        const pesquisasPendentesMap = this.registroRotaState.pesquisasPendentesMap || new Map();
-        const pesquisasPendentes = pesquisasPendentesMap.get(clienteId) || [];
+        // Buscar TODAS as pesquisas (não apenas obrigatórias)
+        const todasPesquisas = await this.buscarPesquisasPendentes(repId, clienteId, dataVisita, false);
 
-        if (pesquisasPendentes.length === 0) {
-            // Re-verificar pesquisas pendentes
-            const novasPesquisas = await this.verificarPesquisasObrigatoriasPendentes(repId, clienteId, dataVisita);
-            if (!novasPesquisas || novasPesquisas.length === 0) {
-                this.showNotification('Nenhuma pesquisa pendente para este cliente.', 'info');
-                return;
-            }
-            pesquisasPendentesMap.set(clienteId, novasPesquisas);
-            this.registroRotaState.pesquisasPendentesMap = pesquisasPendentesMap;
-            // veioDocheckout = false porque veio do botão
-            await this.abrirModalPesquisaVisita(novasPesquisas, repId, clienteId, clienteNome, dataVisita, false);
-        } else {
-            // veioDocheckout = false porque veio do botão
-            await this.abrirModalPesquisaVisita(pesquisasPendentes, repId, clienteId, clienteNome, dataVisita, false);
+        if (!todasPesquisas || todasPesquisas.length === 0) {
+            this.showNotification('Nenhuma pesquisa disponível para este cliente.', 'info');
+            return;
         }
+
+        // Se há mais de 1 pesquisa, mostrar tela de seleção
+        if (todasPesquisas.length > 1) {
+            await this.abrirModalSelecaoPesquisa(todasPesquisas, repId, clienteId, clienteNome, dataVisita);
+        } else {
+            // Se há apenas 1 pesquisa, ir direto para ela
+            await this.abrirModalPesquisaVisita(todasPesquisas, repId, clienteId, clienteNome, dataVisita, false);
+        }
+    }
+
+    /**
+     * Abre modal para selecionar qual pesquisa responder
+     */
+    async abrirModalSelecaoPesquisa(pesquisas, repId, clienteId, clienteNome, dataVisita) {
+        let modal = document.getElementById('modalSelecaoPesquisa');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.id = 'modalSelecaoPesquisa';
+            modal.innerHTML = `
+                <div class="modal-content" style="max-width: 500px;">
+                    <div class="modal-header">
+                        <h3>Selecionar Pesquisa</h3>
+                        <button class="modal-close" onclick="document.getElementById('modalSelecaoPesquisa').classList.remove('active')">&times;</button>
+                    </div>
+                    <div class="modal-body" id="modalSelecaoPesquisaBody">
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        const body = document.getElementById('modalSelecaoPesquisaBody');
+        body.innerHTML = `
+            <div style="margin-bottom: 16px; padding: 12px; background: #eff6ff; border-radius: 8px;">
+                <p style="margin: 0; font-size: 0.9rem; color: #1e40af;">
+                    <strong>Cliente:</strong> ${clienteId} - ${clienteNome}
+                </p>
+                <p style="margin: 4px 0 0; font-size: 0.85rem; color: #6b7280;">
+                    Selecione qual pesquisa deseja responder:
+                </p>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                ${pesquisas.map((p, idx) => `
+                    <button type="button" class="btn" style="text-align: left; padding: 12px 16px; background: ${p.pes_obrigatorio ? '#fef2f2' : '#f9fafb'}; border: 1px solid ${p.pes_obrigatorio ? '#fecaca' : '#e5e7eb'}; border-radius: 8px;"
+                            onclick="window.app.selecionarPesquisa(${idx}, ${repId}, '${clienteId}', '${clienteNome.replace(/'/g, "\\'")}', '${dataVisita}')">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 1.2rem;">${p.pes_obrigatorio ? '🔴' : '🟢'}</span>
+                            <div>
+                                <strong style="color: #111827;">${p.pes_titulo}</strong>
+                                ${p.pes_obrigatorio ? '<span style="color: #dc2626; font-size: 0.75rem; margin-left: 8px;">(Obrigatória)</span>' : '<span style="color: #059669; font-size: 0.75rem; margin-left: 8px;">(Opcional)</span>'}
+                                ${p.pes_descricao ? `<p style="margin: 4px 0 0; font-size: 0.8rem; color: #6b7280;">${p.pes_descricao}</p>` : ''}
+                            </div>
+                        </div>
+                    </button>
+                `).join('')}
+            </div>
+            <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
+                <button type="button" class="btn btn-secondary" style="width: 100%;"
+                        onclick="document.getElementById('modalSelecaoPesquisa').classList.remove('active')">
+                    Cancelar
+                </button>
+            </div>
+        `;
+
+        // Guardar referência das pesquisas para uso posterior
+        this.pesquisasParaSelecao = pesquisas;
+        modal.classList.add('active');
+    }
+
+    /**
+     * Chamado quando usuário seleciona uma pesquisa específica
+     */
+    async selecionarPesquisa(index, repId, clienteId, clienteNome, dataVisita) {
+        const pesquisas = this.pesquisasParaSelecao || [];
+        if (!pesquisas[index]) return;
+
+        // Fechar modal de seleção
+        document.getElementById('modalSelecaoPesquisa')?.classList.remove('active');
+
+        // Abrir apenas a pesquisa selecionada
+        await this.abrirModalPesquisaVisita([pesquisas[index]], repId, clienteId, clienteNome, dataVisita, false);
     }
 
     async abrirModalPesquisaVisita(pesquisas, repId, clienteId, clienteNome, dataVisita, veioDocheckout = true) {
