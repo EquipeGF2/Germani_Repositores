@@ -1115,6 +1115,29 @@ class App {
     }
 
     async inicializarConfiguracoesSistema() {
+        // ==================== LÓGICA DE TABS ====================
+        const configTabs = document.querySelectorAll('.config-tab');
+        configTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Remover active de todos
+                configTabs.forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.config-tab-content').forEach(c => c.classList.remove('active'));
+
+                // Ativar a aba clicada
+                tab.classList.add('active');
+                const tabName = tab.dataset.configTab;
+                const content = document.getElementById(`config-tab-${tabName}`);
+                if (content) content.classList.add('active');
+
+                // Carregar dados específicos da aba
+                if (tabName === 'documentos') {
+                    this.carregarTiposDocumentos();
+                } else if (tabName === 'rubricas') {
+                    this.carregarTiposGasto();
+                }
+            });
+        });
+
         const btnSalvar = document.getElementById('btnSalvarConfigSistema');
         const inputDistancia = document.getElementById('configDistanciaMaxima');
         const btnCarregarSessoes = document.getElementById('btnCarregarSessoesAbertas');
@@ -10260,7 +10283,7 @@ class App {
     }
 
     /**
-     * Verifica pesquisas pendentes para cada cliente do roteiro em atendimento
+     * Verifica pesquisas pendentes para TODOS os clientes do roteiro
      * Atualiza o card para mostrar botão de pesquisa quando necessário
      * Busca TODAS as pesquisas (obrigatórias e não obrigatórias)
      */
@@ -10272,15 +10295,11 @@ class App {
             this.registroRotaState.pesquisasPendentesMap = new Map();
         }
 
-        const mapaResumo = this.registroRotaState.resumoVisitas || new Map();
-
-        // Para cada cliente em atendimento, verificar se há pesquisas pendentes
-        for (const cliente of roteiro) {
+        // Para cada cliente do roteiro, verificar se há pesquisas pendentes
+        // Carrega para TODOS os clientes, não apenas os em atendimento
+        // Assim o botão de pesquisa aparece antes mesmo do check-in
+        const promessas = roteiro.map(async (cliente) => {
             const cliId = String(cliente.cli_codigo || '').trim().replace(/\.0$/, '');
-            const statusCliente = mapaResumo.get(cliId) || {};
-
-            // Só verifica pesquisas para clientes em atendimento
-            if (statusCliente.status !== 'em_atendimento') continue;
 
             try {
                 // Busca TODAS as pesquisas (obrigatórias e não obrigatórias)
@@ -10288,18 +10307,24 @@ class App {
 
                 if (pesquisasPendentes && pesquisasPendentes.length > 0) {
                     this.registroRotaState.pesquisasPendentesMap.set(cliId, pesquisasPendentes);
-                    // Atualizar o card para mostrar botão de pesquisa
-                    this.atualizarCardCliente(cliId);
                     const obrigatorias = pesquisasPendentes.filter(p => p.pes_obrigatorio).length;
-                    const opcionais = pesquisasPendentes.length - obrigatorias;
-                    console.log(`Cliente ${cliId}: ${pesquisasPendentes.length} pesquisa(s) - ${obrigatorias} obrigatória(s), ${opcionais} opcional(is)`);
+                    console.log(`📋 Cliente ${cliId}: ${pesquisasPendentes.length} pesquisa(s) - ${obrigatorias} obrigatória(s)`);
                 } else {
                     this.registroRotaState.pesquisasPendentesMap.delete(cliId);
                 }
             } catch (error) {
                 console.warn(`Erro ao verificar pesquisas do cliente ${cliId}:`, error);
             }
-        }
+        });
+
+        // Executar em paralelo para melhor performance
+        await Promise.all(promessas);
+
+        // Atualizar todos os cards de uma vez após carregar
+        roteiro.forEach(cliente => {
+            const cliId = String(cliente.cli_codigo || '').trim().replace(/\.0$/, '');
+            this.atualizarCardCliente(cliId);
+        });
     }
 
     /**
@@ -11847,14 +11872,13 @@ class App {
                 return;
             }
 
-            // Inicializar estado das rubricas
+            // Inicializar estado das rubricas (suporta múltiplas fotos - até 10 por rubrica)
             this.documentosState.rubricas = rubricas.map(r => ({
                 id: r.gst_id,
                 codigo: r.gst_codigo,
                 nome: r.gst_nome,
                 valor: 0,
-                foto: null,
-                fotoPreview: null
+                fotos: [] // Array de fotos (até 10)
             }));
 
             container.innerHTML = rubricas.map(r => `
@@ -11866,18 +11890,26 @@ class App {
                     <div class="rubrica-valor">
                         <label>R$</label>
                         <input type="text" inputmode="decimal" id="rubrica_valor_${r.gst_id}"
-                               placeholder="0,00" onchange="app.atualizarValorRubrica(${r.gst_id}, this.value)">
+                               placeholder="0,00" onchange="app.atualizarValorRubrica(${r.gst_id}, this.value)"
+                               onkeyup="app.atualizarValorRubrica(${r.gst_id}, this.value)">
                     </div>
                     <div class="rubrica-foto">
                         <button type="button" class="rubrica-foto-btn" id="rubrica_foto_btn_${r.gst_id}"
                                 onclick="app.capturarFotoRubrica(${r.gst_id})">
-                            📷 Anexar comprovante
+                            📷 Tirar foto do comprovante
                         </button>
                         <input type="file" id="rubrica_foto_input_${r.gst_id}" accept="image/*" capture="environment"
                                style="display: none;" onchange="app.processarFotoRubrica(${r.gst_id}, this.files)">
+                        <div class="rubrica-contador-fotos" id="rubrica_contador_${r.gst_id}">0/10 fotos</div>
+                    </div>
+                    <div class="rubrica-fotos-container" id="rubrica_fotos_${r.gst_id}">
+                        <!-- Miniaturas das fotos aparecem aqui -->
                     </div>
                 </div>
             `).join('');
+
+            // Mostrar card de total
+            this.atualizarTotalDespesas();
         } catch (error) {
             console.error('Erro ao carregar rubricas:', error);
             container.innerHTML = '<p style="color: #dc2626;">Erro ao carregar rubricas</p>';
@@ -11895,14 +11927,26 @@ class App {
         // Atualizar visual do card
         const card = document.querySelector(`.rubrica-card[data-rubrica-id="${rubricaId}"]`);
         if (card) {
-            card.classList.toggle('preenchido', valor > 0 && rubrica.foto);
-            card.classList.toggle('erro', valor > 0 && !rubrica.foto);
+            const temFotos = rubrica.fotos && rubrica.fotos.length > 0;
+            card.classList.toggle('preenchido', valor > 0 && temFotos);
+            card.classList.toggle('erro', valor > 0 && !temFotos);
         }
+
+        // Atualizar total
+        this.atualizarTotalDespesas();
     }
 
     capturarFotoRubrica(rubricaId) {
+        const rubrica = this.documentosState.rubricas?.find(r => r.id === rubricaId);
+        if (rubrica && rubrica.fotos && rubrica.fotos.length >= 10) {
+            this.showNotification('Limite de 10 fotos atingido para esta rubrica.', 'warning');
+            return;
+        }
         const input = document.getElementById(`rubrica_foto_input_${rubricaId}`);
-        if (input) input.click();
+        if (input) {
+            input.value = ''; // Limpar para permitir selecionar a mesma foto novamente
+            input.click();
+        }
     }
 
     processarFotoRubrica(rubricaId, files) {
@@ -11911,29 +11955,135 @@ class App {
         const rubrica = this.documentosState.rubricas?.find(r => r.id === rubricaId);
         if (!rubrica) return;
 
+        // Inicializar array de fotos se não existir
+        if (!rubrica.fotos) rubrica.fotos = [];
+
+        // Verificar limite
+        if (rubrica.fotos.length >= 10) {
+            this.showNotification('Limite de 10 fotos atingido para esta rubrica.', 'warning');
+            return;
+        }
+
         const arquivo = files[0];
-        rubrica.foto = arquivo;
+        const fotoIndex = rubrica.fotos.length;
+
+        // Adicionar ao array
+        const novaFoto = {
+            arquivo: arquivo,
+            preview: null
+        };
+        rubrica.fotos.push(novaFoto);
 
         // Criar preview
         const reader = new FileReader();
         reader.onload = (e) => {
-            rubrica.fotoPreview = e.target.result;
-
-            // Atualizar botão
-            const btn = document.getElementById(`rubrica_foto_btn_${rubricaId}`);
-            if (btn) {
-                btn.classList.add('tem-foto');
-                btn.innerHTML = `✅ ${arquivo.name.substring(0, 15)}...`;
-            }
-
-            // Atualizar visual do card
-            const card = document.querySelector(`.rubrica-card[data-rubrica-id="${rubricaId}"]`);
-            if (card && rubrica.valor > 0) {
-                card.classList.add('preenchido');
-                card.classList.remove('erro');
-            }
+            novaFoto.preview = e.target.result;
+            this.renderizarFotosRubrica(rubricaId);
         };
         reader.readAsDataURL(arquivo);
+
+        // Atualizar contador
+        this.atualizarContadorFotosRubrica(rubricaId);
+
+        // Atualizar visual do card
+        const card = document.querySelector(`.rubrica-card[data-rubrica-id="${rubricaId}"]`);
+        if (card && rubrica.valor > 0) {
+            card.classList.add('preenchido');
+            card.classList.remove('erro');
+        }
+
+        // Atualizar botão
+        const btn = document.getElementById(`rubrica_foto_btn_${rubricaId}`);
+        if (btn && rubrica.fotos.length > 0) {
+            btn.classList.add('tem-foto');
+        }
+    }
+
+    renderizarFotosRubrica(rubricaId) {
+        const rubrica = this.documentosState.rubricas?.find(r => r.id === rubricaId);
+        const container = document.getElementById(`rubrica_fotos_${rubricaId}`);
+        if (!rubrica || !container) return;
+
+        if (!rubrica.fotos || rubrica.fotos.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        container.innerHTML = rubrica.fotos.map((foto, idx) => `
+            <div class="rubrica-foto-thumb">
+                <img src="${foto.preview || ''}" alt="Foto ${idx + 1}">
+                <button class="remover-foto" onclick="app.removerFotoRubrica(${rubricaId}, ${idx})" title="Remover">×</button>
+            </div>
+        `).join('');
+    }
+
+    removerFotoRubrica(rubricaId, fotoIndex) {
+        const rubrica = this.documentosState.rubricas?.find(r => r.id === rubricaId);
+        if (!rubrica || !rubrica.fotos) return;
+
+        rubrica.fotos.splice(fotoIndex, 1);
+        this.renderizarFotosRubrica(rubricaId);
+        this.atualizarContadorFotosRubrica(rubricaId);
+
+        // Atualizar visual do card
+        const card = document.querySelector(`.rubrica-card[data-rubrica-id="${rubricaId}"]`);
+        if (card) {
+            const temFotos = rubrica.fotos.length > 0;
+            card.classList.toggle('preenchido', rubrica.valor > 0 && temFotos);
+            card.classList.toggle('erro', rubrica.valor > 0 && !temFotos);
+        }
+
+        // Atualizar botão
+        const btn = document.getElementById(`rubrica_foto_btn_${rubricaId}`);
+        if (btn) {
+            btn.classList.toggle('tem-foto', rubrica.fotos.length > 0);
+        }
+    }
+
+    atualizarContadorFotosRubrica(rubricaId) {
+        const rubrica = this.documentosState.rubricas?.find(r => r.id === rubricaId);
+        const contador = document.getElementById(`rubrica_contador_${rubricaId}`);
+        if (contador && rubrica) {
+            const qtd = rubrica.fotos?.length || 0;
+            contador.textContent = `${qtd}/10 fotos`;
+            contador.style.color = qtd > 0 ? '#10b981' : '#6b7280';
+        }
+    }
+
+    atualizarTotalDespesas() {
+        const totalCard = document.getElementById('totalDespesasCard');
+        const totalValor = document.getElementById('totalDespesasValor');
+        const resumoContainer = document.getElementById('resumoRubricas');
+
+        if (!totalCard || !totalValor || !resumoContainer) return;
+
+        const rubricas = this.documentosState.rubricas || [];
+        const rubricasComValor = rubricas.filter(r => r.valor > 0);
+
+        if (rubricasComValor.length === 0) {
+            totalCard.style.display = 'none';
+            return;
+        }
+
+        totalCard.style.display = 'block';
+
+        // Calcular total
+        const total = rubricasComValor.reduce((sum, r) => sum + r.valor, 0);
+        totalValor.textContent = total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+        // Montar resumo
+        resumoContainer.innerHTML = rubricasComValor.map(r => {
+            const temFoto = r.fotos && r.fotos.length > 0;
+            const icon = temFoto ? '✓' : '⚠';
+            const classe = temFoto ? 'check' : 'warn';
+            return `
+                <div class="despesa-total-item">
+                    <span class="${classe}">${icon}</span>
+                    <span>${r.nome}: R$ ${r.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    <span style="opacity: 0.7;">(${r.fotos?.length || 0} foto${r.fotos?.length !== 1 ? 's' : ''})</span>
+                </div>
+            `;
+        }).join('');
     }
 
     validarRubricasDespesa() {
@@ -11944,10 +12094,11 @@ class App {
             return { ok: false, erro: 'Preencha pelo menos uma rubrica com valor.' };
         }
 
-        const semFoto = rubricasComValor.filter(r => !r.foto);
+        // Verificar se todas as rubricas com valor têm pelo menos 1 foto
+        const semFoto = rubricasComValor.filter(r => !r.fotos || r.fotos.length === 0);
         if (semFoto.length > 0) {
             const nomes = semFoto.map(r => r.nome).join(', ');
-            return { ok: false, erro: `Anexe foto do comprovante para: ${nomes}` };
+            return { ok: false, erro: `Tire foto do comprovante para: ${nomes}` };
         }
 
         return { ok: true, rubricas: rubricasComValor };
@@ -15794,11 +15945,20 @@ class App {
             <form id="formPesquisaVisita" onsubmit="window.app.enviarRespostaPesquisaVisita(event)">
                 ${camposHtml}
                 ${fotoSection}
-                <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
-                    <button type="button" class="btn btn-secondary" onclick="window.app.cancelarPesquisaVisita()">Cancelar</button>
-                    <button type="submit" class="btn btn-primary">
-                        ${pesquisaAtualIndex < pesquisasPendentes.length - 1 ? 'Próxima' : 'Finalizar'}
-                    </button>
+                <div style="display: flex; gap: 10px; justify-content: space-between; margin-top: 20px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
+                    <div>
+                        ${pesquisaAtualIndex > 0 ? `
+                            <button type="button" class="btn btn-secondary" onclick="window.app.voltarPesquisaAnterior()">
+                                ← Voltar
+                            </button>
+                        ` : ''}
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button type="button" class="btn btn-secondary" onclick="window.app.cancelarPesquisaVisita()">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">
+                            ${pesquisaAtualIndex < pesquisasPendentes.length - 1 ? 'Próxima →' : '✓ Finalizar'}
+                        </button>
+                    </div>
                 </div>
             </form>
         `;
@@ -16325,6 +16485,14 @@ class App {
         }
     }
 
+    voltarPesquisaAnterior() {
+        // Verificar se há pesquisa anterior
+        if (this.pesquisaVisitaState.pesquisaAtualIndex > 0) {
+            this.pesquisaVisitaState.pesquisaAtualIndex--;
+            this.renderPesquisaAtual();
+        }
+    }
+
     cancelarPesquisaVisita() {
         // Fechar câmera se estiver aberta
         this.fecharCameraPesquisa();
@@ -16333,7 +16501,7 @@ class App {
         if (modal) {
             modal.classList.remove('active');
         }
-        this.showNotification('Checkout cancelado. Complete as pesquisas obrigatórias para finalizar.', 'warning');
+        this.showNotification('Pesquisa cancelada. Complete as pesquisas obrigatórias para finalizar.', 'warning');
     }
 
     fecharModalPesquisaVisita() {
