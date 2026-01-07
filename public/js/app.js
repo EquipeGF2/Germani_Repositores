@@ -11129,12 +11129,20 @@ class App {
             if (sessaoAberta) {
                 this.reconciliarSessaoAbertaLocal(sessaoAberta, repIdAtual);
             } else if (clienteIdAtual) {
-                this.atualizarStatusClienteLocal(clienteIdAtual, {
-                    status: 'sem_checkin',
-                    rv_id: null,
-                    atividades_count: 0,
-                    rep_id: repIdAtual
-                });
+                // Verificar se o status atual é 'finalizado' (checkout concluído)
+                // Nesse caso, NÃO sobrescrever para 'sem_checkin' pois o botão "Nova visita" deve aparecer
+                const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
+                const clienteIdNorm = normalizeClienteId(clienteIdAtual);
+                const statusAtual = this.registroRotaState.resumoVisitas?.get(clienteIdNorm);
+
+                if (statusAtual?.status !== 'finalizado') {
+                    this.atualizarStatusClienteLocal(clienteIdAtual, {
+                        status: 'sem_checkin',
+                        rv_id: null,
+                        atividades_count: 0,
+                        rep_id: repIdAtual
+                    });
+                }
             }
         }
     }
