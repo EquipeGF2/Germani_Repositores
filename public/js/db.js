@@ -4102,7 +4102,7 @@ class TursoDatabase {
             let salvos = 0;
 
             for (const custo of custos) {
-                const { rep_id, ano, mes, valor } = custo;
+                const { rep_id, ano, mes, custo_fixo, custo_variavel, valor } = custo;
 
                 if (!rep_id || !ano || !mes) {
                     console.warn('Custo inválido ignorado:', custo);
@@ -4117,6 +4117,11 @@ class TursoDatabase {
                 // Montar competência YYYY-MM
                 const competencia = `${ano}-${String(mes).padStart(2, '0')}`;
 
+                // Determinar valores de fixo e variável
+                // Suporta tanto o formato antigo (valor) quanto o novo (custo_fixo, custo_variavel)
+                const valorFixo = custo_fixo !== undefined ? custo_fixo : (valor || 0);
+                const valorVariavel = custo_variavel !== undefined ? custo_variavel : 0;
+
                 // Verificar se já existe
                 const existente = await this.mainClient.execute({
                     sql: 'SELECT cc_id FROM cc_custos_repositor_mensal WHERE cc_rep_id = ? AND cc_competencia = ?',
@@ -4129,11 +4134,11 @@ class TursoDatabase {
                         sql: `
                             UPDATE cc_custos_repositor_mensal
                             SET cc_custo_fixo = ?,
-                                cc_custo_variavel = 0,
+                                cc_custo_variavel = ?,
                                 cc_atualizado_em = CURRENT_TIMESTAMP
                             WHERE cc_rep_id = ? AND cc_competencia = ?
                         `,
-                        args: [valor, rep_id, competencia]
+                        args: [valorFixo, valorVariavel, rep_id, competencia]
                     });
                 } else {
                     // Inserir
@@ -4141,9 +4146,9 @@ class TursoDatabase {
                         sql: `
                             INSERT INTO cc_custos_repositor_mensal (
                                 cc_rep_id, cc_competencia, cc_custo_fixo, cc_custo_variavel
-                            ) VALUES (?, ?, ?, 0)
+                            ) VALUES (?, ?, ?, ?)
                         `,
-                        args: [rep_id, competencia, valor]
+                        args: [rep_id, competencia, valorFixo, valorVariavel]
                     });
                 }
 
