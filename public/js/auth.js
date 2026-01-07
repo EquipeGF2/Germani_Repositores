@@ -14,6 +14,7 @@ class AuthManager {
 
   /**
    * Detectar se está rodando como PWA (aplicativo instalado)
+   * Apenas modo standalone requer login - acesso web (desktop ou mobile) não exige
    */
   detectarPWA() {
     // Verifica se está em modo standalone (app instalado)
@@ -22,10 +23,9 @@ class AuthManager {
     // Verifica se foi adicionado à tela inicial (iOS)
     const isIOSStandalone = window.navigator.standalone === true;
 
-    // Verifica se é mobile
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
-    return isStandalone || isIOSStandalone || isMobile;
+    // Apenas considerar PWA se estiver em modo standalone (app instalado)
+    // Acesso via navegador (mesmo mobile) não exige login
+    return isStandalone || isIOSStandalone;
   }
 
   /**
