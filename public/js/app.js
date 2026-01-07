@@ -4733,7 +4733,18 @@ class App {
     limparRoteiroPendente() {
         const indicador = document.getElementById('roteiroPendentesIndicador');
         if (indicador) {
-            indicador.style.display = 'none';
+            // Mostrar "Roteiro salvo" em verde por 3 segundos
+            indicador.textContent = 'Roteiro salvo';
+            indicador.classList.remove('badge-warning');
+            indicador.classList.add('badge-success-roteiro');
+            indicador.style.display = 'inline-block';
+
+            setTimeout(() => {
+                indicador.style.display = 'none';
+                indicador.textContent = 'Alterações pendentes';
+                indicador.classList.remove('badge-success-roteiro');
+                indicador.classList.add('badge-warning');
+            }, 3000);
         }
     }
 
@@ -4863,9 +4874,7 @@ class App {
             this.renderModalClientesCidade();
             this.showNotification('Cliente adicionado ao roteiro.', 'success');
 
-            if (possuiRateio) {
-                await this.sugerirCadastroRateio(clienteCodigo);
-            }
+            // Auto-verificação de rateio roda em segundo plano (sem prompt)
         } catch (error) {
             this.showNotification(error.message || 'Não foi possível adicionar o cliente.', 'error');
         }
@@ -4942,8 +4951,8 @@ class App {
                                 <td>${formatarGrupo(cliente.grupo_desc)}</td>
                                 <td class="table-actions">
                                     ${jaIncluido
-                                        ? '<span class="badge badge-success">Incluído</span>'
-                                        : `<button class="btn btn-primary btn-sm" data-acao="adicionar-cliente" data-id="${cliente.cliente}">Adicionar</button>`}
+                                        ? '<span class="badge badge-success">✓</span>'
+                                        : `<button class="btn btn-primary btn-sm btn-adicionar-cliente" data-acao="adicionar-cliente" data-id="${cliente.cliente}">+<span class="btn-text"> Adicionar</span></button>`}
                                 </td>
                             </tr>
                         `;
@@ -10634,28 +10643,20 @@ class App {
 
     async obterEnderecoPorCoordenadas(lat, lon) {
         try {
-            // Usando API do OpenStreetMap Nominatim (gratuita)
-            const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1`;
-            const data = await fetchJson(url, {
-                headers: {
-                    'User-Agent': 'RepositorApp/1.0'
-                }
-            });
+            // Tentar via backend primeiro (evita CORS)
+            const backendUrl = `${API_BASE_URL}/api/geocode/reverse?lat=${lat}&lon=${lon}`;
+            const data = await fetchJson(backendUrl);
 
-            // Montar endereço formatado
-            const address = data.address || {};
-            const partes = [];
+            if (data?.endereco) {
+                return data.endereco;
+            }
 
-            if (address.road) partes.push(address.road);
-            if (address.house_number) partes.push(address.house_number);
-            if (address.neighbourhood || address.suburb) partes.push(address.neighbourhood || address.suburb);
-            if (address.city || address.town || address.village) partes.push(address.city || address.town || address.village);
-            if (address.state) partes.push(address.state);
-
-            return partes.join(', ') || data.display_name || 'Endereço não encontrado';
+            // Fallback: mostrar apenas coordenadas formatadas
+            return `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
         } catch (error) {
-            console.error('Erro ao buscar endereço:', error);
-            return null;
+            console.warn('Geocodificação indisponível, usando coordenadas:', error.message);
+            // Em caso de erro, retornar coordenadas formatadas
+            return `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
         }
     }
 
@@ -12884,10 +12885,8 @@ class App {
                     <div class="rubrica-foto">
                         <button type="button" class="rubrica-foto-btn" id="rubrica_foto_btn_${r.gst_id}"
                                 onclick="app.capturarFotoRubrica(${r.gst_id})">
-                            📷 Tirar foto do comprovante
+                            📷 Tirar foto
                         </button>
-                        <input type="file" id="rubrica_foto_input_${r.gst_id}" accept="image/*" capture="environment"
-                               style="display: none;" onchange="app.processarFotoRubrica(${r.gst_id}, this.files)">
                         <div class="rubrica-contador-fotos" id="rubrica_contador_${r.gst_id}">0/10 fotos</div>
                     </div>
                     <div class="rubrica-fotos-container" id="rubrica_fotos_${r.gst_id}">
@@ -12924,17 +12923,161 @@ class App {
         this.atualizarTotalDespesas();
     }
 
-    capturarFotoRubrica(rubricaId) {
+    async capturarFotoRubrica(rubricaId) {
         const rubrica = this.documentosState.rubricas?.find(r => r.id === rubricaId);
         if (rubrica && rubrica.fotos && rubrica.fotos.length >= 10) {
             this.showNotification('Limite de 10 fotos atingido para esta rubrica.', 'warning');
             return;
         }
-        const input = document.getElementById(`rubrica_foto_input_${rubricaId}`);
-        if (input) {
-            input.value = ''; // Limpar para permitir selecionar a mesma foto novamente
-            input.click();
+
+        // Abrir modal de câmera para captura real
+        this.abrirCameraRubrica(rubricaId);
+    }
+
+    async abrirCameraRubrica(rubricaId) {
+        const rubrica = this.documentosState.rubricas?.find(r => r.id === rubricaId);
+        if (!rubrica) return;
+
+        // Fechar modal anterior se existir
+        this.fecharCameraRubrica();
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay camera-overlay';
+        modal.id = 'modalCameraRubrica';
+        modal.innerHTML = `
+            <div class="modal-content captura-modal" style="max-width: 600px; width: 95%;">
+                <div class="modal-header" style="padding: 12px 16px;">
+                    <div>
+                        <h3 style="margin: 0; font-size: 1rem;">📷 Foto do Comprovante</h3>
+                        <p style="margin: 4px 0 0; color: #6b7280; font-size: 0.85rem;">${rubrica.nome}</p>
+                    </div>
+                    <button class="modal-close" aria-label="Fechar">&times;</button>
+                </div>
+                <div class="modal-body" style="display: flex; flex-direction: column; gap: 8px; padding: 12px;">
+                    <div class="camera-area" style="height: 50vh; max-height: 400px;">
+                        <video id="videoCameraRubrica" autoplay playsinline muted class="camera-video" style="display:block;"></video>
+                        <canvas id="canvasCameraRubrica" class="camera-canvas" style="display:none;"></canvas>
+                        <div id="cameraRubricaPlaceholder" class="camera-placeholder">📷 Iniciando câmera...</div>
+                        <div id="cameraRubricaErro" class="camera-erro" style="display:none;"></div>
+                    </div>
+                </div>
+                <div class="modal-footer" style="padding: 12px 16px; gap: 8px;">
+                    <button class="btn btn-secondary" type="button" data-camera-close>Cancelar</button>
+                    <button class="btn btn-primary" type="button" id="btnCapturarFotoRubrica">📸 Capturar</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+        document.body.classList.add('modal-open');
+        this.documentosState.cameraRubricaModal = modal;
+        this.documentosState.cameraRubricaId = rubricaId;
+
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) this.fecharCameraRubrica();
+        });
+        modal.querySelector('.modal-close')?.addEventListener('click', () => this.fecharCameraRubrica());
+        modal.querySelector('[data-camera-close]')?.addEventListener('click', () => this.fecharCameraRubrica());
+
+        const video = document.getElementById('videoCameraRubrica');
+        const placeholder = document.getElementById('cameraRubricaPlaceholder');
+        const erroBox = document.getElementById('cameraRubricaErro');
+        const btnCapturar = document.getElementById('btnCapturarFotoRubrica');
+
+        if (btnCapturar) {
+            btnCapturar.onclick = () => this.capturarFotoRubricaCamera();
         }
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+            });
+            this.documentosState.cameraRubricaStream = stream;
+            if (video) {
+                video.srcObject = stream;
+                await video.play();
+                if (placeholder) placeholder.style.display = 'none';
+            }
+        } catch (error) {
+            console.error('Erro ao abrir câmera:', error);
+            if (placeholder) placeholder.style.display = 'none';
+            if (erroBox) {
+                erroBox.style.display = 'flex';
+                erroBox.textContent = 'Não foi possível acessar a câmera. Verifique as permissões.';
+            }
+        }
+    }
+
+    fecharCameraRubrica() {
+        const modal = this.documentosState.cameraRubricaModal || document.getElementById('modalCameraRubrica');
+        if (this.documentosState.cameraRubricaStream) {
+            this.documentosState.cameraRubricaStream.getTracks().forEach(track => track.stop());
+            this.documentosState.cameraRubricaStream = null;
+        }
+        if (modal) {
+            modal.remove();
+        }
+        document.body.classList.remove('modal-open');
+        this.documentosState.cameraRubricaModal = null;
+        this.documentosState.cameraRubricaId = null;
+    }
+
+    async capturarFotoRubricaCamera() {
+        const rubricaId = this.documentosState.cameraRubricaId;
+        const rubrica = this.documentosState.rubricas?.find(r => r.id === rubricaId);
+        if (!rubrica) return;
+
+        const video = document.getElementById('videoCameraRubrica');
+        const canvas = document.getElementById('canvasCameraRubrica');
+
+        if (!video || !canvas) return;
+
+        // Capturar frame do vídeo
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0);
+
+        // Converter para blob
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+        if (!blob) {
+            this.showNotification('Erro ao capturar foto', 'error');
+            return;
+        }
+
+        // Criar arquivo
+        const fileName = `comprovante_${rubricaId}_${Date.now()}.jpg`;
+        const file = new File([blob], fileName, { type: 'image/jpeg' });
+
+        // Inicializar array de fotos se não existir
+        if (!rubrica.fotos) rubrica.fotos = [];
+
+        // Verificar limite
+        if (rubrica.fotos.length >= 10) {
+            this.showNotification('Limite de 10 fotos atingido.', 'warning');
+            this.fecharCameraRubrica();
+            return;
+        }
+
+        // Criar preview
+        const previewUrl = URL.createObjectURL(blob);
+        const fotoIndex = rubrica.fotos.length;
+
+        const novaFoto = {
+            id: `foto_${rubricaId}_${fotoIndex}_${Date.now()}`,
+            file: file,
+            preview: previewUrl,
+            nome: fileName
+        };
+
+        rubrica.fotos.push(novaFoto);
+
+        // Atualizar UI
+        this.atualizarVisualRubricaFotos(rubricaId);
+
+        // Fechar câmera e mostrar sucesso
+        this.fecharCameraRubrica();
+        this.showNotification('Foto capturada com sucesso!', 'success');
     }
 
     processarFotoRubrica(rubricaId, files) {
