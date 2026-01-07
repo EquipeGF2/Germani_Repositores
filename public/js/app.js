@@ -15652,7 +15652,10 @@ class App {
         pesquisaAtualIndex: 0,
         respostasColetadas: [],
         contextoVisita: null,
-        fotoPesquisa: null
+        fotoPesquisa: null,
+        // Staging: guarda respostas e fotos localmente até finalizar
+        // Map<pesquisa_id, { respostas: [], foto: File|null, fotoPreviewUrl: string|null }>
+        respostasStaging: new Map()
     };
 
     /**
@@ -15825,7 +15828,9 @@ class App {
             respostasColetadas: [],
             contextoVisita: { repId, clienteId, clienteNome, dataVisita },
             fotoPesquisa: null,
-            veioDocheckout: veioDocheckout
+            veioDocheckout: veioDocheckout,
+            // Staging: guarda respostas e fotos localmente até finalizar
+            respostasStaging: new Map()
         };
 
         // Criar modal se não existir
@@ -15985,6 +15990,66 @@ class App {
                 </div>
             </form>
         `;
+
+        // Restaurar valores do staging se existir (para quando usuário volta)
+        this.restaurarValoresDoStaging();
+    }
+
+    /**
+     * Restaura valores dos campos e foto do staging para a pesquisa atual
+     */
+    restaurarValoresDoStaging() {
+        const { pesquisasPendentes, pesquisaAtualIndex, respostasStaging } = this.pesquisaVisitaState;
+        const pesquisa = pesquisasPendentes[pesquisaAtualIndex];
+        if (!pesquisa) return;
+
+        const stagingEntry = respostasStaging.get(pesquisa.pes_id);
+        if (!stagingEntry) return;
+
+        // Restaurar valores dos campos
+        if (stagingEntry.respostas && stagingEntry.respostas.length > 0) {
+            for (const resp of stagingEntry.respostas) {
+                const campo = pesquisa.campos?.find(c => c.pca_id === resp.campo);
+                if (!campo) continue;
+
+                if (campo.pca_tipo === 'sim_nao') {
+                    const radio = document.querySelector(`input[name="campo_${campo.pca_id}"][value="${resp.resposta}"]`);
+                    if (radio) radio.checked = true;
+                } else if (campo.pca_tipo === 'selecao') {
+                    const isMultipla = campo.pca_multipla === 1 || campo.pca_multipla === true;
+                    if (isMultipla) {
+                        // Múltipla seleção - marcar cada checkbox
+                        const valores = resp.resposta.split(', ');
+                        valores.forEach(val => {
+                            const checkbox = document.querySelector(`input[name="campo_${campo.pca_id}"][value="${val}"]`);
+                            if (checkbox) checkbox.checked = true;
+                        });
+                    } else {
+                        const radio = document.querySelector(`input[name="campo_${campo.pca_id}"][value="${resp.resposta}"]`);
+                        if (radio) radio.checked = true;
+                    }
+                } else {
+                    const input = document.getElementById(`campo_${campo.pca_id}`);
+                    if (input) input.value = resp.resposta;
+                }
+            }
+        }
+
+        // Restaurar foto
+        if (stagingEntry.foto) {
+            this.pesquisaVisitaState.fotoPesquisa = stagingEntry.foto;
+            this.pesquisaVisitaState.fotoPesquisaUrl = stagingEntry.fotoPreviewUrl;
+
+            const preview = document.getElementById('pesquisaFotoPreview');
+            if (preview && stagingEntry.fotoPreviewUrl) {
+                preview.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <img src="${stagingEntry.fotoPreviewUrl}" style="max-width: 150px; border-radius: 8px; border: 2px solid #10b981;">
+                        <span style="color: #10b981; font-weight: 500;">✓ Foto capturada</span>
+                    </div>
+                `;
+            }
+        }
     }
 
     // ===============================================
@@ -16304,7 +16369,7 @@ class App {
     async enviarRespostaPesquisaVisita(event) {
         event.preventDefault();
 
-        const { pesquisasPendentes, pesquisaAtualIndex, contextoVisita } = this.pesquisaVisitaState;
+        const { pesquisasPendentes, pesquisaAtualIndex, contextoVisita, respostasStaging } = this.pesquisaVisitaState;
         const pesquisa = pesquisasPendentes[pesquisaAtualIndex];
 
         if (!pesquisa) return;
@@ -16381,144 +16446,226 @@ class App {
             return;
         }
 
-        // Salvar resposta
+        // STAGING: Guardar respostas e foto localmente (não faz upload ainda)
+        const stagingEntry = {
+            pesquisa: pesquisa,
+            respostas: respostas,
+            foto: this.pesquisaVisitaState.fotoPesquisa || null,
+            fotoPreviewUrl: this.pesquisaVisitaState.fotoPesquisaUrl || null
+        };
+        respostasStaging.set(pesquisa.pes_id, stagingEntry);
+        console.log(`📝 Pesquisa ${pesquisa.pes_id} salva em staging (${respostasStaging.size} no total)`);
+
+        // Limpar foto para próxima pesquisa
+        this.pesquisaVisitaState.fotoPesquisa = null;
+        this.pesquisaVisitaState.fotoPesquisaUrl = null;
+
+        // Avançar para próxima pesquisa ou finalizar
+        if (pesquisaAtualIndex < pesquisasPendentes.length - 1) {
+            this.pesquisaVisitaState.pesquisaAtualIndex++;
+            this.renderPesquisaAtual();
+        } else {
+            // ÚLTIMA PESQUISA: Fazer upload de todas as fotos e salvar no banco
+            await this.finalizarTodasPesquisas();
+        }
+    }
+
+    /**
+     * Finaliza todas as pesquisas em staging: faz upload das fotos e salva no banco
+     */
+    async finalizarTodasPesquisas() {
+        const { respostasStaging, contextoVisita } = this.pesquisaVisitaState;
+
+        if (respostasStaging.size === 0) {
+            this.showNotification('Nenhuma pesquisa para finalizar', 'warning');
+            return;
+        }
+
+        this.showNotification(`Enviando ${respostasStaging.size} pesquisa(s)...`, 'info');
+
         try {
-            // Upload da foto para o backend se houver
-            let fotoUrl = null;
-            if (this.pesquisaVisitaState.fotoPesquisa) {
-                const foto = this.pesquisaVisitaState.fotoPesquisa;
-                if (foto instanceof File || foto instanceof Blob) {
-                    // Upload para o backend com estrutura de pasta correta
-                    // Estrutura: repositor/pesquisa/[id_pesquisa]/CODREP_CLICOD_PESQUISA_DATA_HORA_SEQ
-                    try {
-                        const agora = new Date();
-                        const dataStr = agora.toISOString().split('T')[0].replace(/-/g, '');
-                        const horaStr = agora.toTimeString().split(' ')[0].replace(/:/g, '');
-                        const seq = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-                        const clienteNorm = String(contextoVisita.clienteId).trim().replace(/\.0$/, '');
-                        const nomeArquivo = `${contextoVisita.repId}_${clienteNorm}_${pesquisa.pes_id}_${dataStr}_${horaStr}_${seq}.jpg`;
+            // Processar cada pesquisa em staging
+            for (const [pesId, entry] of respostasStaging) {
+                let fotoUrl = null;
 
-                        const formData = new FormData();
-                        formData.append('arquivo', foto, nomeArquivo);
-                        formData.append('repositor_id', contextoVisita.repId);
-                        formData.append('pesquisa_id', pesquisa.pes_id);
-                        formData.append('cliente_codigo', clienteNorm);
-                        formData.append('pasta', `repositor/pesquisa/${pesquisa.pes_id}`);
+                // Upload da foto se houver
+                if (entry.foto) {
+                    const foto = entry.foto;
+                    if (foto instanceof File || foto instanceof Blob) {
+                        try {
+                            const agora = new Date();
+                            const dataStr = agora.toISOString().split('T')[0].replace(/-/g, '');
+                            const horaStr = agora.toTimeString().split(' ')[0].replace(/:/g, '');
+                            const clienteNorm = String(contextoVisita.clienteId).trim().replace(/\.0$/, '');
+                            // Nome único mas consistente para evitar duplicação
+                            const nomeArquivo = `${contextoVisita.repId}_${clienteNorm}_${pesId}_${dataStr}.jpg`;
 
-                        const uploadResp = await fetchJson(`${API_BASE_URL}/api/pesquisa/upload-foto`, {
-                            method: 'POST',
-                            body: formData
-                        });
+                            const formData = new FormData();
+                            formData.append('arquivo', foto, nomeArquivo);
+                            formData.append('repositor_id', contextoVisita.repId);
+                            formData.append('pesquisa_id', pesId);
+                            formData.append('cliente_codigo', clienteNorm);
 
-                        if (uploadResp.success && uploadResp.url) {
-                            fotoUrl = uploadResp.url;
-                        } else {
-                            console.warn('Upload retornou sem URL, salvando sem foto:', uploadResp);
+                            const uploadResp = await fetchJson(`${API_BASE_URL}/api/pesquisa/upload-foto`, {
+                                method: 'POST',
+                                body: formData
+                            });
+
+                            if (uploadResp.success && uploadResp.url) {
+                                fotoUrl = uploadResp.url;
+                            }
+                        } catch (uploadError) {
+                            console.error(`Erro ao fazer upload da foto da pesquisa ${pesId}:`, uploadError);
                         }
-                    } catch (uploadError) {
-                        console.error('Erro ao fazer upload da foto da pesquisa:', uploadError);
-                        // Se o upload falhar, salvar resposta mesmo assim, apenas sem a foto
-                        this.showNotification('Aviso: foto não pôde ser enviada, mas a resposta será salva', 'warning');
+                    } else if (typeof foto === 'string') {
+                        fotoUrl = foto;
                     }
-                } else if (typeof foto === 'string') {
-                    fotoUrl = foto;
                 }
+
+                // Salvar resposta no banco
+                const dados = {
+                    pesId: pesId,
+                    repId: contextoVisita.repId,
+                    clienteCodigo: String(contextoVisita.clienteId),
+                    visitaId: null,
+                    respostas: entry.respostas,
+                    fotoUrl: fotoUrl
+                };
+
+                await db.salvarRespostaPesquisa(dados);
+                console.log(`✅ Pesquisa ${pesId} salva com sucesso`);
             }
 
-            const dados = {
-                pesId: pesquisa.pes_id,
-                repId: contextoVisita.repId,
-                clienteCodigo: String(contextoVisita.clienteId),
-                visitaId: null, // Opcional
-                respostas: respostas, // Array de objetos, db.js faz o JSON.stringify
-                fotoUrl: fotoUrl
-            };
+            // Limpar staging
+            respostasStaging.clear();
 
-            await db.salvarRespostaPesquisa(dados);
+            // Fechar modal
+            this.fecharModalPesquisaVisita();
 
-            // Limpar foto para próxima pesquisa
-            this.pesquisaVisitaState.fotoPesquisa = null;
+            // Se veio do checkout, continuar salvando a visita
+            if (this.pesquisaVisitaState.veioDocheckout) {
+                // Atualizar mapa de pesquisas pendentes (remover do cliente)
+                const pesquisasPendentesMap = this.registroRotaState.pesquisasPendentesMap || new Map();
+                pesquisasPendentesMap.delete(contextoVisita.clienteId);
+                this.registroRotaState.pesquisasPendentesMap = pesquisasPendentesMap;
 
-            // Avançar para próxima pesquisa ou finalizar
-            if (pesquisaAtualIndex < pesquisasPendentes.length - 1) {
-                this.pesquisaVisitaState.pesquisaAtualIndex++;
-                this.renderPesquisaAtual();
+                // Atualizar card do cliente
+                this.atualizarCardCliente(contextoVisita.clienteId);
+
+                this.showNotification('Pesquisas respondidas. Continuando com o checkout...', 'success');
+                setTimeout(() => {
+                    this.salvarVisita();
+                }, 500);
             } else {
-                // Todas as pesquisas do lote atual respondidas
-                this.fecharModalPesquisaVisita();
+                // Veio do botão Pesquisa - verificar se há mais pesquisas pendentes
+                const maisPesquisas = await this.buscarPesquisasPendentes(
+                    contextoVisita.repId,
+                    contextoVisita.clienteId,
+                    contextoVisita.dataVisita,
+                    false
+                );
 
-                // Se veio do checkout, continuar salvando a visita
-                if (this.pesquisaVisitaState.veioDocheckout) {
-                    // Atualizar mapa de pesquisas pendentes (remover do cliente)
-                    const pesquisasPendentesMap = this.registroRotaState.pesquisasPendentesMap || new Map();
-                    pesquisasPendentesMap.delete(contextoVisita.clienteId);
+                // Atualizar mapa de pesquisas pendentes com as restantes
+                const pesquisasPendentesMap = this.registroRotaState.pesquisasPendentesMap || new Map();
+
+                if (maisPesquisas.length > 0) {
+                    // Atualizar com as pesquisas restantes
+                    pesquisasPendentesMap.set(contextoVisita.clienteId, maisPesquisas);
                     this.registroRotaState.pesquisasPendentesMap = pesquisasPendentesMap;
 
-                    // Atualizar card do cliente
-                    this.atualizarCardCliente(contextoVisita.clienteId);
+                    // Há mais pesquisas - perguntar se quer responder
+                    this.showNotification('Pesquisa registrada! Ainda existem outras pesquisas disponíveis.', 'success');
 
-                    this.showNotification('Pesquisas respondidas. Continuando com o checkout...', 'success');
+                    // Reabrir modal de seleção após breve delay
                     setTimeout(() => {
-                        this.salvarVisita();
-                    }, 500);
+                        this.abrirModalSelecaoPesquisa(
+                            maisPesquisas,
+                            contextoVisita.repId,
+                            contextoVisita.clienteId,
+                            contextoVisita.clienteNome,
+                            contextoVisita.dataVisita
+                        );
+                    }, 800);
                 } else {
-                    // Veio do botão Pesquisa - verificar se há mais pesquisas pendentes
-                    const maisPesquisas = await this.buscarPesquisasPendentes(
-                        contextoVisita.repId,
-                        contextoVisita.clienteId,
-                        contextoVisita.dataVisita,
-                        false
-                    );
-
-                    // Atualizar mapa de pesquisas pendentes com as restantes
-                    const pesquisasPendentesMap = this.registroRotaState.pesquisasPendentesMap || new Map();
-
-                    if (maisPesquisas.length > 0) {
-                        // Atualizar com as pesquisas restantes
-                        pesquisasPendentesMap.set(contextoVisita.clienteId, maisPesquisas);
-                        this.registroRotaState.pesquisasPendentesMap = pesquisasPendentesMap;
-
-                        // Há mais pesquisas - perguntar se quer responder
-                        this.showNotification('Pesquisa registrada! Ainda existem outras pesquisas disponíveis.', 'success');
-
-                        // Reabrir modal de seleção após breve delay
-                        setTimeout(() => {
-                            this.abrirModalSelecaoPesquisa(
-                                maisPesquisas,
-                                contextoVisita.repId,
-                                contextoVisita.clienteId,
-                                contextoVisita.clienteNome,
-                                contextoVisita.dataVisita
-                            );
-                        }, 800);
-                    } else {
-                        // Não há mais pesquisas - remover do mapa
-                        pesquisasPendentesMap.delete(contextoVisita.clienteId);
-                        this.registroRotaState.pesquisasPendentesMap = pesquisasPendentesMap;
-                        this.showNotification('Todas as pesquisas foram respondidas!', 'success');
-                    }
-
-                    // Atualizar card do cliente
-                    this.atualizarCardCliente(contextoVisita.clienteId);
+                    // Não há mais pesquisas - remover do mapa
+                    pesquisasPendentesMap.delete(contextoVisita.clienteId);
+                    this.registroRotaState.pesquisasPendentesMap = pesquisasPendentesMap;
+                    this.showNotification('Todas as pesquisas foram respondidas!', 'success');
                 }
+
+                // Atualizar card do cliente
+                this.atualizarCardCliente(contextoVisita.clienteId);
             }
         } catch (error) {
-            console.error('Erro ao salvar resposta:', error);
-            this.showNotification('Erro ao salvar resposta: ' + error.message, 'error');
+            console.error('Erro ao finalizar pesquisas:', error);
+            this.showNotification('Erro ao salvar pesquisas: ' + error.message, 'error');
         }
     }
 
     voltarPesquisaAnterior() {
         // Verificar se há pesquisa anterior
         if (this.pesquisaVisitaState.pesquisaAtualIndex > 0) {
+            // Antes de voltar, salvar estado atual da pesquisa corrente em staging
+            this.salvarRespostasAtuaisNoStaging();
+
             this.pesquisaVisitaState.pesquisaAtualIndex--;
             this.renderPesquisaAtual();
+            // renderPesquisaAtual já chama restaurarValoresDoStaging
         }
+    }
+
+    /**
+     * Salva as respostas atuais no staging (para quando o usuário volta/avança)
+     */
+    salvarRespostasAtuaisNoStaging() {
+        const { pesquisasPendentes, pesquisaAtualIndex, respostasStaging } = this.pesquisaVisitaState;
+        const pesquisa = pesquisasPendentes[pesquisaAtualIndex];
+        if (!pesquisa) return;
+
+        const respostas = [];
+        for (const campo of (pesquisa.campos || [])) {
+            const pergunta = campo.pca_titulo || campo.pca_pergunta;
+            let valor = '';
+
+            if (campo.pca_tipo === 'sim_nao') {
+                const radio = document.querySelector(`input[name="campo_${campo.pca_id}"]:checked`);
+                valor = radio ? radio.value : '';
+            } else if (campo.pca_tipo === 'selecao') {
+                const isMultipla = campo.pca_multipla === 1 || campo.pca_multipla === true;
+                if (isMultipla) {
+                    const checkboxes = document.querySelectorAll(`input[name="campo_${campo.pca_id}"]:checked`);
+                    const valores = Array.from(checkboxes).map(cb => cb.value);
+                    valor = valores.join(', ');
+                } else {
+                    const radio = document.querySelector(`input[name="campo_${campo.pca_id}"]:checked`);
+                    valor = radio ? radio.value : '';
+                }
+            } else {
+                const input = document.getElementById(`campo_${campo.pca_id}`);
+                valor = input ? input.value : '';
+            }
+
+            respostas.push({
+                campo: campo.pca_id,
+                pergunta: pergunta,
+                resposta: valor
+            });
+        }
+
+        // Atualizar staging com respostas parciais
+        const stagingEntry = respostasStaging.get(pesquisa.pes_id) || {};
+        stagingEntry.respostas = respostas;
+        stagingEntry.foto = this.pesquisaVisitaState.fotoPesquisa || stagingEntry.foto;
+        stagingEntry.fotoPreviewUrl = this.pesquisaVisitaState.fotoPesquisaUrl || stagingEntry.fotoPreviewUrl;
+        respostasStaging.set(pesquisa.pes_id, stagingEntry);
     }
 
     cancelarPesquisaVisita() {
         // Fechar câmera se estiver aberta
         this.fecharCameraPesquisa();
+
+        // Limpar staging e liberar memória de previews
+        this.limparStagingPesquisas();
 
         const modal = document.getElementById('modalPesquisaVisita');
         if (modal) {
@@ -16535,6 +16682,30 @@ class App {
         if (modal) {
             modal.classList.remove('active');
         }
+    }
+
+    /**
+     * Limpa o staging e libera URLs de preview da memória
+     */
+    limparStagingPesquisas() {
+        const { respostasStaging } = this.pesquisaVisitaState;
+        if (respostasStaging) {
+            // Liberar URLs de objeto criadas para previews
+            for (const [_, entry] of respostasStaging) {
+                if (entry.fotoPreviewUrl && entry.fotoPreviewUrl.startsWith('blob:')) {
+                    URL.revokeObjectURL(entry.fotoPreviewUrl);
+                }
+            }
+            respostasStaging.clear();
+        }
+
+        // Limpar foto atual também
+        if (this.pesquisaVisitaState.fotoPesquisaUrl &&
+            this.pesquisaVisitaState.fotoPesquisaUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(this.pesquisaVisitaState.fotoPesquisaUrl);
+        }
+        this.pesquisaVisitaState.fotoPesquisa = null;
+        this.pesquisaVisitaState.fotoPesquisaUrl = null;
     }
 
     // ==================== NOTIFICAÇÕES ====================
