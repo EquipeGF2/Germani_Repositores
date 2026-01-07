@@ -5385,6 +5385,199 @@ export const pages = {
                     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
                 }
 
+                /* Cards de Pesquisas Agrupadas */
+                .pesquisas-cards-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+                    gap: 16px;
+                }
+
+                .pesquisa-card {
+                    background: white;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 12px;
+                    padding: 16px;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+                }
+
+                .pesquisa-card:hover {
+                    border-color: #3b82f6;
+                    box-shadow: 0 4px 12px rgba(59,130,246,0.15);
+                    transform: translateY(-2px);
+                }
+
+                .pesquisa-card-header h4 {
+                    margin: 0 0 12px;
+                    font-size: 1rem;
+                    color: #1f2937;
+                    font-weight: 600;
+                }
+
+                .pesquisa-card-stats {
+                    display: grid;
+                    grid-template-columns: repeat(4, 1fr);
+                    gap: 8px;
+                    margin-bottom: 12px;
+                }
+
+                .pesquisa-card-stats .stat-item {
+                    text-align: center;
+                    padding: 8px 4px;
+                    background: #f9fafb;
+                    border-radius: 6px;
+                }
+
+                .pesquisa-card-stats .stat-value {
+                    display: block;
+                    font-size: 1.25rem;
+                    font-weight: 700;
+                    color: #3b82f6;
+                }
+
+                .pesquisa-card-stats .stat-label {
+                    font-size: 0.7rem;
+                    color: #6b7280;
+                    text-transform: uppercase;
+                }
+
+                .pesquisa-card-footer {
+                    text-align: right;
+                    padding-top: 8px;
+                    border-top: 1px solid #f3f4f6;
+                }
+
+                .btn-ver-mais {
+                    color: #3b82f6;
+                    font-weight: 500;
+                    font-size: 0.9rem;
+                }
+
+                /* Modal de Respostas por Pesquisa */
+                .respostas-lista-modal {
+                    max-height: 70vh;
+                    overflow-y: auto;
+                }
+
+                .resposta-item-card {
+                    border: 1px solid #e5e7eb;
+                    border-radius: 8px;
+                    margin-bottom: 10px;
+                    overflow: hidden;
+                }
+
+                .resposta-item-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 12px 16px;
+                    background: #f9fafb;
+                    cursor: pointer;
+                    user-select: none;
+                }
+
+                .resposta-item-header:hover {
+                    background: #f3f4f6;
+                }
+
+                .resposta-item-info {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 12px;
+                    font-size: 0.85rem;
+                }
+
+                .resposta-data {
+                    color: #6b7280;
+                    font-weight: 500;
+                }
+
+                .resposta-repositor {
+                    color: #3b82f6;
+                }
+
+                .resposta-cliente {
+                    color: #374151;
+                }
+
+                .resposta-item-icons {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+
+                .has-foto {
+                    font-size: 1rem;
+                }
+
+                .expand-icon {
+                    font-size: 0.7rem;
+                    color: #9ca3af;
+                    transition: transform 0.2s;
+                }
+
+                .resposta-item-card.expanded .expand-icon {
+                    transform: rotate(180deg);
+                }
+
+                .resposta-item-body {
+                    display: none;
+                    padding: 16px;
+                    background: white;
+                    border-top: 1px solid #e5e7eb;
+                }
+
+                .resposta-item-card.expanded .resposta-item-body {
+                    display: block;
+                }
+
+                .respostas-campos-lista {
+                    margin-bottom: 16px;
+                }
+
+                .campo-resposta-row {
+                    display: flex;
+                    justify-content: space-between;
+                    padding: 8px 0;
+                    border-bottom: 1px solid #f3f4f6;
+                }
+
+                .campo-resposta-row:last-child {
+                    border-bottom: none;
+                }
+
+                .campo-pergunta {
+                    font-weight: 500;
+                    color: #374151;
+                    flex: 1;
+                }
+
+                .campo-valor {
+                    color: #111827;
+                    text-align: right;
+                    flex: 1;
+                    max-width: 50%;
+                }
+
+                .resposta-foto-container {
+                    text-align: center;
+                    margin-top: 12px;
+                }
+
+                .resposta-foto-container img {
+                    max-width: 100%;
+                    max-height: 300px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                }
+
+                .foto-erro {
+                    color: #9ca3af;
+                    font-style: italic;
+                }
+
                 @media (max-width: 768px) {
                     .detalhes-resposta-grid {
                         grid-template-columns: 1fr;

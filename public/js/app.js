@@ -15483,44 +15483,62 @@ class App {
                 return;
             }
 
-            container.innerHTML = `
-                <div class="table-container" style="overflow-x: auto;">
-                    <table class="respostas-table">
-                        <thead>
-                            <tr>
-                                <th>Data</th>
-                                <th>Pesquisa</th>
-                                <th>Repositor</th>
-                                <th>Cliente</th>
-                                <th>Foto</th>
-                                <th>Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${respostas.map(r => {
-                                const data = r.res_data_resposta ? new Date(r.res_data_resposta).toLocaleDateString('pt-BR') : '-';
-                                const fotoThumb = r.res_foto_url ? `<img src="${r.res_foto_url}" class="resposta-foto-thumb" onclick="window.open('${r.res_foto_url}', '_blank')">` : '-';
+            // Agrupar respostas por pesquisa
+            const pesquisasMap = new Map();
+            respostas.forEach(r => {
+                const pesId = r.res_pes_id;
+                if (!pesquisasMap.has(pesId)) {
+                    pesquisasMap.set(pesId, {
+                        pes_id: pesId,
+                        pes_titulo: r.pes_titulo,
+                        respostas: [],
+                        repositores: new Set(),
+                        clientes: new Set(),
+                        comFoto: 0
+                    });
+                }
+                const grupo = pesquisasMap.get(pesId);
+                grupo.respostas.push(r);
+                grupo.repositores.add(r.res_repo_cod);
+                grupo.clientes.add(r.res_cliente_codigo);
+                if (r.res_foto_url) grupo.comFoto++;
+            });
 
-                                return `
-                                    <tr>
-                                        <td>${data}</td>
-                                        <td>${r.pes_titulo || '-'}</td>
-                                        <td>${r.res_repo_cod} - ${r.repo_nome || ''}</td>
-                                        <td>${r.res_cliente_codigo} - ${r.cliente_nome || ''}</td>
-                                        <td>${fotoThumb}</td>
-                                        <td>
-                                            <button class="btn btn-secondary btn-sm" onclick="window.app.verDetalhesResposta(${r.res_id})">
-                                                Ver
-                                            </button>
-                                        </td>
-                                    </tr>
-                                `;
-                            }).join('')}
-                        </tbody>
-                    </table>
+            const pesquisasAgrupadas = Array.from(pesquisasMap.values());
+
+            container.innerHTML = `
+                <div class="pesquisas-cards-grid">
+                    ${pesquisasAgrupadas.map(p => `
+                        <div class="pesquisa-card" onclick="window.app.abrirModalRespostasPesquisa(${p.pes_id})">
+                            <div class="pesquisa-card-header">
+                                <h4>${p.pes_titulo || 'Pesquisa sem título'}</h4>
+                            </div>
+                            <div class="pesquisa-card-stats">
+                                <div class="stat-item">
+                                    <span class="stat-value">${p.respostas.length}</span>
+                                    <span class="stat-label">Respostas</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value">${p.repositores.size}</span>
+                                    <span class="stat-label">Repositores</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value">${p.clientes.size}</span>
+                                    <span class="stat-label">Clientes</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-value">${p.comFoto}</span>
+                                    <span class="stat-label">Com Foto</span>
+                                </div>
+                            </div>
+                            <div class="pesquisa-card-footer">
+                                <span class="btn-ver-mais">Ver respostas →</span>
+                            </div>
+                        </div>
+                    `).join('')}
                 </div>
-                <p class="text-muted" style="margin-top: 10px; font-size: 0.85rem;">
-                    ${respostas.length} resposta(s) encontrada(s)
+                <p class="text-muted" style="margin-top: 15px; font-size: 0.85rem;">
+                    ${respostas.length} resposta(s) em ${pesquisasAgrupadas.length} pesquisa(s)
                 </p>
             `;
         } catch (error) {
@@ -15531,6 +15549,75 @@ class App {
                     <p>Erro ao buscar respostas: ${error.message}</p>
                 </div>
             `;
+        }
+    }
+
+    abrirModalRespostasPesquisa(pesquisaId) {
+        const modal = document.getElementById('modalDetalhesResposta');
+        const body = document.getElementById('modalDetalhesRespostaBody');
+        const header = modal?.querySelector('.modal-header h3');
+        if (!modal || !body) return;
+
+        const respostasDaPesquisa = this.respostasPesquisaAtual.filter(r => r.res_pes_id === pesquisaId);
+        if (respostasDaPesquisa.length === 0) {
+            body.innerHTML = '<p>Nenhuma resposta encontrada.</p>';
+            modal.classList.add('active');
+            return;
+        }
+
+        const pesquisaTitulo = respostasDaPesquisa[0]?.pes_titulo || 'Pesquisa';
+        if (header) header.textContent = `${pesquisaTitulo} - ${respostasDaPesquisa.length} resposta(s)`;
+
+        body.innerHTML = `
+            <div class="respostas-lista-modal">
+                ${respostasDaPesquisa.map((r, idx) => {
+                    const data = r.res_data_resposta ? new Date(r.res_data_resposta).toLocaleString('pt-BR') : '-';
+                    const respostasCampos = r.res_respostas || [];
+
+                    return `
+                        <div class="resposta-item-card ${idx === 0 ? 'expanded' : ''}" data-res-id="${r.res_id}">
+                            <div class="resposta-item-header" onclick="window.app.toggleRespostaItem(this)">
+                                <div class="resposta-item-info">
+                                    <span class="resposta-data">${data}</span>
+                                    <span class="resposta-repositor">${r.res_repo_cod} - ${r.repo_nome || ''}</span>
+                                    <span class="resposta-cliente">${r.res_cliente_codigo}${r.cliente_nome ? ' - ' + r.cliente_nome : ''}</span>
+                                </div>
+                                <div class="resposta-item-icons">
+                                    ${r.res_foto_url ? '<span class="has-foto">📷</span>' : ''}
+                                    <span class="expand-icon">▼</span>
+                                </div>
+                            </div>
+                            <div class="resposta-item-body">
+                                ${respostasCampos.length > 0 ? `
+                                    <div class="respostas-campos-lista">
+                                        ${respostasCampos.map(rc => `
+                                            <div class="campo-resposta-row">
+                                                <span class="campo-pergunta">${rc.pergunta || rc.campo || '-'}</span>
+                                                <span class="campo-valor">${rc.resposta || '-'}</span>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                ` : '<p class="text-muted">Sem respostas de campos</p>'}
+
+                                ${r.res_foto_url ? `
+                                    <div class="resposta-foto-container">
+                                        <img src="${r.res_foto_url}" alt="Foto da pesquisa" onclick="window.open('${r.res_foto_url}', '_blank')" onerror="this.parentElement.innerHTML='<span class=\\'foto-erro\\'>Foto não disponível</span>'">
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+
+        modal.classList.add('active');
+    }
+
+    toggleRespostaItem(headerEl) {
+        const card = headerEl.closest('.resposta-item-card');
+        if (card) {
+            card.classList.toggle('expanded');
         }
     }
 
@@ -15621,19 +15708,55 @@ class App {
         }
 
         try {
-            // Preparar dados para CSV
-            const headers = ['Data', 'Pesquisa', 'Repositor', 'Nome Repositor', 'Cliente', 'Nome Cliente', 'Tem Foto'];
-            const rows = this.respostasPesquisaAtual.map(r => [
-                r.res_data_resposta ? new Date(r.res_data_resposta).toLocaleDateString('pt-BR') : '',
-                r.pes_titulo || '',
-                r.res_repo_cod || '',
-                r.repo_nome || '',
-                r.res_cliente_codigo || '',
-                r.cliente_nome || '',
-                r.res_foto_url ? 'Sim' : 'Não'
-            ]);
+            // Coletar todas as perguntas únicas de todas as respostas
+            const perguntasSet = new Set();
+            this.respostasPesquisaAtual.forEach(r => {
+                const respostasCampos = r.res_respostas || [];
+                respostasCampos.forEach(rc => {
+                    const pergunta = rc.pergunta || rc.campo || '';
+                    if (pergunta) perguntasSet.add(pergunta);
+                });
+            });
+            const perguntasArray = Array.from(perguntasSet);
 
-            // Criar CSV
+            // Headers: dados fixos + perguntas dinâmicas + URL da foto
+            const headersFixos = ['Data', 'Hora', 'Pesquisa', 'Repositor', 'Nome Repositor', 'Cliente', 'Nome Cliente'];
+            const headers = [...headersFixos, ...perguntasArray, 'URL Foto'];
+
+            // Criar linhas de dados
+            const rows = this.respostasPesquisaAtual.map(r => {
+                const dataHora = r.res_data_resposta ? new Date(r.res_data_resposta) : null;
+                const data = dataHora ? dataHora.toLocaleDateString('pt-BR') : '';
+                const hora = dataHora ? dataHora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+
+                // Dados fixos
+                const rowFixa = [
+                    data,
+                    hora,
+                    r.pes_titulo || '',
+                    r.res_repo_cod || '',
+                    r.repo_nome || '',
+                    r.res_cliente_codigo || '',
+                    r.cliente_nome || ''
+                ];
+
+                // Respostas das perguntas (mapeando para a ordem das colunas)
+                const respostasCampos = r.res_respostas || [];
+                const respostasMap = new Map();
+                respostasCampos.forEach(rc => {
+                    const pergunta = rc.pergunta || rc.campo || '';
+                    if (pergunta) respostasMap.set(pergunta, rc.resposta || '');
+                });
+
+                const rowPerguntas = perguntasArray.map(p => respostasMap.get(p) || '');
+
+                // URL da foto
+                const urlFoto = r.res_foto_url || '';
+
+                return [...rowFixa, ...rowPerguntas, urlFoto];
+            });
+
+            // Criar CSV com separador ; para melhor compatibilidade com Excel
             const csvContent = [
                 headers.join(';'),
                 ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(';'))
@@ -15646,7 +15769,7 @@ class App {
             link.download = `respostas_pesquisas_${new Date().toISOString().split('T')[0]}.csv`;
             link.click();
 
-            this.showNotification('Exportação realizada com sucesso', 'success');
+            this.showNotification(`Exportadas ${this.respostasPesquisaAtual.length} respostas com ${perguntasArray.length} perguntas`, 'success');
         } catch (error) {
             console.error('Erro ao exportar:', error);
             this.showNotification('Erro ao exportar dados', 'error');
