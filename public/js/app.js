@@ -1158,6 +1158,32 @@ class App {
         if (btnCarregarSessoes) {
             btnCarregarSessoes.addEventListener('click', () => this.carregarSessoesAbertasConfig());
         }
+
+        // ==================== TIPOS DE DOCUMENTOS ====================
+        await this.carregarTiposDocumentos();
+
+        const btnNovoTipoDoc = document.getElementById('btnNovoTipoDocumento');
+        if (btnNovoTipoDoc) {
+            btnNovoTipoDoc.addEventListener('click', () => this.abrirModalTipoDocumento());
+        }
+
+        const btnSalvarTipoDoc = document.getElementById('btnSalvarTipoDocumento');
+        if (btnSalvarTipoDoc) {
+            btnSalvarTipoDoc.addEventListener('click', () => this.salvarTipoDocumento());
+        }
+
+        // ==================== TIPOS DE GASTO ====================
+        await this.carregarTiposGasto();
+
+        const btnNovoTipoGasto = document.getElementById('btnNovoTipoGasto');
+        if (btnNovoTipoGasto) {
+            btnNovoTipoGasto.addEventListener('click', () => this.abrirModalTipoGasto());
+        }
+
+        const btnSalvarTipoGasto = document.getElementById('btnSalvarTipoGasto');
+        if (btnSalvarTipoGasto) {
+            btnSalvarTipoGasto.addEventListener('click', () => this.salvarTipoGasto());
+        }
     }
 
     async carregarSessoesAbertasConfig() {
@@ -1268,6 +1294,202 @@ class App {
         } catch (error) {
             console.error('Erro ao excluir sessão:', error);
             this.showNotification(`Erro ao excluir: ${error.message}`, 'error');
+        }
+    }
+
+    // ==================== TIPOS DE DOCUMENTOS ====================
+
+    async carregarTiposDocumentos() {
+        const tbody = document.getElementById('tiposDocumentosBody');
+        if (!tbody) return;
+
+        try {
+            const tipos = await db.listarTiposDocumentos();
+
+            if (tipos.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #6b7280;">Nenhum tipo cadastrado</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = tipos.map(t => `
+                <tr>
+                    <td style="text-align: center;">${t.dct_ordem || 0}</td>
+                    <td><code>${t.dct_codigo}</code></td>
+                    <td>${t.dct_nome}</td>
+                    <td style="text-align: center;">
+                        <span class="badge ${t.dct_ativo ? 'badge-success' : 'badge-secondary'}">
+                            ${t.dct_ativo ? 'Ativo' : 'Inativo'}
+                        </span>
+                    </td>
+                    <td style="text-align: center;">
+                        <button class="btn btn-sm btn-secondary" onclick="app.editarTipoDocumento(${t.dct_id})" title="Editar">✏️</button>
+                        <button class="btn btn-sm btn-danger" onclick="app.excluirTipoDocumento(${t.dct_id})" title="Excluir">🗑️</button>
+                    </td>
+                </tr>
+            `).join('');
+        } catch (error) {
+            console.error('Erro ao carregar tipos de documentos:', error);
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #dc2626;">Erro ao carregar</td></tr>';
+        }
+    }
+
+    abrirModalTipoDocumento(dados = null) {
+        document.getElementById('tipoDocumentoId').value = dados?.id || '';
+        document.getElementById('tipoDocumentoCodigo').value = dados?.codigo || '';
+        document.getElementById('tipoDocumentoNome').value = dados?.nome || '';
+        document.getElementById('tipoDocumentoOrdem').value = dados?.ordem || 0;
+        document.getElementById('tipoDocumentoAtivo').checked = dados?.ativo !== false;
+        document.getElementById('modalTipoDocumentoTitulo').textContent = dados ? 'Editar Tipo de Documento' : 'Novo Tipo de Documento';
+        document.getElementById('modalTipoDocumento').classList.add('active');
+    }
+
+    async editarTipoDocumento(id) {
+        try {
+            const tipos = await db.listarTiposDocumentos();
+            const tipo = tipos.find(t => t.dct_id === id);
+            if (tipo) {
+                this.abrirModalTipoDocumento({
+                    id: tipo.dct_id,
+                    codigo: tipo.dct_codigo,
+                    nome: tipo.dct_nome,
+                    ordem: tipo.dct_ordem,
+                    ativo: tipo.dct_ativo === 1
+                });
+            }
+        } catch (error) {
+            this.showNotification('Erro ao carregar tipo: ' + error.message, 'error');
+        }
+    }
+
+    async salvarTipoDocumento() {
+        const id = document.getElementById('tipoDocumentoId').value;
+        const codigo = document.getElementById('tipoDocumentoCodigo').value.trim().toUpperCase();
+        const nome = document.getElementById('tipoDocumentoNome').value.trim();
+        const ordem = parseInt(document.getElementById('tipoDocumentoOrdem').value) || 0;
+        const ativo = document.getElementById('tipoDocumentoAtivo').checked;
+
+        if (!codigo || !nome) {
+            this.showNotification('Preencha código e nome.', 'error');
+            return;
+        }
+
+        try {
+            await db.salvarTipoDocumento({ id: id || null, codigo, nome, ordem, ativo });
+            document.getElementById('modalTipoDocumento').classList.remove('active');
+            this.showNotification('Tipo de documento salvo!', 'success');
+            await this.carregarTiposDocumentos();
+        } catch (error) {
+            this.showNotification('Erro ao salvar: ' + error.message, 'error');
+        }
+    }
+
+    async excluirTipoDocumento(id) {
+        if (!confirm('Tem certeza que deseja excluir este tipo de documento?')) return;
+
+        try {
+            await db.excluirTipoDocumento(id);
+            this.showNotification('Tipo excluído!', 'success');
+            await this.carregarTiposDocumentos();
+        } catch (error) {
+            this.showNotification('Erro ao excluir: ' + error.message, 'error');
+        }
+    }
+
+    // ==================== TIPOS DE GASTO (RUBRICAS) ====================
+
+    async carregarTiposGasto() {
+        const tbody = document.getElementById('tiposGastoBody');
+        if (!tbody) return;
+
+        try {
+            const tipos = await db.listarTiposGasto();
+
+            if (tipos.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #6b7280;">Nenhuma rubrica cadastrada</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = tipos.map(t => `
+                <tr>
+                    <td style="text-align: center;">${t.gst_ordem || 0}</td>
+                    <td><code>${t.gst_codigo}</code></td>
+                    <td>${t.gst_nome}</td>
+                    <td style="text-align: center;">
+                        <span class="badge ${t.gst_ativo ? 'badge-success' : 'badge-secondary'}">
+                            ${t.gst_ativo ? 'Ativo' : 'Inativo'}
+                        </span>
+                    </td>
+                    <td style="text-align: center;">
+                        <button class="btn btn-sm btn-secondary" onclick="app.editarTipoGasto(${t.gst_id})" title="Editar">✏️</button>
+                        <button class="btn btn-sm btn-danger" onclick="app.excluirTipoGasto(${t.gst_id})" title="Excluir">🗑️</button>
+                    </td>
+                </tr>
+            `).join('');
+        } catch (error) {
+            console.error('Erro ao carregar tipos de gasto:', error);
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #dc2626;">Erro ao carregar</td></tr>';
+        }
+    }
+
+    abrirModalTipoGasto(dados = null) {
+        document.getElementById('tipoGastoId').value = dados?.id || '';
+        document.getElementById('tipoGastoCodigo').value = dados?.codigo || '';
+        document.getElementById('tipoGastoNome').value = dados?.nome || '';
+        document.getElementById('tipoGastoOrdem').value = dados?.ordem || 0;
+        document.getElementById('tipoGastoAtivo').checked = dados?.ativo !== false;
+        document.getElementById('modalTipoGastoTitulo').textContent = dados ? 'Editar Rubrica de Gasto' : 'Nova Rubrica de Gasto';
+        document.getElementById('modalTipoGasto').classList.add('active');
+    }
+
+    async editarTipoGasto(id) {
+        try {
+            const tipos = await db.listarTiposGasto();
+            const tipo = tipos.find(t => t.gst_id === id);
+            if (tipo) {
+                this.abrirModalTipoGasto({
+                    id: tipo.gst_id,
+                    codigo: tipo.gst_codigo,
+                    nome: tipo.gst_nome,
+                    ordem: tipo.gst_ordem,
+                    ativo: tipo.gst_ativo === 1
+                });
+            }
+        } catch (error) {
+            this.showNotification('Erro ao carregar rubrica: ' + error.message, 'error');
+        }
+    }
+
+    async salvarTipoGasto() {
+        const id = document.getElementById('tipoGastoId').value;
+        const codigo = document.getElementById('tipoGastoCodigo').value.trim().toUpperCase();
+        const nome = document.getElementById('tipoGastoNome').value.trim();
+        const ordem = parseInt(document.getElementById('tipoGastoOrdem').value) || 0;
+        const ativo = document.getElementById('tipoGastoAtivo').checked;
+
+        if (!codigo || !nome) {
+            this.showNotification('Preencha código e nome.', 'error');
+            return;
+        }
+
+        try {
+            await db.salvarTipoGasto({ id: id || null, codigo, nome, ordem, ativo });
+            document.getElementById('modalTipoGasto').classList.remove('active');
+            this.showNotification('Rubrica de gasto salva!', 'success');
+            await this.carregarTiposGasto();
+        } catch (error) {
+            this.showNotification('Erro ao salvar: ' + error.message, 'error');
+        }
+    }
+
+    async excluirTipoGasto(id) {
+        if (!confirm('Tem certeza que deseja excluir esta rubrica de gasto?')) return;
+
+        try {
+            await db.excluirTipoGasto(id);
+            this.showNotification('Rubrica excluída!', 'success');
+            await this.carregarTiposGasto();
+        } catch (error) {
+            this.showNotification('Erro ao excluir: ' + error.message, 'error');
         }
     }
 

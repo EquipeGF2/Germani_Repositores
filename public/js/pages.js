@@ -2726,6 +2726,152 @@ export const pages = {
                             <p class="text-muted">Clique em "Carregar Sessões Abertas" para visualizar.</p>
                         </div>
                     </div>
+
+                    <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border-color);">
+
+                    <div class="config-section">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                            <div>
+                                <h4 style="color: var(--text-primary); margin: 0;">Tipos de Documentos</h4>
+                                <p class="text-muted" style="margin: 4px 0 0; font-size: 13px;">
+                                    Cadastre os tipos de documentos disponíveis para registro.
+                                </p>
+                            </div>
+                            <button type="button" class="btn btn-primary btn-sm" id="btnNovoTipoDocumento">
+                                + Novo Tipo
+                            </button>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="data-table" id="tabelaTiposDocumentos">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 60px;">Ordem</th>
+                                        <th style="width: 120px;">Código</th>
+                                        <th>Nome</th>
+                                        <th style="width: 80px;">Status</th>
+                                        <th style="width: 100px;">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tiposDocumentosBody">
+                                    <tr><td colspan="5" style="text-align: center;">Carregando...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border-color);">
+
+                    <div class="config-section">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                            <div>
+                                <h4 style="color: var(--text-primary); margin: 0;">Tipos de Gasto (Rubricas)</h4>
+                                <p class="text-muted" style="margin: 4px 0 0; font-size: 13px;">
+                                    Cadastre as rubricas de gasto para despesas de viagem.
+                                </p>
+                            </div>
+                            <button type="button" class="btn btn-primary btn-sm" id="btnNovoTipoGasto">
+                                + Nova Rubrica
+                            </button>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="data-table" id="tabelaTiposGasto">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 60px;">Ordem</th>
+                                        <th style="width: 120px;">Código</th>
+                                        <th>Nome</th>
+                                        <th style="width: 80px;">Status</th>
+                                        <th style="width: 100px;">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tiposGastoBody">
+                                    <tr><td colspan="5" style="text-align: center;">Carregando...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal para Tipo de Documento -->
+            <div class="modal" id="modalTipoDocumento">
+                <div class="modal-content" style="max-width: 450px;">
+                    <div class="modal-header">
+                        <h3 id="modalTipoDocumentoTitulo">Novo Tipo de Documento</h3>
+                        <button class="modal-close" onclick="document.getElementById('modalTipoDocumento').classList.remove('active')">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="formTipoDocumento">
+                            <input type="hidden" id="tipoDocumentoId">
+                            <div class="form-group">
+                                <label for="tipoDocumentoCodigo">Código *</label>
+                                <input type="text" id="tipoDocumentoCodigo" required maxlength="20" placeholder="Ex: NF, RECIBO">
+                            </div>
+                            <div class="form-group">
+                                <label for="tipoDocumentoNome">Nome *</label>
+                                <input type="text" id="tipoDocumentoNome" required maxlength="100" placeholder="Ex: Nota Fiscal">
+                            </div>
+                            <div class="form-row" style="display: flex; gap: 16px;">
+                                <div class="form-group" style="flex: 1;">
+                                    <label for="tipoDocumentoOrdem">Ordem</label>
+                                    <input type="number" id="tipoDocumentoOrdem" value="0" min="0">
+                                </div>
+                                <div class="form-group" style="flex: 1;">
+                                    <label style="display: block; margin-bottom: 8px;">Status</label>
+                                    <label class="switch-label" style="display: flex; align-items: center; gap: 8px;">
+                                        <input type="checkbox" id="tipoDocumentoAtivo" checked>
+                                        <span>Ativo</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalTipoDocumento').classList.remove('active')">Cancelar</button>
+                        <button type="button" class="btn btn-primary" id="btnSalvarTipoDocumento">Salvar</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal para Tipo de Gasto -->
+            <div class="modal" id="modalTipoGasto">
+                <div class="modal-content" style="max-width: 450px;">
+                    <div class="modal-header">
+                        <h3 id="modalTipoGastoTitulo">Nova Rubrica de Gasto</h3>
+                        <button class="modal-close" onclick="document.getElementById('modalTipoGasto').classList.remove('active')">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="formTipoGasto">
+                            <input type="hidden" id="tipoGastoId">
+                            <div class="form-group">
+                                <label for="tipoGastoCodigo">Código *</label>
+                                <input type="text" id="tipoGastoCodigo" required maxlength="20" placeholder="Ex: COMB, ALIM">
+                            </div>
+                            <div class="form-group">
+                                <label for="tipoGastoNome">Nome *</label>
+                                <input type="text" id="tipoGastoNome" required maxlength="100" placeholder="Ex: Combustível">
+                            </div>
+                            <div class="form-row" style="display: flex; gap: 16px;">
+                                <div class="form-group" style="flex: 1;">
+                                    <label for="tipoGastoOrdem">Ordem</label>
+                                    <input type="number" id="tipoGastoOrdem" value="0" min="0">
+                                </div>
+                                <div class="form-group" style="flex: 1;">
+                                    <label style="display: block; margin-bottom: 8px;">Status</label>
+                                    <label class="switch-label" style="display: flex; align-items: center; gap: 8px;">
+                                        <input type="checkbox" id="tipoGastoAtivo" checked>
+                                        <span>Ativo</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalTipoGasto').classList.remove('active')">Cancelar</button>
+                        <button type="button" class="btn btn-primary" id="btnSalvarTipoGasto">Salvar</button>
+                    </div>
                 </div>
             </div>
         `;
