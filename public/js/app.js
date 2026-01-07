@@ -8915,9 +8915,7 @@ class App {
 
         this.salvarContextoRegistroRota(repId, dataVisita);
 
-        await this.syncAtendimentoAberto(repId);
-
-        // Mostrar loading
+        // Mostrar loading PRIMEIRO para feedback imediato
         container.innerHTML = `
             <div style="text-align:center;padding:40px;">
                 <div class="spinner"></div>
@@ -8935,10 +8933,12 @@ class App {
 
         const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
 
-        const [roteiro, resumo, atendimentosAbertos] = await Promise.all([
+        // Executar TODAS as chamadas em paralelo para máxima performance
+        const [roteiro, resumo, atendimentosAbertos, _sync] = await Promise.all([
             db.carregarRoteiroRepositorDia(repId, diaSemana),
             this.buscarResumoVisitas(repId, dataVisita),
-            this.buscarAtendimentosAbertos(repId)
+            this.buscarAtendimentosAbertos(repId),
+            this.syncAtendimentoAberto(repId) // Agora em paralelo
         ]);
 
         if (!roteiro || roteiro.length === 0) {
@@ -9158,14 +9158,23 @@ class App {
 
         this.showNotification(`${roteiro.length} cliente(s) no roteiro`, 'success');
 
+        // Executar tarefas em background SEM bloquear a UI
+        // Estas são fire-and-forget - não usamos await
+
         // Calcular distâncias em background após carregar a lista
-        this.calcularDistanciasRoteiro(roteiro, repId, dataVisita);
+        this.calcularDistanciasRoteiro(roteiro, repId, dataVisita).catch(err =>
+            console.warn('Erro ao calcular distâncias:', err)
+        );
 
-        // Verificar pesquisas pendentes para cada cliente em atendimento
-        this.verificarPesquisasDoRoteiro(roteiro, repId, dataVisita);
+        // Verificar pesquisas pendentes para cada cliente (background)
+        this.verificarPesquisasDoRoteiro(roteiro, repId, dataVisita).catch(err =>
+            console.warn('Erro ao verificar pesquisas:', err)
+        );
 
-        // Verificar clientes não atendidos do último dia útil
-        await this.verificarClientesPendentes();
+        // Verificar clientes não atendidos do último dia útil (background)
+        this.verificarClientesPendentes().catch(err =>
+            console.warn('Erro ao verificar clientes pendentes:', err)
+        );
     } catch (error) {
         console.error('Erro ao carregar roteiro:', error);
         this.showNotification('Erro ao carregar roteiro: ' + error.message, 'error');
@@ -10195,7 +10204,7 @@ class App {
             console.warn('Não foi possível obter posição GPS:', error);
             // Atualizar todos os cards indicando que GPS não está disponível
             roteiro.forEach(cli => {
-                const cliId = String(cli.cliente_id || cli.cod_cliente || '').trim().replace(/\.0$/, '');
+                const cliId = String(cli.cli_codigo || cli.cod_cliente || '').trim().replace(/\.0$/, '');
                 const elDistancia = document.getElementById(`distancia-${cliId}`);
                 if (elDistancia) {
                     elDistancia.innerHTML = '📍 GPS indisponível';
@@ -10205,77 +10214,85 @@ class App {
             return;
         }
 
-        // 2. Para cada cliente, calcular distância (com delay para evitar rate limit do Nominatim)
-        for (let i = 0; i < roteiro.length; i++) {
-            const cli = roteiro[i];
-            // IMPORTANTE: O campo correto é cli_codigo (igual ao usado na renderização do card)
-            const cliId = String(cli.cli_codigo || cli.cliente_id || cli.cod_cliente || '').trim().replace(/\.0$/, '');
-            const elDistancia = document.getElementById(`distancia-${cliId}`);
-            const itemElement = document.querySelector(`.route-item[data-cliente-id="${cliId}"]`);
+        // 2. Processar clientes em paralelo usando chunks para melhor performance
+        // Processa 5 clientes simultaneamente para evitar sobrecarga
+        const CHUNK_SIZE = 5;
+        const chunks = [];
+        for (let i = 0; i < roteiro.length; i += CHUNK_SIZE) {
+            chunks.push(roteiro.slice(i, i + CHUNK_SIZE));
+        }
 
-            console.log(`Processando cliente ${cliId}, elemento encontrado:`, !!elDistancia);
+        console.log(`📍 Calculando distâncias para ${roteiro.length} clientes em ${chunks.length} chunks`);
 
-            if (!elDistancia) continue;
+        for (const chunk of chunks) {
+            // Processar chunk em paralelo
+            await Promise.all(chunk.map(async (cli) => {
+                const cliId = String(cli.cli_codigo || cli.cliente_id || cli.cod_cliente || '').trim().replace(/\.0$/, '');
+                const elDistancia = document.getElementById(`distancia-${cliId}`);
+                const itemElement = document.querySelector(`.route-item[data-cliente-id="${cliId}"]`);
 
-            // Montar endereço do cadastro
-            const enderecoCadastro = this.formatarEnderecoCadastro(cli);
+                if (!elDistancia) return;
 
-            if (!enderecoCadastro) {
-                elDistancia.innerHTML = '📍 Endereço não cadastrado';
-                elDistancia.style.color = '#b91c1c';
-                continue;
-            }
+                // Montar endereço do cadastro
+                const enderecoCadastro = this.formatarEnderecoCadastro(cli);
 
-            try {
-                // Aguardar um pouco entre requisições (300ms - backend tem cache)
-                if (i > 0) {
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                }
-
-                // Geocodificar endereço do cliente (passa clienteId para cache no banco)
-                const coordsCliente = await this.obterCoordenadasPorEndereco(enderecoCadastro, cliId);
-
-                if (!coordsCliente) {
-                    elDistancia.innerHTML = '📍 Não foi possível localizar';
-                    elDistancia.style.color = '#f59e0b';
-                    continue;
-                }
-
-                // Calcular distância
-                const distanciaMetros = this.calcularDistanciaHaversine(
-                    posicaoAtual.lat,
-                    posicaoAtual.lng,
-                    coordsCliente.lat,
-                    coordsCliente.lng
-                );
-
-                const distanciaKm = (distanciaMetros / 1000).toFixed(1);
-                const foraDoPer = distanciaMetros > (distanciaMaximaKm * 1000);
-                const ehAproximado = coordsCliente.aproximado === true;
-
-                // Atualizar display da distância
-                if (ehAproximado) {
-                    // Distância aproximada (baseada em bairro ou cidade) - não bloqueia check-in
-                    const fonteTexto = coordsCliente.fonte === 'bairro'
-                        ? (coordsCliente.bairro || 'bairro')
-                        : (coordsCliente.cidade || 'cidade');
-                    elDistancia.innerHTML = `📍 ~${distanciaKm} km <span style="font-size:10px;color:#6b7280;">(aprox. via ${fonteTexto})</span>`;
-                    elDistancia.style.color = '#f59e0b'; // amarelo/laranja
-                } else if (foraDoPer) {
-                    elDistancia.innerHTML = `📍 <strong style="color:#b91c1c;">${distanciaKm} km</strong> (fora do perímetro de ${distanciaMaximaKm}km)`;
+                if (!enderecoCadastro) {
+                    elDistancia.innerHTML = '📍 Endereço não cadastrado';
                     elDistancia.style.color = '#b91c1c';
-
-                    // Desabilitar botão de check-in APENAS se distância for precisa e fora do perímetro
-                    this.desabilitarCheckinCliente(itemElement, cliId, distanciaKm, distanciaMaximaKm);
-                } else {
-                    elDistancia.innerHTML = `📍 ${distanciaKm} km`;
-                    elDistancia.style.color = '#059669'; // verde
+                    return;
                 }
 
-            } catch (error) {
-                console.warn(`Erro ao calcular distância para cliente ${cliId}:`, error);
-                elDistancia.innerHTML = '📍 Erro ao calcular';
-                elDistancia.style.color = '#b91c1c';
+                try {
+                    // Geocodificar endereço do cliente (passa clienteId para cache no banco)
+                    const coordsCliente = await this.obterCoordenadasPorEndereco(enderecoCadastro, cliId);
+
+                    if (!coordsCliente) {
+                        elDistancia.innerHTML = '📍 Não foi possível localizar';
+                        elDistancia.style.color = '#f59e0b';
+                        return;
+                    }
+
+                    // Calcular distância
+                    const distanciaMetros = this.calcularDistanciaHaversine(
+                        posicaoAtual.lat,
+                        posicaoAtual.lng,
+                        coordsCliente.lat,
+                        coordsCliente.lng
+                    );
+
+                    const distanciaKm = (distanciaMetros / 1000).toFixed(1);
+                    const foraDoPer = distanciaMetros > (distanciaMaximaKm * 1000);
+                    const ehAproximado = coordsCliente.aproximado === true;
+
+                    // Atualizar display da distância
+                    if (ehAproximado) {
+                        // Distância aproximada (baseada em bairro ou cidade) - não bloqueia check-in
+                        const fonteTexto = coordsCliente.fonte === 'bairro'
+                            ? (coordsCliente.bairro || 'bairro')
+                            : (coordsCliente.cidade || 'cidade');
+                        elDistancia.innerHTML = `📍 ~${distanciaKm} km <span style="font-size:10px;color:#6b7280;">(aprox. via ${fonteTexto})</span>`;
+                        elDistancia.style.color = '#f59e0b'; // amarelo/laranja
+                    } else if (foraDoPer) {
+                        elDistancia.innerHTML = `📍 <strong style="color:#b91c1c;">${distanciaKm} km</strong> (fora do perímetro de ${distanciaMaximaKm}km)`;
+                        elDistancia.style.color = '#b91c1c';
+
+                        // Desabilitar botão de check-in APENAS se distância for precisa e fora do perímetro
+                        this.desabilitarCheckinCliente(itemElement, cliId, distanciaKm, distanciaMaximaKm);
+                    } else {
+                        elDistancia.innerHTML = `📍 ${distanciaKm} km`;
+                        elDistancia.style.color = '#059669'; // verde
+                    }
+
+                } catch (error) {
+                    console.warn(`Erro ao calcular distância para cliente ${cliId}:`, error);
+                    elDistancia.innerHTML = '📍 Erro ao calcular';
+                    elDistancia.style.color = '#b91c1c';
+                }
+            }));
+
+            // Pequeno delay entre chunks para não sobrecarregar o backend
+            if (chunks.indexOf(chunk) < chunks.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
         }
 
@@ -10295,36 +10312,42 @@ class App {
             this.registroRotaState.pesquisasPendentesMap = new Map();
         }
 
-        // Para cada cliente do roteiro, verificar se há pesquisas pendentes
-        // Carrega para TODOS os clientes, não apenas os em atendimento
-        // Assim o botão de pesquisa aparece antes mesmo do check-in
-        const promessas = roteiro.map(async (cliente) => {
-            const cliId = String(cliente.cli_codigo || '').trim().replace(/\.0$/, '');
+        // Processar em chunks de 8 clientes para melhor performance
+        const CHUNK_SIZE = 8;
+        const chunks = [];
+        for (let i = 0; i < roteiro.length; i += CHUNK_SIZE) {
+            chunks.push(roteiro.slice(i, i + CHUNK_SIZE));
+        }
 
-            try {
-                // Busca TODAS as pesquisas (obrigatórias e não obrigatórias)
-                const pesquisasPendentes = await this.buscarPesquisasPendentes(repId, cliId, dataVisita, false);
+        console.log(`📋 Verificando pesquisas para ${roteiro.length} clientes em ${chunks.length} chunks`);
 
-                if (pesquisasPendentes && pesquisasPendentes.length > 0) {
-                    this.registroRotaState.pesquisasPendentesMap.set(cliId, pesquisasPendentes);
-                    const obrigatorias = pesquisasPendentes.filter(p => p.pes_obrigatorio).length;
-                    console.log(`📋 Cliente ${cliId}: ${pesquisasPendentes.length} pesquisa(s) - ${obrigatorias} obrigatória(s)`);
-                } else {
-                    this.registroRotaState.pesquisasPendentesMap.delete(cliId);
+        for (const chunk of chunks) {
+            // Processar chunk em paralelo
+            await Promise.all(chunk.map(async (cliente) => {
+                const cliId = String(cliente.cli_codigo || '').trim().replace(/\.0$/, '');
+
+                try {
+                    // Busca TODAS as pesquisas (obrigatórias e não obrigatórias)
+                    const pesquisasPendentes = await this.buscarPesquisasPendentes(repId, cliId, dataVisita, false);
+
+                    if (pesquisasPendentes && pesquisasPendentes.length > 0) {
+                        this.registroRotaState.pesquisasPendentesMap.set(cliId, pesquisasPendentes);
+                    } else {
+                        this.registroRotaState.pesquisasPendentesMap.delete(cliId);
+                    }
+                } catch (error) {
+                    console.warn(`Erro ao verificar pesquisas do cliente ${cliId}:`, error);
                 }
-            } catch (error) {
-                console.warn(`Erro ao verificar pesquisas do cliente ${cliId}:`, error);
-            }
-        });
+            }));
 
-        // Executar em paralelo para melhor performance
-        await Promise.all(promessas);
+            // Atualizar cards deste chunk imediatamente (UI progressiva)
+            chunk.forEach(cliente => {
+                const cliId = String(cliente.cli_codigo || '').trim().replace(/\.0$/, '');
+                this.atualizarCardCliente(cliId);
+            });
+        }
 
-        // Atualizar todos os cards de uma vez após carregar
-        roteiro.forEach(cliente => {
-            const cliId = String(cliente.cli_codigo || '').trim().replace(/\.0$/, '');
-            this.atualizarCardCliente(cliId);
-        });
+        console.log('📋 Verificação de pesquisas concluída');
     }
 
     /**
