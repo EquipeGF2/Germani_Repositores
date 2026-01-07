@@ -22,8 +22,8 @@
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <!-- Tela de Login -->
-    <div id="loginScreen" class="login-screen">
+    <!-- Tela de Login (hidden por padrão - AuthManager decide mostrar) -->
+    <div id="loginScreen" class="login-screen hidden">
         <div class="login-container">
             <div class="login-card">
                 <img src="icon-512.png" alt="Logo" class="login-logo">
@@ -49,8 +49,8 @@
         </div>
     </div>
 
-    <!-- Aplicação Principal -->
-    <div id="appScreen" class="app-container hidden">
+    <!-- Aplicação Principal (AuthManager mostra após init) -->
+    <div id="appScreen" class="app-container">
         <!-- Sidebar de Navegação -->
         <aside class="sidebar">
             <div class="sidebar-header">
