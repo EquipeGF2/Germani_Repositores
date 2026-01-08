@@ -12604,34 +12604,15 @@ class App {
         container.innerHTML = '<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p style="margin-top: 16px;">Carregando despesas...</p></div>';
 
         try {
-            // Primeiro, buscar o dct_id do tipo "despesa_viagem"
-            const tiposData = await fetchJson(`${API_BASE_URL}/api/documentos/tipos`);
-            const tipos = tiposData.tipos || [];
-            const tipoDespesa = tipos.find(t =>
-                t.dct_codigo === 'despesa_viagem' ||
-                (t.dct_nome || '').toLowerCase().includes('despesa')
-            );
-
-            if (!tipoDespesa) {
-                container.innerHTML = `
-                    <div class="empty-state" style="padding: 40px;">
-                        <div class="empty-state-icon">⚠️</div>
-                        <p>Tipo de documento "Despesa de Viagem" não encontrado. Cadastre em Configurações.</p>
-                    </div>
-                `;
-                return;
-            }
-
-            // Buscar documentos do tipo despesa de viagem usando dct_id
+            // Buscar despesas do novo endpoint estruturado
             const params = new URLSearchParams();
-            params.append('dct_id', tipoDespesa.dct_id);
             params.append('data_inicio', dataInicio);
             params.append('data_fim', dataFim);
 
-            const data = await fetchJson(`${API_BASE_URL}/api/documentos?${params.toString()}`);
-            const documentos = data.documentos || [];
+            const data = await fetchJson(`${API_BASE_URL}/api/documentos/despesas?${params.toString()}`);
+            const despesasPorRepositor = data.despesas || [];
 
-            if (documentos.length === 0) {
+            if (despesasPorRepositor.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state" style="padding: 40px;">
                         <div class="empty-state-icon">💰</div>
@@ -12640,9 +12621,6 @@ class App {
                 `;
                 return;
             }
-
-            // Agrupar por repositor
-            const despesasPorRepositor = this.agruparDespesasPorRepositor(documentos);
 
             // Buscar rubricas cadastradas
             const rubricas = await db.listarTiposGasto(true);

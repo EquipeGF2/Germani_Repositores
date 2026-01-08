@@ -1619,6 +1619,24 @@ class TursoService {
       args: []
     });
 
+    // Tabela de valores de despesas de viagem
+    await client.execute({
+      sql: `
+        CREATE TABLE IF NOT EXISTS cc_despesa_valores (
+          dv_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          dv_doc_id INTEGER NOT NULL,
+          dv_repositor_id INTEGER NOT NULL,
+          dv_gst_id INTEGER NOT NULL,
+          dv_gst_codigo TEXT NOT NULL,
+          dv_valor REAL NOT NULL DEFAULT 0,
+          dv_data_ref TEXT NOT NULL CHECK(dv_data_ref GLOB '____-__-__'),
+          dv_criado_em TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (dv_doc_id) REFERENCES cc_documentos(doc_id) ON DELETE CASCADE
+        )
+      `,
+      args: []
+    });
+
     const ddlAtual = await this.logDocumentosDdl();
     try {
       const foiReconstruida = await this.rebuildCcDocumentosIfNeeded(ddlAtual);
@@ -1635,7 +1653,9 @@ class TursoService {
       'CREATE INDEX IF NOT EXISTS idx_cc_documentos_tipo ON cc_documentos (doc_dct_id)',
       'CREATE INDEX IF NOT EXISTS idx_cc_documentos_status ON cc_documentos (doc_status)',
       'CREATE INDEX IF NOT EXISTS idx_cc_repositor_drive_pastas_repositor ON cc_repositor_drive_pastas (rpf_repositor_id)',
-      'CREATE INDEX IF NOT EXISTS idx_cc_repositor_drive_pastas_tipo ON cc_repositor_drive_pastas (rpf_dct_id)'
+      'CREATE INDEX IF NOT EXISTS idx_cc_repositor_drive_pastas_tipo ON cc_repositor_drive_pastas (rpf_dct_id)',
+      'CREATE INDEX IF NOT EXISTS idx_cc_despesa_valores_repositor_data ON cc_despesa_valores (dv_repositor_id, dv_data_ref)',
+      'CREATE INDEX IF NOT EXISTS idx_cc_despesa_valores_doc ON cc_despesa_valores (dv_doc_id)'
     ];
 
     for (const sql of indices) {
