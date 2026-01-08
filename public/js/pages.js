@@ -6025,7 +6025,7 @@ export const pageTitles = {
     'controle-acessos': 'Controle de Acessos',
     'gestao-usuarios': 'Gestão de Usuários',
     'roteiro-repositor': 'Roteiro do Repositor',
-    'cadastro-pesquisa': 'Cadastro de Pesquisas',
+    'cadastro-pesquisa': 'Pesquisas',
     'consulta-pesquisa': 'Consulta de Pesquisas',
     'registro-rota': 'Registro de Rota',
     'consulta-visitas': 'Consulta de Visitas',

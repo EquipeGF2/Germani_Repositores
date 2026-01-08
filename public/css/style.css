@@ -6838,6 +6838,95 @@ body.modal-open {
     }
 }
 
+/* ==================== MOBILE: ESTILOS GERAIS ==================== */
+@media (max-width: 768px) {
+    /* Remover padding e border de TODOS os cards no mobile */
+    .card {
+        padding: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+    }
+
+    .card-header {
+        padding: 8px 0 !important;
+        border: none !important;
+    }
+
+    .card-body {
+        padding: 0 !important;
+    }
+
+    /* Remover padding e border dos form-cards */
+    .form-card {
+        padding: 8px 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+        background: transparent !important;
+    }
+
+    /* Form card header - eyebrow em linha inteira */
+    .form-card-header {
+        flex-direction: row !important;
+        gap: 8px !important;
+        margin-bottom: 8px !important;
+    }
+
+    /* Esconder títulos em negrito (h4) dos cards */
+    .form-card-header h4,
+    .form-card-header .form-card-title-inline {
+        display: none !important;
+    }
+
+    /* Eyebrow ocupar linha inteira */
+    .form-card-eyebrow {
+        flex: 1 !important;
+        font-size: 0.85rem !important;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--gray-600) !important;
+    }
+
+    /* Modais - remover padding e border */
+    .modal-content {
+        border: none !important;
+        border-radius: 8px !important;
+    }
+
+    .modal-header {
+        border-bottom: 1px solid var(--gray-200) !important;
+    }
+
+    .modal-body {
+        padding: 8px !important;
+    }
+}
+
+/* ==================== MOBILE: TABELA REPOSITORES ==================== */
+@media (max-width: 768px) {
+    /* Ajustes para tabela de repositores */
+    .table-container table th:first-child,
+    .table-container table td:first-child {
+        width: 40px !important;
+        min-width: 40px !important;
+        max-width: 50px !important;
+        text-align: center !important;
+    }
+
+    /* Evitar quebra de linha nas células */
+    .table-container table td,
+    .table-container table th {
+        white-space: nowrap !important;
+    }
+
+    /* Scroll horizontal na tabela */
+    .table-container {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }
+}
+
 /* ==================== MOBILE: MODAL NOVO REPOSITOR ==================== */
 @media (max-width: 768px) {
     /* Modal Novo Repositor - ocupar 90% da tela */
@@ -6849,18 +6938,19 @@ body.modal-open {
         padding: 0 !important;
     }
 
-    /* Header com botões - layout compacto */
+    /* Header com botões abaixo do título */
     .modal-repositor .modal-header.modal-header-with-actions {
-        flex-wrap: wrap;
-        gap: 8px;
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 10px;
         padding: 12px !important;
         position: relative;
     }
 
     .modal-repositor .modal-header.modal-header-with-actions h3 {
-        flex: 1 1 calc(100% - 40px);
+        width: 100%;
         font-size: 1.1rem;
-        margin-bottom: 8px;
+        margin: 0;
         padding-right: 30px;
     }
 
@@ -6868,7 +6958,6 @@ body.modal-open {
         display: flex;
         gap: 8px;
         width: 100%;
-        order: 2;
     }
 
     .modal-repositor .modal-header-actions .btn {
@@ -6879,42 +6968,40 @@ body.modal-open {
 
     .modal-repositor .modal-close {
         position: absolute;
-        top: 8px;
-        right: 8px;
+        top: 10px;
+        right: 10px;
     }
 
-    /* Body com menos padding */
+    /* Body */
     .modal-repositor .modal-body {
-        padding: 12px !important;
+        padding: 8px !important;
     }
 
     /* Grid de repositor - coluna única */
     .modal-repositor .repositor-grid {
         grid-template-columns: 1fr !important;
-        gap: 12px !important;
+        gap: 8px !important;
     }
 
-    /* Cards internos - margens reduzidas */
+    /* Cards internos - sem padding/border */
     .modal-repositor .form-card {
-        padding: 12px !important;
+        padding: 8px 0 !important;
+        border: none !important;
+        background: transparent !important;
     }
 
-    .modal-repositor .form-card-header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 2px;
-    }
-
+    /* Esconder títulos h4 dos cards no modal */
     .modal-repositor .form-card-header h4 {
-        font-size: 0.95rem;
-        white-space: normal !important;
+        display: none !important;
     }
 
+    /* Eyebrow em linha inteira */
     .modal-repositor .form-card-eyebrow {
-        font-size: 0.7rem;
+        font-size: 0.85rem !important;
+        width: 100% !important;
     }
 
-    /* Grid de dados do repositor - ajustar */
+    /* Grid de dados do repositor */
     .modal-repositor .dados-repositor-grid {
         display: flex !important;
         flex-direction: column !important;
@@ -6930,17 +7017,7 @@ body.modal-open {
         grid-column: span 1 !important;
     }
 
-    /* Alinhamento card (Representante e Supervisor) */
-    .modal-repositor .alinhamento-card .form-card-header {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-
-    .modal-repositor .alinhamento-card .form-card-header h4 {
-        white-space: normal !important;
-        font-size: 0.95rem;
-    }
-
+    /* Alinhamento grid */
     .modal-repositor .alinhamento-grid {
         grid-template-columns: 1fr !important;
     }
@@ -6982,35 +7059,34 @@ body.modal-open {
     }
 
     #modalResumoRepositor .modal-body {
-        padding: 12px !important;
+        padding: 8px !important;
     }
 
     #modalResumoRepositor .modal-body.resumo-repositor-body {
         display: flex;
         flex-direction: column;
-        gap: 12px;
+        gap: 8px;
     }
 
-    /* Cards de resumo */
+    /* Cards de resumo - sem padding/border */
     #modalResumoRepositor .form-card {
-        padding: 12px !important;
+        padding: 8px 0 !important;
         margin-bottom: 0;
+        border: none !important;
+        background: transparent !important;
+    }
+
+    /* Esconder títulos h4 nos cards de resumo */
+    #modalResumoRepositor .form-card-header h4 {
+        display: none !important;
     }
 
     #modalResumoRepositor .form-card-header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 2px;
-        margin-bottom: 10px !important;
-    }
-
-    #modalResumoRepositor .form-card-header h4 {
-        font-size: 0.95rem;
-        white-space: normal !important;
+        margin-bottom: 8px !important;
     }
 
     #modalResumoRepositor .form-card-eyebrow {
-        font-size: 0.7rem;
+        font-size: 0.85rem !important;
     }
 
     /* Grid de resumo - ajustar colunas */
@@ -7034,27 +7110,185 @@ body.modal-open {
     }
 }
 
-/* ==================== MOBILE: TELA DE RATEIO - TÍTULO DUPLICADO ==================== */
+/* ==================== MOBILE: TELA DE RATEIO ==================== */
 @media (max-width: 768px) {
-    /* Esconder título duplicado "Manutenção de Rateio" no card quando já existe no header */
-    .card:has(#rateioManutencaoContainer) .card-header .card-title {
+    /* Esconder título e botão recarregar */
+    .card:has(#rateioManutencaoContainer) .card-header .card-title,
+    .card:has(#rateioManutencaoContainer) .card-header .card-actions,
+    .card:has(#rateioManutencaoContainer) .card-header > div:first-child h3 {
         display: none !important;
     }
 
-    /* Esconder também o subtítulo */
-    .card:has(#rateioManutencaoContainer) .card-header .text-muted {
-        display: none !important;
-    }
-
-    /* Ajustar o card-header quando título é escondido */
-    .card:has(#rateioManutencaoContainer) .card-header {
-        justify-content: flex-end !important;
-        min-height: auto !important;
-        padding: 10px !important;
+    /* Manter apenas o texto descritivo acima dos filtros */
+    .card:has(#rateioManutencaoContainer) .card-header > div:first-child .text-muted {
+        display: block !important;
+        margin: 0 !important;
+        font-size: 0.85rem;
     }
 
     .card:has(#rateioManutencaoContainer) .card-header > div:first-child {
+        display: block !important;
+    }
+
+    .card:has(#rateioManutencaoContainer) .card-header {
+        padding: 8px 0 !important;
+    }
+
+    /* Filtros no topo */
+    .card:has(#rateioManutencaoContainer) .filtros-section {
+        margin-top: 0 !important;
+        padding: 10px !important;
+        background: var(--gray-100) !important;
+        border-radius: 8px !important;
+    }
+}
+
+/* ==================== MOBILE: TELA PESQUISAS ==================== */
+@media (max-width: 768px) {
+    /* Card de pesquisas */
+    .card:has(#pesquisasLista) .card-header {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 10px !important;
+    }
+
+    /* Esconder título "Cadastro de Pesquisas", mostrar apenas texto */
+    .card:has(#pesquisasLista) .card-header .card-title {
         display: none !important;
+    }
+
+    /* Texto descritivo no topo */
+    .card:has(#pesquisasLista) .card-header > div:first-child .text-muted {
+        margin: 0 !important;
+        font-size: 0.85rem;
+    }
+
+    /* Botão Nova Pesquisa abaixo do texto */
+    .card:has(#pesquisasLista) .card-actions {
+        width: 100%;
+    }
+
+    .card:has(#pesquisasLista) .card-actions .btn {
+        width: 100%;
+    }
+
+    /* Cards de pesquisa - badges na mesma linha */
+    .pesquisa-card .pesquisa-badges,
+    .pesquisa-item .pesquisa-badges {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 4px !important;
+    }
+
+    /* Botões de ação em linha */
+    .pesquisa-card .pesquisa-actions,
+    .pesquisa-item .pesquisa-actions {
+        display: flex !important;
+        gap: 8px !important;
+        margin-top: 10px !important;
+    }
+
+    .pesquisa-card .pesquisa-actions .btn,
+    .pesquisa-item .pesquisa-actions .btn {
+        flex: 1 !important;
+        font-size: 0.85rem !important;
+        padding: 8px !important;
+    }
+}
+
+/* ==================== MOBILE: MODAL PESQUISA (NOVA/EDITAR) ==================== */
+@media (max-width: 768px) {
+    /* Modal Pesquisa - ocupar 95% */
+    .modal-pesquisa .modal-content,
+    #modalPesquisa .modal-content {
+        width: 95% !important;
+        max-width: 95% !important;
+        margin: 2.5% auto !important;
+        max-height: 95vh !important;
+        padding: 0 !important;
+    }
+
+    /* Header com botões abaixo do título */
+    .modal-pesquisa .modal-header.modal-header-with-actions,
+    #modalPesquisa .modal-header.modal-header-with-actions {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 10px;
+        padding: 12px !important;
+        position: relative;
+    }
+
+    .modal-pesquisa .modal-header.modal-header-with-actions h3,
+    #modalPesquisa .modal-header.modal-header-with-actions h3 {
+        width: 100%;
+        font-size: 1.1rem;
+        margin: 0;
+        padding-right: 30px;
+    }
+
+    .modal-pesquisa .modal-header-actions,
+    #modalPesquisa .modal-header-actions {
+        display: flex;
+        gap: 8px;
+        width: 100%;
+    }
+
+    .modal-pesquisa .modal-header-actions .btn,
+    #modalPesquisa .modal-header-actions .btn {
+        flex: 1;
+        padding: 10px 12px !important;
+        font-size: 0.9rem !important;
+    }
+
+    .modal-pesquisa .modal-close,
+    #modalPesquisa .modal-close {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+    }
+
+    /* Body sem padding */
+    .modal-pesquisa .modal-body,
+    #modalPesquisa .modal-body {
+        padding: 8px !important;
+    }
+
+    /* Form cards sem padding/border */
+    .modal-pesquisa .form-card,
+    #modalPesquisa .form-card {
+        padding: 8px 0 !important;
+        border: none !important;
+        background: transparent !important;
+    }
+
+    /* Esconder títulos h4 */
+    .modal-pesquisa .form-card-header h4,
+    #modalPesquisa .form-card-header h4 {
+        display: none !important;
+    }
+
+    /* Grid de pesquisa em coluna */
+    .pesquisa-form-grid {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 8px !important;
+    }
+
+    .dados-pesquisa-grid {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 10px !important;
+    }
+
+    .dados-pesquisa-grid .span-3-cols {
+        grid-column: span 1 !important;
+    }
+
+    /* Checkboxes (Obrigatória, Foto) na mesma linha */
+    .dados-pesquisa-grid .checkbox-group {
+        flex-direction: row !important;
+        flex-wrap: wrap !important;
+        padding-top: 0 !important;
     }
 }
 
@@ -7090,6 +7324,17 @@ body.modal-open {
 
     .filter-bar-wide .filter-group {
         width: 100% !important;
+        min-width: 100% !important;
+    }
+
+    /* Filtros section em coluna */
+    .filtros-section .row {
+        flex-direction: column !important;
+        gap: 10px !important;
+    }
+
+    .filtros-section .col {
+        flex: 1 1 100% !important;
         min-width: 100% !important;
     }
 }
