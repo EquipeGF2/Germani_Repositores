@@ -12836,6 +12836,8 @@ class App {
     async verificarTipoDespesaViagem(select) {
         const areaDespesa = document.getElementById('areaDespesaViagem');
         const areaArquivos = document.querySelector('.doc-file-input');
+        const filaUploads = document.getElementById('filaUploads');
+        const inputArquivo = document.getElementById('uploadArquivo');
         if (!areaDespesa) return;
 
         // Verificar se o tipo selecionado contém "despesa" ou "viagem" no nome
@@ -12845,11 +12847,24 @@ class App {
 
         if (isDespesaViagem) {
             areaDespesa.style.display = 'block';
-            if (areaArquivos) areaArquivos.style.display = 'none'; // Esconder área normal de arquivos
+            // Esconder área de arquivos normal (despesa usa apenas câmera nas rubricas)
+            if (areaArquivos) areaArquivos.style.display = 'none';
+            // Esconder fila de uploads normal (despesa tem próprio sistema de fotos)
+            if (filaUploads) filaUploads.style.display = 'none';
+            // Limpar input de arquivo para evitar upload
+            if (inputArquivo) {
+                inputArquivo.value = '';
+                inputArquivo.disabled = true;
+            }
+            // Limpar fila de uploads
+            this.documentosState.filaUploads = [];
+            this.renderizarFilaUploads();
             await this.carregarRubricasGasto();
         } else {
             areaDespesa.style.display = 'none';
             if (areaArquivos) areaArquivos.style.display = 'block';
+            if (filaUploads) filaUploads.style.display = 'block';
+            if (inputArquivo) inputArquivo.disabled = false;
             // Limpar rubricas
             this.documentosState.rubricas = [];
         }
@@ -17114,9 +17129,11 @@ class App {
         pesquisaAtualIndex: 0,
         respostasColetadas: [],
         contextoVisita: null,
-        fotoPesquisa: null,
+        // Suporte a múltiplas fotos (até 10 por pesquisa)
+        fotosPesquisa: [],  // Array de { file: File, url: string }
+        maxFotosPesquisa: 10,
         // Staging: guarda respostas e fotos localmente até finalizar
-        // Map<pesquisa_id, { respostas: [], foto: File|null, fotoPreviewUrl: string|null }>
+        // Map<pesquisa_id, { respostas: [], fotos: Array<{file, url}> }>
         respostasStaging: new Map()
     };
 
@@ -17415,12 +17432,13 @@ class App {
 
         const fotoSection = pesquisa.pes_foto_obrigatoria ? `
             <div class="form-group" style="margin-top: 20px; padding: 16px; background: #f9fafb; border-radius: 8px;">
-                <label style="font-weight: 600; margin-bottom: 10px; display: block;">
-                    Foto <span style="color: #ef4444;">*</span>
+                <label style="font-weight: 600; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                    <span>Foto <span style="color: #ef4444;">*</span></span>
+                    <span id="pesquisaFotoContador" style="font-size: 12px; color: #6b7280; font-weight: normal;">0/${this.pesquisaVisitaState.maxFotosPesquisa} fotos</span>
                 </label>
-                <div id="pesquisaFotoPreview" style="margin-bottom: 10px;"></div>
-                <button type="button" class="btn btn-secondary" onclick="window.app.abrirCameraPesquisa()">
-                    📷 Capturar Foto
+                <div id="pesquisaFotosGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; margin-bottom: 10px;"></div>
+                <button type="button" class="btn btn-secondary" id="btnAdicionarFotoPesquisa" onclick="window.app.abrirCameraPesquisa()">
+                    📷 Adicionar Foto
                 </button>
             </div>
         ` : '';
@@ -17497,20 +17515,13 @@ class App {
             }
         }
 
-        // Restaurar foto
-        if (stagingEntry.foto) {
-            this.pesquisaVisitaState.fotoPesquisa = stagingEntry.foto;
-            this.pesquisaVisitaState.fotoPesquisaUrl = stagingEntry.fotoPreviewUrl;
-
-            const preview = document.getElementById('pesquisaFotoPreview');
-            if (preview && stagingEntry.fotoPreviewUrl) {
-                preview.innerHTML = `
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <img src="${stagingEntry.fotoPreviewUrl}" style="max-width: 150px; border-radius: 8px; border: 2px solid #10b981;">
-                        <span style="color: #10b981; font-weight: 500;">✓ Foto capturada</span>
-                    </div>
-                `;
-            }
+        // Restaurar fotos (array)
+        if (stagingEntry.fotos && stagingEntry.fotos.length > 0) {
+            this.pesquisaVisitaState.fotosPesquisa = [...stagingEntry.fotos];
+            this.renderizarFotosPesquisa();
+        } else {
+            this.pesquisaVisitaState.fotosPesquisa = [];
+            this.renderizarFotosPesquisa();
         }
     }
 
@@ -17795,24 +17806,73 @@ class App {
             return;
         }
 
+        // Verificar limite de fotos
+        const maxFotos = this.pesquisaVisitaState.maxFotosPesquisa;
+        if (this.pesquisaVisitaState.fotosPesquisa.length >= maxFotos) {
+            this.showNotification(`Limite de ${maxFotos} fotos atingido`, 'warning');
+            this.fecharCameraPesquisa();
+            return;
+        }
+
         // Criar arquivo a partir do blob
         const arquivo = new File([blob], `pesquisa-foto-${Date.now()}.jpg`, { type: 'image/jpeg' });
-        this.pesquisaVisitaState.fotoPesquisa = arquivo;
+        const url = URL.createObjectURL(blob);
 
-        // Atualizar preview no modal de pesquisa
-        const preview = document.getElementById('pesquisaFotoPreview');
-        if (preview) {
-            if (this.pesquisaVisitaState.fotoPesquisaUrl) {
-                URL.revokeObjectURL(this.pesquisaVisitaState.fotoPesquisaUrl);
-            }
-            const url = URL.createObjectURL(blob);
-            this.pesquisaVisitaState.fotoPesquisaUrl = url;
-            preview.innerHTML = `<img src="${url}" style="max-width: 100%; max-height: 200px; border-radius: 8px;">`;
-        }
+        // Adicionar ao array de fotos
+        this.pesquisaVisitaState.fotosPesquisa.push({ file: arquivo, url });
+
+        // Atualizar grid de fotos
+        this.renderizarFotosPesquisa();
 
         // Fechar modal de câmera
         this.fecharCameraPesquisa();
-        this.showNotification('Foto confirmada', 'success');
+        this.showNotification(`Foto ${this.pesquisaVisitaState.fotosPesquisa.length}/${maxFotos} adicionada`, 'success');
+    }
+
+    renderizarFotosPesquisa() {
+        const grid = document.getElementById('pesquisaFotosGrid');
+        const contador = document.getElementById('pesquisaFotoContador');
+        const btnAdicionar = document.getElementById('btnAdicionarFotoPesquisa');
+        const fotos = this.pesquisaVisitaState.fotosPesquisa;
+        const maxFotos = this.pesquisaVisitaState.maxFotosPesquisa;
+
+        if (contador) {
+            contador.textContent = `${fotos.length}/${maxFotos} fotos`;
+        }
+
+        if (btnAdicionar) {
+            btnAdicionar.disabled = fotos.length >= maxFotos;
+            btnAdicionar.style.opacity = fotos.length >= maxFotos ? '0.5' : '1';
+        }
+
+        if (!grid) return;
+
+        if (fotos.length === 0) {
+            grid.innerHTML = '';
+            return;
+        }
+
+        grid.innerHTML = fotos.map((foto, index) => `
+            <div style="position: relative;">
+                <img src="${foto.url}" style="width: 100%; height: 80px; object-fit: cover; border-radius: 6px; border: 2px solid #10b981;">
+                <button type="button" onclick="window.app.removerFotoPesquisa(${index})"
+                    style="position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; background: #ef4444; color: white; border: none; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center;">
+                    ×
+                </button>
+            </div>
+        `).join('');
+    }
+
+    removerFotoPesquisa(index) {
+        const fotos = this.pesquisaVisitaState.fotosPesquisa;
+        if (index >= 0 && index < fotos.length) {
+            // Revogar URL da foto removida
+            if (fotos[index].url) {
+                URL.revokeObjectURL(fotos[index].url);
+            }
+            fotos.splice(index, 1);
+            this.renderizarFotosPesquisa();
+        }
     }
 
     fecharCameraPesquisa() {
@@ -17902,25 +17962,23 @@ class App {
             });
         }
 
-        // Verificar foto obrigatória
-        if (pesquisa.pes_foto_obrigatoria && !this.pesquisaVisitaState.fotoPesquisa) {
-            this.showNotification('A foto é obrigatória para esta pesquisa', 'warning');
+        // Verificar foto obrigatória (ao menos uma foto)
+        if (pesquisa.pes_foto_obrigatoria && this.pesquisaVisitaState.fotosPesquisa.length === 0) {
+            this.showNotification('Ao menos uma foto é obrigatória para esta pesquisa', 'warning');
             return;
         }
 
-        // STAGING: Guardar respostas e foto localmente (não faz upload ainda)
+        // STAGING: Guardar respostas e fotos localmente (não faz upload ainda)
         const stagingEntry = {
             pesquisa: pesquisa,
             respostas: respostas,
-            foto: this.pesquisaVisitaState.fotoPesquisa || null,
-            fotoPreviewUrl: this.pesquisaVisitaState.fotoPesquisaUrl || null
+            fotos: [...this.pesquisaVisitaState.fotosPesquisa]  // Cópia do array de fotos
         };
         respostasStaging.set(pesquisa.pes_id, stagingEntry);
-        console.log(`📝 Pesquisa ${pesquisa.pes_id} salva em staging (${respostasStaging.size} no total)`);
+        console.log(`📝 Pesquisa ${pesquisa.pes_id} salva em staging com ${stagingEntry.fotos.length} fotos (${respostasStaging.size} pesquisas no total)`);
 
-        // Limpar foto para próxima pesquisa
-        this.pesquisaVisitaState.fotoPesquisa = null;
-        this.pesquisaVisitaState.fotoPesquisaUrl = null;
+        // Limpar fotos para próxima pesquisa
+        this.pesquisaVisitaState.fotosPesquisa = [];
 
         // Avançar para próxima pesquisa ou finalizar
         if (pesquisaAtualIndex < pesquisasPendentes.length - 1) {
@@ -17948,54 +18006,61 @@ class App {
         try {
             // Processar cada pesquisa em staging
             for (const [pesId, entry] of respostasStaging) {
-                let fotoUrl = null;
+                const fotosUrls = [];
 
-                // Upload da foto se houver
-                if (entry.foto) {
-                    const foto = entry.foto;
-                    if (foto instanceof File || foto instanceof Blob) {
-                        try {
-                            const agora = new Date();
-                            const dataStr = agora.toISOString().split('T')[0].replace(/-/g, '');
-                            const horaStr = agora.toTimeString().split(' ')[0].replace(/:/g, '');
-                            const clienteNorm = String(contextoVisita.clienteId).trim().replace(/\.0$/, '');
-                            // Nome único mas consistente para evitar duplicação
-                            const nomeArquivo = `${contextoVisita.repId}_${clienteNorm}_${pesId}_${dataStr}.jpg`;
+                // Upload de múltiplas fotos se houver
+                if (entry.fotos && entry.fotos.length > 0) {
+                    const agora = new Date();
+                    const dataStr = agora.toISOString().split('T')[0].replace(/-/g, '');
+                    const clienteNorm = String(contextoVisita.clienteId).trim().replace(/\.0$/, '');
 
-                            const formData = new FormData();
-                            formData.append('arquivo', foto, nomeArquivo);
-                            formData.append('repositor_id', contextoVisita.repId);
-                            formData.append('pesquisa_id', pesId);
-                            formData.append('cliente_codigo', clienteNorm);
+                    for (let i = 0; i < entry.fotos.length; i++) {
+                        const fotoItem = entry.fotos[i];
+                        const foto = fotoItem.file;
 
-                            const uploadResp = await fetchJson(`${API_BASE_URL}/api/pesquisa/upload-foto`, {
-                                method: 'POST',
-                                body: formData
-                            });
+                        if (foto instanceof File || foto instanceof Blob) {
+                            try {
+                                // Nome único para cada foto
+                                const nomeArquivo = `${contextoVisita.repId}_${clienteNorm}_${pesId}_${dataStr}_${i + 1}.jpg`;
 
-                            if (uploadResp.success && uploadResp.url) {
-                                fotoUrl = uploadResp.url;
+                                const formData = new FormData();
+                                formData.append('arquivo', foto, nomeArquivo);
+                                formData.append('repositor_id', contextoVisita.repId);
+                                formData.append('pesquisa_id', pesId);
+                                formData.append('cliente_codigo', clienteNorm);
+
+                                const uploadResp = await fetchJson(`${API_BASE_URL}/api/pesquisa/upload-foto`, {
+                                    method: 'POST',
+                                    body: formData
+                                });
+
+                                if (uploadResp.success && uploadResp.url) {
+                                    fotosUrls.push(uploadResp.url);
+                                }
+                            } catch (uploadError) {
+                                console.error(`Erro ao fazer upload da foto ${i + 1} da pesquisa ${pesId}:`, uploadError);
                             }
-                        } catch (uploadError) {
-                            console.error(`Erro ao fazer upload da foto da pesquisa ${pesId}:`, uploadError);
                         }
-                    } else if (typeof foto === 'string') {
-                        fotoUrl = foto;
                     }
                 }
 
                 // Salvar resposta no banco
+                // Se houver múltiplas fotos, salvar como JSON array
+                const fotoUrlFinal = fotosUrls.length > 1
+                    ? JSON.stringify(fotosUrls)
+                    : (fotosUrls[0] || null);
+
                 const dados = {
                     pesId: pesId,
                     repId: contextoVisita.repId,
                     clienteCodigo: String(contextoVisita.clienteId),
                     visitaId: null,
                     respostas: entry.respostas,
-                    fotoUrl: fotoUrl
+                    fotoUrl: fotoUrlFinal
                 };
 
                 await db.salvarRespostaPesquisa(dados);
-                console.log(`✅ Pesquisa ${pesId} salva com sucesso`);
+                console.log(`✅ Pesquisa ${pesId} salva com ${fotosUrls.length} foto(s)`);
             }
 
             // Limpar staging

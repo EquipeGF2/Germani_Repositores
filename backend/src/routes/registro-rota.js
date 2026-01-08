@@ -1347,11 +1347,13 @@ router.get('/visitas', async (req, res) => {
         || visita.rv_data_hora_registro
         || visita.data_hora_registro
         || null;
-      const dataPrevistaContexto = visita.data_prevista_base
-        || visita.data_prevista
-        || visita.rv_data_roteiro
+      // Priorizar data_planejada da sessão (o dia que o usuário selecionou para o roteiro)
+      // Isso garante que a pontualidade seja calculada com base no dia do roteiro atual
+      const dataPrevistaContexto = visita.data_planejada
         || visita.rv_data_planejada
-        || visita.data_planejada
+        || visita.rv_data_roteiro
+        || visita.data_prevista
+        || visita.data_prevista_base
         || null;
       const diaRealNumero = referenciaAtendimento ? new Date(referenciaAtendimento).getDay() : null;
       const diaPrevistoLabel = diaPrevistoCodigo
