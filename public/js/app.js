@@ -3578,6 +3578,7 @@ class App {
             <table class="tabela-roteiro-selecao">
                 <thead>
                     <tr>
+                        <th class="col-roteiro-icon"></th>
                         <th>Código</th>
                         <th>Repositor</th>
                         <th>Supervisor</th>
@@ -3596,6 +3597,11 @@ class App {
 
                         return `
                             <tr>
+                                <td class="col-roteiro-icon">
+                                    <button class="btn-icon btn-roteiro-map" onclick="window.app.abrirRoteiroRepositor(${repo.repo_cod})" title="Configurar roteiro">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>
+                                    </button>
+                                </td>
                                 <td>${repo.repo_cod}</td>
                                 <td>${repo.repo_nome}</td>
                                 <td>${supervisorLabel}</td>
@@ -3603,7 +3609,6 @@ class App {
                                 <td>${repo.repo_cidade_ref || '-'}</td>
                                 <td class="table-actions">
                                     <button class="btn-icon" onclick="window.app.abrirDetalhesRepresentante(${index}, 'selecao-roteiro')" title="Detalhes do Representante">👁️</button>
-                                    <button class="btn btn-primary btn-sm" onclick="window.app.abrirRoteiroRepositor(${repo.repo_cod})">Configurar roteiro</button>
                                 </td>
                             </tr>
                         `;
@@ -4438,7 +4443,7 @@ class App {
                         const enderecoCompleto = [dados.endereco, dados.num_endereco].filter(Boolean).join(', ');
                         return `
                         <tr>
-                            <td>
+                            <td class="col-ordem-visita">
                                 <input
                                     type="number"
                                     min="1"
@@ -4449,7 +4454,7 @@ class App {
                                     aria-label="Ordem de visita"
                                 >
                             </td>
-                            <td>${cliente.rot_cliente_codigo}</td>
+                            <td class="col-codigo">${cliente.rot_cliente_codigo}</td>
                             <td>${dados.nome || '-'}</td>
                             <td>${dados.fantasia || '-'}</td>
                             <td class="col-rateio">
@@ -4926,9 +4931,10 @@ class App {
         }
 
         tabela.innerHTML = `
-            <table class="roteiro-clientes-table">
+            <table class="roteiro-clientes-table tabela-modal-clientes">
                 <thead>
                     <tr>
+                        <th class="col-acao-modal"></th>
                         <th class="col-codigo">Código</th>
                         <th class="col-nome">Nome</th>
                         <th class="col-fantasia">Fantasia</th>
@@ -4936,7 +4942,6 @@ class App {
                         <th class="col-endereco">Endereço</th>
                         <th>Bairro</th>
                         <th class="col-grupo">Grupo</th>
-                        <th class="col-acao" style="min-width: 120px; width: 120px;">Ação</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -4945,6 +4950,11 @@ class App {
                         const enderecoCompleto = [cliente.endereco, cliente.num_endereco].filter(Boolean).join(', ');
                         return `
                             <tr>
+                                <td class="col-acao-modal">
+                                    ${jaIncluido
+                                        ? '<span class="badge badge-success">✓</span>'
+                                        : `<button class="btn btn-primary btn-sm btn-adicionar-cliente" data-acao="adicionar-cliente" data-id="${cliente.cliente}">+<span class="btn-text"> Adicionar</span></button>`}
+                                </td>
                                 <td>${cliente.cliente}</td>
                                 <td>${cliente.nome || '-'}</td>
                                 <td>${cliente.fantasia || '-'}</td>
@@ -4952,11 +4962,6 @@ class App {
                                 <td>${enderecoCompleto || '-'}</td>
                                 <td>${cliente.bairro || '-'}</td>
                                 <td>${formatarGrupo(cliente.grupo_desc)}</td>
-                                <td class="table-actions">
-                                    ${jaIncluido
-                                        ? '<span class="badge badge-success">✓</span>'
-                                        : `<button class="btn btn-primary btn-sm btn-adicionar-cliente" data-acao="adicionar-cliente" data-id="${cliente.cliente}">+<span class="btn-text"> Adicionar</span></button>`}
-                                </td>
                             </tr>
                         `;
                     }).join('')}
