@@ -513,6 +513,22 @@ router.post('/upload', upload.single('arquivo'), async (req, res) => {
         const obsData = JSON.parse(observacao);
         if (obsData.tipo === 'despesa_viagem' && Array.isArray(obsData.rubricas)) {
           console.log('💰 Salvando valores de despesas...');
+
+          // Garantir que a tabela existe
+          await tursoService.execute(`
+            CREATE TABLE IF NOT EXISTS cc_despesa_valores (
+              dv_id INTEGER PRIMARY KEY AUTOINCREMENT,
+              dv_doc_id INTEGER NOT NULL,
+              dv_repositor_id INTEGER NOT NULL,
+              dv_gst_id INTEGER NOT NULL,
+              dv_gst_codigo TEXT NOT NULL,
+              dv_valor REAL NOT NULL DEFAULT 0,
+              dv_data_ref TEXT NOT NULL,
+              dv_criado_em TEXT NOT NULL DEFAULT (datetime('now')),
+              FOREIGN KEY (dv_doc_id) REFERENCES cc_documentos(doc_id) ON DELETE CASCADE
+            )
+          `, []);
+
           for (const rubrica of obsData.rubricas) {
             if (rubrica.valor > 0) {
               await tursoService.execute(
@@ -892,6 +908,25 @@ router.get('/despesas', async (req, res) => {
 
     if (!data_inicio || !data_fim) {
       return res.status(400).json({ ok: false, message: 'data_inicio e data_fim são obrigatórios' });
+    }
+
+    // Garantir que a tabela existe
+    try {
+      await tursoService.execute(`
+        CREATE TABLE IF NOT EXISTS cc_despesa_valores (
+          dv_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          dv_doc_id INTEGER NOT NULL,
+          dv_repositor_id INTEGER NOT NULL,
+          dv_gst_id INTEGER NOT NULL,
+          dv_gst_codigo TEXT NOT NULL,
+          dv_valor REAL NOT NULL DEFAULT 0,
+          dv_data_ref TEXT NOT NULL,
+          dv_criado_em TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (dv_doc_id) REFERENCES cc_documentos(doc_id) ON DELETE CASCADE
+        )
+      `, []);
+    } catch (createError) {
+      console.warn('Aviso ao criar tabela cc_despesa_valores:', createError.message);
     }
 
     let sql = `
