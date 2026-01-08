@@ -2773,13 +2773,44 @@ router.post('/coordenadas/manual', async (req, res) => {
 
     // Buscar endereço original do cache, se existir
     let enderecoOriginal = null;
+    let cidadeCliente = null;
+    let bairroCliente = null;
+
     try {
       const existente = await tursoService.buscarCoordenadasCliente(clienteIdNorm);
-      if (existente) {
+      if (existente && existente.endereco_original) {
         enderecoOriginal = existente.endereco_original;
+        cidadeCliente = existente.cidade;
+        bairroCliente = existente.bairro;
       }
     } catch (e) {
       // Ignora erro
+    }
+
+    // Se não encontrou endereço, tentar buscar do banco comercial
+    if (!enderecoOriginal) {
+      try {
+        const comercialClient = tursoService.getComercialClient();
+        if (comercialClient) {
+          const result = await comercialClient.execute({
+            sql: 'SELECT endereco, num_endereco, cidade, bairro FROM tab_cliente WHERE cliente = ?',
+            args: [clienteIdNorm]
+          });
+          if (result.rows && result.rows.length > 0) {
+            const cli = result.rows[0];
+            enderecoOriginal = [cli.endereco, cli.num_endereco].filter(Boolean).join(', ') || 'Coordenada manual';
+            cidadeCliente = cli.cidade || null;
+            bairroCliente = cli.bairro || null;
+          }
+        }
+      } catch (e) {
+        console.warn('Não foi possível buscar endereço do cliente comercial:', e.message);
+      }
+    }
+
+    // Fallback final se ainda não tiver endereço
+    if (!enderecoOriginal) {
+      enderecoOriginal = 'Coordenada manual';
     }
 
     // Salvar coordenadas como "manual"
@@ -2790,7 +2821,7 @@ router.post('/coordenadas/manual', async (req, res) => {
       lng,
       'manual',
       'manual',
-      { cidade: null, bairro: null }
+      { cidade: cidadeCliente, bairro: bairroCliente }
     );
 
     console.log(`✓ Coordenadas manuais salvas para cliente ${clienteIdNorm}: ${lat}, ${lng}`);

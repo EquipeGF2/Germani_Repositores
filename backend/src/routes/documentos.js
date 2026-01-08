@@ -507,6 +507,35 @@ router.post('/upload', upload.single('arquivo'), async (req, res) => {
     const docId = insertResult.lastInsertRowid;
     console.log('✅ Documento salvo com ID:', docId.toString());
 
+    // Se for despesa de viagem, salvar valores na tabela cc_despesa_valores
+    if (tipo.dct_codigo === 'despesa_viagem' && observacao) {
+      try {
+        const obsData = JSON.parse(observacao);
+        if (obsData.tipo === 'despesa_viagem' && Array.isArray(obsData.rubricas)) {
+          console.log('💰 Salvando valores de despesas...');
+          for (const rubrica of obsData.rubricas) {
+            if (rubrica.valor > 0) {
+              await tursoService.execute(
+                `INSERT INTO cc_despesa_valores (dv_doc_id, dv_repositor_id, dv_gst_id, dv_gst_codigo, dv_valor, dv_data_ref)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [
+                  docId,
+                  parseInt(repositor_id),
+                  rubrica.id || 0,
+                  rubrica.codigo || '',
+                  rubrica.valor,
+                  data_ref
+                ]
+              );
+            }
+          }
+          console.log(`✅ ${obsData.rubricas.filter(r => r.valor > 0).length} rubricas salvas`);
+        }
+      } catch (parseError) {
+        console.warn('⚠️  Não foi possível parsear observação como despesa:', parseError.message);
+      }
+    }
+
     res.status(201).json(sanitizeBigInt({
       ok: true,
       doc_id: docId.toString(),
@@ -685,15 +714,44 @@ router.post('/upload-multiplo', upload.array('arquivos', 10), async (req, res) =
             ]
           );
 
+          const docId = insertResult.lastInsertRowid;
+
           resultados.push({
             original: arquivo.originalname,
-            doc_id: insertResult.lastInsertRowid.toString(),
+            doc_id: docId.toString(),
             nome_drive: nomeFinal,
             drive_file_id: uploadResult.fileId,
             drive_file_url: uploadResult.webViewLink || null
           });
 
-          console.log(`✅ Arquivo processado e salvo no banco: ${arquivo.originalname} -> ${nomeFinal} (doc_id: ${insertResult.lastInsertRowid})`);
+          // Se for despesa de viagem, salvar valores na tabela cc_despesa_valores
+          if (tipo.dct_codigo === 'despesa_viagem' && observacao) {
+            try {
+              const obsData = JSON.parse(observacao);
+              if (obsData.tipo === 'despesa_viagem' && Array.isArray(obsData.rubricas)) {
+                for (const rubrica of obsData.rubricas) {
+                  if (rubrica.valor > 0) {
+                    await tursoService.execute(
+                      `INSERT INTO cc_despesa_valores (dv_doc_id, dv_repositor_id, dv_gst_id, dv_gst_codigo, dv_valor, dv_data_ref)
+                       VALUES (?, ?, ?, ?, ?, ?)`,
+                      [
+                        docId,
+                        parseInt(repositor_id),
+                        rubrica.id || 0,
+                        rubrica.codigo || '',
+                        rubrica.valor,
+                        data_ref
+                      ]
+                    );
+                  }
+                }
+              }
+            } catch (parseError) {
+              console.warn('⚠️  Não foi possível parsear observação como despesa:', parseError.message);
+            }
+          }
+
+          console.log(`✅ Arquivo processado e salvo no banco: ${arquivo.originalname} -> ${nomeFinal} (doc_id: ${docId})`);
         } catch (dbError) {
           registrarFalhaBanco('upload_multiplo', dbError, {
             doc_nome_original: arquivo.originalname,
@@ -824,6 +882,105 @@ router.post('/download-zip', async (req, res) => {
   } catch (error) {
     console.error('Erro ao gerar ZIP de documentos:', error);
     res.status(500).json({ ok: false, message: 'Erro ao gerar ZIP de documentos' });
+  }
+});
+
+// GET /api/documentos/despesas - Consulta despesas agregadas por repositor
+router.get('/despesas', async (req, res) => {
+  try {
+    const { data_inicio, data_fim, repositor_id } = req.query;
+
+    if (!data_inicio || !data_fim) {
+      return res.status(400).json({ ok: false, message: 'data_inicio e data_fim são obrigatórios' });
+    }
+
+    let sql = `
+      SELECT
+        dv.dv_repositor_id,
+        r.repo_nome,
+        dv.dv_gst_codigo,
+        SUM(dv.dv_valor) as total_valor
+      FROM cc_despesa_valores dv
+      LEFT JOIN cad_repositor r ON r.repo_cod = dv.dv_repositor_id
+      WHERE dv.dv_data_ref >= ? AND dv.dv_data_ref <= ?
+    `;
+    const args = [data_inicio, data_fim];
+
+    if (repositor_id) {
+      sql += ' AND dv.dv_repositor_id = ?';
+      args.push(parseInt(repositor_id));
+    }
+
+    sql += ' GROUP BY dv.dv_repositor_id, dv.dv_gst_codigo ORDER BY r.repo_nome, dv.dv_gst_codigo';
+
+    const result = await tursoService.execute(sql, args);
+
+    // Agrupar por repositor
+    const despesasPorRepositor = {};
+    for (const row of result.rows) {
+      const repId = row.dv_repositor_id;
+      if (!despesasPorRepositor[repId]) {
+        despesasPorRepositor[repId] = {
+          repositorId: repId,
+          repositorNome: row.repo_nome || `Repositor ${repId}`,
+          rubricas: {},
+          total: 0
+        };
+      }
+      const codigo = row.dv_gst_codigo.toLowerCase();
+      despesasPorRepositor[repId].rubricas[codigo] = {
+        valor: parseFloat(row.total_valor) || 0
+      };
+      despesasPorRepositor[repId].total += parseFloat(row.total_valor) || 0;
+    }
+
+    res.json({
+      ok: true,
+      despesas: Object.values(despesasPorRepositor)
+    });
+  } catch (error) {
+    console.error('Erro ao consultar despesas:', error);
+    res.status(500).json({ ok: false, message: 'Erro ao consultar despesas' });
+  }
+});
+
+// GET /api/documentos/despesas/detalhes - Detalhes de despesas de um repositor
+router.get('/despesas/detalhes', async (req, res) => {
+  try {
+    const { repositor_id, data_inicio, data_fim } = req.query;
+
+    if (!repositor_id) {
+      return res.status(400).json({ ok: false, message: 'repositor_id é obrigatório' });
+    }
+
+    let sql = `
+      SELECT
+        dv.*,
+        d.doc_nome_drive,
+        d.doc_drive_file_id,
+        d.doc_url_drive
+      FROM cc_despesa_valores dv
+      LEFT JOIN cc_documentos d ON d.doc_id = dv.dv_doc_id
+      WHERE dv.dv_repositor_id = ?
+    `;
+    const args = [parseInt(repositor_id)];
+
+    if (data_inicio && data_fim) {
+      sql += ' AND dv.dv_data_ref >= ? AND dv.dv_data_ref <= ?';
+      args.push(data_inicio, data_fim);
+    }
+
+    sql += ' ORDER BY dv.dv_data_ref DESC, dv.dv_gst_codigo';
+
+    const result = await tursoService.execute(sql, args);
+
+    res.json({
+      ok: true,
+      detalhes: result.rows
+    });
+  } catch (error) {
+    console.error('Erro ao consultar detalhes de despesas:', error);
+    res.status(500).json({ ok: false, message: 'Erro ao consultar detalhes de despesas' });
   }
 });
 

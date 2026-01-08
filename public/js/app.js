@@ -12604,34 +12604,15 @@ class App {
         container.innerHTML = '<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p style="margin-top: 16px;">Carregando despesas...</p></div>';
 
         try {
-            // Primeiro, buscar o dct_id do tipo "despesa_viagem"
-            const tiposData = await fetchJson(`${API_BASE_URL}/api/documentos/tipos`);
-            const tipos = tiposData.tipos || [];
-            const tipoDespesa = tipos.find(t =>
-                t.dct_codigo === 'despesa_viagem' ||
-                (t.dct_nome || '').toLowerCase().includes('despesa')
-            );
-
-            if (!tipoDespesa) {
-                container.innerHTML = `
-                    <div class="empty-state" style="padding: 40px;">
-                        <div class="empty-state-icon">⚠️</div>
-                        <p>Tipo de documento "Despesa de Viagem" não encontrado. Cadastre em Configurações.</p>
-                    </div>
-                `;
-                return;
-            }
-
-            // Buscar documentos do tipo despesa de viagem usando dct_id
+            // Buscar despesas do novo endpoint estruturado
             const params = new URLSearchParams();
-            params.append('dct_id', tipoDespesa.dct_id);
             params.append('data_inicio', dataInicio);
             params.append('data_fim', dataFim);
 
-            const data = await fetchJson(`${API_BASE_URL}/api/documentos?${params.toString()}`);
-            const documentos = data.documentos || [];
+            const data = await fetchJson(`${API_BASE_URL}/api/documentos/despesas?${params.toString()}`);
+            const despesasPorRepositor = data.despesas || [];
 
-            if (documentos.length === 0) {
+            if (despesasPorRepositor.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state" style="padding: 40px;">
                         <div class="empty-state-icon">💰</div>
@@ -12640,9 +12621,6 @@ class App {
                 `;
                 return;
             }
-
-            // Agrupar por repositor
-            const despesasPorRepositor = this.agruparDespesasPorRepositor(documentos);
 
             // Buscar rubricas cadastradas
             const rubricas = await db.listarTiposGasto(true);
@@ -13927,6 +13905,9 @@ class App {
             const dataFormatada = doc.doc_data_ref ?
                 new Date(doc.doc_data_ref + 'T12:00:00').toLocaleDateString('pt-BR') : '-';
 
+            // Extrair observação real (ignorar JSON de despesas)
+            const observacaoExibir = this.extrairObservacaoDocumento(doc.doc_observacao);
+
             item.innerHTML = `
                 <div class="doc-main">
                     <input type="checkbox" class="doc-checkbox" data-doc-id="${doc.doc_id}">
@@ -13944,7 +13925,7 @@ class App {
                                 <span class="doc-icon">📅</span>
                                 <span class="doc-text truncate-1" title="${dataFormatada}">${dataFormatada}</span>
                             </div>
-                            ${doc.doc_observacao ? `<div class="doc-line"><span class="doc-icon">💬</span><span class="doc-text break-any">${doc.doc_observacao}</span></div>` : ''}
+                            ${observacaoExibir ? `<div class="doc-line"><span class="doc-icon">💬</span><span class="doc-text break-any">${observacaoExibir}</span></div>` : ''}
                         </div>
                     </div>
                 </div>
@@ -13962,6 +13943,30 @@ class App {
         });
 
         this.showNotification(`${documentos.length} documento(s) encontrado(s)`, 'success');
+    }
+
+    /**
+     * Extrai a observação real de um documento, ignorando JSON de despesas
+     * @param {string} observacao - Observação do documento (pode conter JSON + texto)
+     * @returns {string} - Apenas a observação do usuário ou string vazia
+     */
+    extrairObservacaoDocumento(observacao) {
+        if (!observacao) return '';
+
+        // Se começa com '{', é um JSON de despesas
+        const trimmed = observacao.trim();
+        if (trimmed.startsWith('{')) {
+            // Tentar extrair a parte após "Obs: "
+            const obsMatch = observacao.match(/\n\nObs:\s*(.+)$/s);
+            if (obsMatch && obsMatch[1]) {
+                return obsMatch[1].trim();
+            }
+            // Se não tem observação adicional, retornar vazio (é apenas dados de despesa)
+            return '';
+        }
+
+        // Caso contrário, retornar a observação como está
+        return observacao;
     }
 
     toggleDocumento(docId, selected, item) {
