@@ -9204,14 +9204,15 @@ class App {
         const inputData = document.getElementById('registroData');
         const contexto = this.recuperarContextoRegistroRota();
 
-        if (!selectRepositor || !inputData || !contexto) return;
+        if (!selectRepositor || !inputData) return;
 
-        if (contexto.repId) {
+        // Sempre usar data atual
+        const hoje = new Date().toISOString().split('T')[0];
+        inputData.value = hoje;
+
+        // Restaurar apenas o repositor do contexto
+        if (contexto && contexto.repId) {
             selectRepositor.value = String(contexto.repId);
-        }
-
-        if (contexto.dataVisita) {
-            inputData.value = contexto.dataVisita;
         }
 
         if (selectRepositor.value && inputData.value) {
@@ -11670,9 +11671,9 @@ class App {
                 this.showNotification('Visita registrada com sucesso!', 'success');
             }
 
-            await this.fecharModalCaptura();
-            // Invalidar cache de sessão após alteração
+            // Invalidar cache de sessão ANTES de fechar o modal (evita reconciliação incorreta)
             this._sessaoCache = {};
+            await this.fecharModalCaptura();
             // Atualizar apenas o card do cliente (sem recarregar tudo)
             this.atualizarCardCliente(clienteId);
         } catch (error) {
@@ -11735,24 +11736,26 @@ class App {
         }
 
         if (repIdAtual) {
+            const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
+            const clienteIdNorm = clienteIdAtual ? normalizeClienteId(clienteIdAtual) : null;
+            const statusAtual = clienteIdNorm ? this.registroRotaState.resumoVisitas?.get(clienteIdNorm) : null;
+
+            // Se o status atual é 'finalizado' (checkout recém concluído), não tentar reconciliar
+            // Isso preserva o estado correto e permite mostrar botão "Nova visita"
+            if (statusAtual?.status === 'finalizado') {
+                return;
+            }
+
             const sessaoAberta = await this.buscarSessaoAberta(repIdAtual, dataPlanejadaAtual);
             if (sessaoAberta) {
                 this.reconciliarSessaoAbertaLocal(sessaoAberta, repIdAtual);
             } else if (clienteIdAtual) {
-                // Verificar se o status atual é 'finalizado' (checkout concluído)
-                // Nesse caso, NÃO sobrescrever para 'sem_checkin' pois o botão "Nova visita" deve aparecer
-                const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
-                const clienteIdNorm = normalizeClienteId(clienteIdAtual);
-                const statusAtual = this.registroRotaState.resumoVisitas?.get(clienteIdNorm);
-
-                if (statusAtual?.status !== 'finalizado') {
-                    this.atualizarStatusClienteLocal(clienteIdAtual, {
-                        status: 'sem_checkin',
-                        rv_id: null,
-                        atividades_count: 0,
-                        rep_id: repIdAtual
-                    });
-                }
+                this.atualizarStatusClienteLocal(clienteIdAtual, {
+                    status: 'sem_checkin',
+                    rv_id: null,
+                    atividades_count: 0,
+                    rep_id: repIdAtual
+                });
             }
         }
     }
@@ -13236,14 +13239,22 @@ class App {
             return { ok: false, erro: 'Preencha pelo menos uma rubrica com valor.' };
         }
 
-        // Verificar se todas as rubricas com valor têm pelo menos 1 foto
-        const semFoto = rubricasComValor.filter(r => !r.fotos || r.fotos.length === 0);
-        if (semFoto.length > 0) {
-            const nomes = semFoto.map(r => r.nome).join(', ');
-            return { ok: false, erro: `Tire foto do comprovante para: ${nomes}` };
+        // Separar rubricas completas (valor + foto) das incompletas
+        const rubricasCompletas = rubricasComValor.filter(r => r.fotos && r.fotos.length > 0);
+        const rubricasSemFoto = rubricasComValor.filter(r => !r.fotos || r.fotos.length === 0);
+
+        // Permitir envio parcial - apenas rubricas com valor E foto
+        if (rubricasCompletas.length === 0) {
+            return { ok: false, erro: 'Adicione foto do comprovante para pelo menos uma rubrica com valor.' };
         }
 
-        return { ok: true, rubricas: rubricasComValor };
+        // Alertar sobre rubricas sem foto (mas não bloquear)
+        if (rubricasSemFoto.length > 0) {
+            const nomes = rubricasSemFoto.map(r => r.nome).join(', ');
+            this.showNotification(`Atenção: Rubricas sem foto serão ignoradas: ${nomes}`, 'info');
+        }
+
+        return { ok: true, rubricas: rubricasCompletas };
     }
 
     formatarBytes(tamanho) {
@@ -16098,6 +16109,12 @@ class App {
     }
 
     adicionarCampoPesquisa() {
+        // Limite de 10 perguntas por pesquisa
+        if (this.pesquisaCampos.length >= 10) {
+            this.showNotification('Limite máximo de 10 perguntas por pesquisa atingido.', 'warning');
+            return;
+        }
+
         const novoCampo = {
             id: Date.now(),
             pergunta: '',

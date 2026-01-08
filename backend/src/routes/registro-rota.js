@@ -809,9 +809,16 @@ router.post('/visitas', upload.any(), async (req, res) => {
     };
 
     try {
-      parentFolderId = rvTipo === 'campanha'
-        ? await googleDriveService.ensureCampanhaFolder(repIdNumber, repositor.repo_nome)
-        : await googleDriveService.criarPastaRepositor(repIdNumber, repositor.repo_nome);
+      // Organizar fotos em pastas por tipo e data
+      if (rvTipo === 'campanha') {
+        parentFolderId = await googleDriveService.ensureCampanhaFolder(repIdNumber, repositor.repo_nome);
+      } else if (rvTipo === 'checkin') {
+        parentFolderId = await googleDriveService.ensureCheckinFolder(repIdNumber, repositor.repo_nome, dataHoraRegistro);
+      } else if (rvTipo === 'checkout') {
+        parentFolderId = await googleDriveService.ensureCheckoutFolder(repIdNumber, repositor.repo_nome, dataHoraRegistro);
+      } else {
+        parentFolderId = await googleDriveService.criarPastaRepositor(repIdNumber, repositor.repo_nome);
+      }
     } catch (driveErroPasta) {
       const resposta = tratarErroDrive('DRIVE_FOLDER', driveErroPasta, { repId: repIdNumber });
       if (resposta) return resposta;
