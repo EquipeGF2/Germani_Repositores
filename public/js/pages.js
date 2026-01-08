@@ -690,11 +690,13 @@ export const pages = {
                                 <input type="text" id="roteiroCidadeBusca" placeholder="Digite para buscar e adicionar cidade...">
                                 <div id="roteiroCidadeSugestoes" class="autocomplete-list"></div>
                             </div>
-                            <div class="cidade-ordem-wrapper ordem-compacta">
-                                <label for="roteiroCidadeOrdem">Ordem</label>
-                                <input type="number" id="roteiroCidadeOrdem" min="1" step="1" value="1" aria-label="Ordem da cidade">
+                            <div class="cidades-ordem-adicionar-row">
+                                <div class="cidade-ordem-wrapper ordem-compacta">
+                                    <label for="roteiroCidadeOrdem">Ordem</label>
+                                    <input type="number" id="roteiroCidadeOrdem" min="1" step="1" value="1" aria-label="Ordem da cidade">
+                                </div>
+                                <button class="btn btn-primary btn-sm btn-compact btn-add-cidade" id="btnAdicionarCidade">+ Adicionar</button>
                             </div>
-                            <button class="btn btn-primary btn-sm btn-compact btn-add-cidade" id="btnAdicionarCidade">+ Adicionar</button>
                             <button class="btn btn-secondary btn-sm btn-compact" id="btnCopiarRoteiro">📋 Copiar Roteiro</button>
                         </div>
 

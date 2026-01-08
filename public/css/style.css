@@ -6465,44 +6465,129 @@ body.modal-open {
         padding: 0.5rem 0.75rem;
     }
 
-    /* Cidade item - ordem e lixo dentro do card sem scroll horizontal */
+    /* Cidade item - nome, ordem e lixo em linha */
     .cidade-item {
-        flex-wrap: wrap;
+        display: flex;
+        align-items: center;
         gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        flex-wrap: nowrap;
+    }
+
+    .cidade-item .cidade-checkbox {
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
     }
 
     .cidade-item-info {
-        flex: 1 1 100%;
-        flex-wrap: wrap;
-        gap: 0.5rem;
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        align-items: center;
     }
 
     .cidade-item-nome {
-        flex: 1;
-        min-width: 100px;
+        font-size: 0.9rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .cidade-item-ordem {
-        flex: 0 0 auto;
-    }
-
-    .cidade-item-acoes {
-        flex: 0 0 auto;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
     }
 
     .cidade-item-ordem input {
-        width: 50px;
+        width: 45px;
+        padding: 0.25rem 0.4rem;
+        font-size: 0.85rem;
+        text-align: center;
     }
 
-    /* Modal adicionar cliente - campo bairro maior */
-    #modalAdicionarCliente .tabela-modal-clientes th:nth-child(7),
-    #modalAdicionarCliente .tabela-modal-clientes td:nth-child(7) {
-        min-width: 100px;
+    .cidade-item-acoes {
+        flex-shrink: 0;
     }
 
-    /* Corrigir espaço entre busca e cabeçalho da tabela */
+    .cidade-item-acoes .btn-icon {
+        padding: 0.3rem 0.5rem;
+        font-size: 0.9rem;
+    }
+
+    /* Cidades busca container - ordem e adicionar alinhados */
+    .cidades-busca-container {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        padding: 0;
+    }
+
+    .cidades-busca-container .autocomplete-input {
+        width: 100%;
+        flex: none;
+    }
+
+    /* Linha com ordem + adicionar */
+    .cidades-ordem-adicionar-row {
+        display: flex;
+        align-items: flex-end;
+        gap: 0.5rem;
+        width: 100%;
+    }
+
+    .cidades-ordem-adicionar-row .cidade-ordem-wrapper {
+        flex: 0 0 auto;
+        min-width: auto;
+        max-width: none;
+    }
+
+    .cidades-ordem-adicionar-row .cidade-ordem-wrapper label {
+        font-size: 0.8rem;
+        margin-bottom: 0.25rem;
+        display: block;
+    }
+
+    .cidades-ordem-adicionar-row .cidade-ordem-wrapper input {
+        width: 60px;
+        height: 40px;
+        padding: 0.5rem;
+        text-align: center;
+    }
+
+    .cidades-ordem-adicionar-row .btn-add-cidade {
+        flex: 1;
+        height: 40px;
+    }
+
+    .cidades-busca-container > .btn:not(.btn-add-cidade):not(#btnAdicionarCidade) {
+        height: 40px;
+    }
+
+    /* Margens reduzidas no roteiro */
+    .roteiro-layout .card {
+        margin-bottom: 0.5rem;
+    }
+
+    .roteiro-layout .card-body {
+        padding: 0.75rem 0;
+    }
+
+    .roteiro-layout .card-header {
+        padding-bottom: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .cidades-lista-container {
+        margin-top: 0.5rem;
+        max-height: 250px;
+    }
+
+    /* Modal adicionar cliente - sem espaço entre busca e tabela */
     #modalAdicionarCliente .form-row {
         margin-bottom: 0 !important;
+        padding-bottom: 0.5rem !important;
         border-bottom: none !important;
     }
 
@@ -6511,7 +6596,41 @@ body.modal-open {
     }
 
     #modalAdicionarCliente .roteiro-clientes-table {
-        border-top: 1px solid var(--gray-200);
+        margin-top: 0;
+    }
+
+    #modalAdicionarCliente .roteiro-clientes-table thead {
+        position: sticky;
+        top: 0;
+        background: white;
+        z-index: 5;
+    }
+
+    /* Coluna bairro maior */
+    #modalAdicionarCliente .tabela-modal-clientes .col-bairro {
+        min-width: 100px;
+    }
+
+    /* Linha verde para cliente já incluído */
+    #modalAdicionarCliente .cliente-incluido {
+        background-color: #d1fae5 !important;
+    }
+
+    #modalAdicionarCliente .cliente-incluido:hover {
+        background-color: #a7f3d0 !important;
+    }
+
+    /* Botão remover no modal */
+    .btn-remover-cliente-modal {
+        width: 32px;
+        height: 32px;
+        padding: 0 !important;
+        font-size: 1rem;
+        line-height: 1;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
 
     /* Modal Percentual de Rateio - 90% mobile, vertical */
