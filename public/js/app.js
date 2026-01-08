@@ -3303,15 +3303,15 @@ class App {
                 <table>
                     <thead>
                         <tr>
-                            <th>Código</th>
-                            <th>Repositor</th>
+                            <th style="width: 50px; text-align: center;">Cód</th>
+                            <th style="min-width: 150px;">Repositor</th>
                             <th>Supervisor</th>
-                            <th>Representante</th>
+                            <th style="min-width: 180px;">Representante</th>
                             <th class="col-contato">Contato (Telefone)</th>
                             <th>Vínculo</th>
                             <th>Status</th>
                             <th>Data Início</th>
-                            <th>Cidade Ref.</th>
+                            <th style="min-width: 120px;">Cidade Ref.</th>
                             <th>Ações</th>
                         </tr>
                     </thead>
@@ -3327,7 +3327,7 @@ class App {
 
                             return `
                                 <tr class="${classeLinha}">
-                                    <td>${repo.repo_cod}</td>
+                                    <td style="text-align: center;">${repo.repo_cod}</td>
                                     <td>${repo.repo_nome}</td>
                                     <td>${supervisorLabel}</td>
                                     <td>${repLabel || '-'}</td>
