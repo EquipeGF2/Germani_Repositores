@@ -3390,6 +3390,84 @@ tbody td {
     vertical-align: middle;
 }
 
+/* Coluna do ícone de mapa para configurar roteiro */
+.tabela-roteiro-selecao .col-roteiro-icon {
+    width: 50px;
+    text-align: center;
+}
+
+.btn-roteiro-map {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: 50%;
+    background: var(--primary);
+    color: white;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-roteiro-map:hover {
+    background: var(--primary-dark);
+    transform: scale(1.1);
+}
+
+.btn-roteiro-map svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* Coluna de ação no modal de adicionar cliente */
+.tabela-modal-clientes .col-acao-modal {
+    width: 70px;
+    text-align: center;
+}
+
+.tabela-modal-clientes .col-acao-modal .badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Grid de clientes no roteiro - centralização */
+.roteiro-clientes-table th.col-codigo,
+.roteiro-clientes-table td.col-codigo {
+    text-align: center;
+}
+
+.roteiro-clientes-table th.col-rateio,
+.roteiro-clientes-table td.col-rateio {
+    text-align: center;
+}
+
+.roteiro-clientes-table th.col-venda,
+.roteiro-clientes-table td.col-venda {
+    text-align: center;
+}
+
+.roteiro-clientes-table th.col-ordem-visita,
+.roteiro-clientes-table td.col-ordem-visita {
+    text-align: center;
+}
+
+/* Seletores centralizados na grid de clientes */
+.roteiro-clientes-table .rateio-indicador {
+    justify-content: center;
+}
+
+.roteiro-clientes-table .rateio-toggle-wrapper {
+    margin: 0 auto;
+}
+
+.roteiro-clientes-table td.col-venda .rateio-toggle-wrapper {
+    display: flex;
+    justify-content: center;
+}
+
 .roteiro-cidades-table td,
 .roteiro-cidades-table th {
     vertical-align: middle;
@@ -5945,6 +6023,60 @@ body.modal-open {
         width: 100%;
         min-width: unset;
     }
+
+    /* Grid de seleção de repositores - mobile */
+    .tabela-roteiro-selecao .col-roteiro-icon {
+        width: 44px;
+        padding: 0.25rem !important;
+    }
+
+    .btn-roteiro-map {
+        width: 32px;
+        height: 32px;
+    }
+
+    .btn-roteiro-map svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    /* Cidades busca - altura padronizada */
+    .cidades-busca-container {
+        align-items: stretch;
+    }
+
+    .cidades-busca-container .cidade-ordem-wrapper {
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+    }
+
+    .cidades-busca-container .cidade-ordem-wrapper input {
+        height: 40px;
+    }
+
+    .cidades-busca-container .btn {
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* Grid de clientes no roteiro - mobile */
+    .roteiro-clientes-table .col-venda {
+        min-width: 60px;
+        max-width: 80px;
+    }
+
+    /* Esconder texto da coluna venda centralizada no mobile */
+    .roteiro-clientes-table th.col-venda {
+        font-size: 0;
+    }
+
+    .roteiro-clientes-table th.col-venda::before {
+        content: 'V.C.';
+        font-size: 0.75rem;
+    }
 }
 
 /* Modal Adicionar Cliente - Mobile */
@@ -6021,6 +6153,12 @@ body.modal-open {
     #modalAdicionarCliente .roteiro-clientes-table th,
     #modalAdicionarCliente .roteiro-clientes-table td {
         padding: 0.5rem 0.4rem;
+    }
+
+    /* Coluna de ação na primeira posição - mobile */
+    #modalAdicionarCliente .tabela-modal-clientes .col-acao-modal {
+        width: 44px;
+        padding: 0.25rem !important;
     }
 
     /* Botão adicionar como ícone + */

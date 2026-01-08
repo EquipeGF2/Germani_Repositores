@@ -1877,7 +1877,8 @@ class TursoDatabase {
         try {
             const resultado = await this.comercialClient.execute({
                 sql: `
-                    SELECT cliente, nome, fantasia, CAST(cnpj_cpf AS TEXT) AS cnpj_cpf, cidade, estado
+                    SELECT cliente, nome, fantasia, CAST(cnpj_cpf AS TEXT) AS cnpj_cpf,
+                           endereco, num_endereco, bairro, cidade, estado, grupo_desc
                     FROM tab_cliente
                     WHERE cidade = ?
                     ORDER BY nome, fantasia
