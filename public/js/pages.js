@@ -687,7 +687,7 @@ export const pages = {
                         <div class="cidades-busca-container">
                             <div class="cidades-busca-seq-row">
                                 <div class="autocomplete-input cidade-input-larga">
-                                    <input type="text" id="roteiroCidadeBusca" placeholder="Digite para buscar e adicionar cidade...">
+                                    <input type="text" id="roteiroCidadeBusca" placeholder="Buscar cidade">
                                     <div id="roteiroCidadeSugestoes" class="autocomplete-list"></div>
                                 </div>
                                 <div class="cidade-ordem-wrapper ordem-compacta">
@@ -825,28 +825,27 @@ export const pages = {
             </div>
 
             <div class="modal" id="modalRateioRapido">
-                <div class="modal-content" style="max-width: 640px;">
+                <div class="modal-content modal-rateio-content">
                     <div class="modal-header">
                         <h3>Percentual de rateio</h3>
                         <button class="modal-close" onclick="window.app.cancelarModalRateioRapido()">&times;</button>
                     </div>
-                    <div class="modal-body">
-                        <p id="rateioRapidoClienteInfo" class="text-muted"></p>
-                        <p id="rateioRapidoRepositorInfo" class="text-muted"></p>
-                        <div class="form-row">
+                    <div class="modal-body modal-rateio-body">
+                        <p id="rateioRapidoClienteInfo" class="rateio-info-cliente"></p>
+                        <p id="rateioRapidoRepositorInfo" class="rateio-info-repositor"></p>
+                        <div class="rateio-campos">
                             <div class="form-group">
-                                <label for="rateioRapidoPercentual">% de rateio deste cliente para este repositor</label>
+                                <label for="rateioRapidoPercentual">% de rateio para este repositor</label>
                                 <input type="number" id="rateioRapidoPercentual" min="0" max="100" step="0.01" required>
-                                <small class="helper-compact">Valores entre 0 e 100. Nada será salvo até clicar em "Salvar Roteiro".</small>
+                                <small class="helper-compact">Valores entre 0 e 100.</small>
                             </div>
                             <div class="form-group">
-                                <label for="rateioRapidoVigenciaInicio">Data início do rateio</label>
+                                <label for="rateioRapidoVigenciaInicio">Data início</label>
                                 <input type="date" id="rateioRapidoVigenciaInicio" required>
-                                <small class="helper-compact">Obrigatória para novos rateios. Pode ser ajustada antes de salvar.</small>
                             </div>
                         </div>
                     </div>
-                    <div class="modal-footer">
+                    <div class="modal-footer modal-rateio-footer">
                         <button class="btn btn-secondary" type="button" onclick="window.app.cancelarModalRateioRapido()">Cancelar</button>
                         <button class="btn btn-primary" type="button" id="confirmarRateioRapido">Confirmar</button>
                     </div>

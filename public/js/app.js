@@ -4983,7 +4983,6 @@ class App {
                     <tr>
                         <th class="col-acao-modal"></th>
                         <th class="col-dados-mobile">Cliente</th>
-                        <th class="col-grupo">Grupo</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -5001,16 +5000,17 @@ class App {
                                 <td class="col-nome desktop-only">${cliente.nome || '-'}</td>
                                 <td class="col-fantasia desktop-only">${cliente.fantasia || '-'}</td>
                                 <td class="col-dados-mobile mobile-only">
-                                    <div class="cliente-dados-stack">
-                                        <div class="cliente-linha-1"><strong>${cliente.cliente}</strong> - ${cliente.nome || cliente.fantasia || '-'}</div>
-                                        <div class="cliente-linha-2">${documentoParaExibicao(cliente.cnpj_cpf) || '-'}</div>
-                                        <div class="cliente-linha-3">${enderecoCompleto || '-'}</div>
+                                    <div class="cliente-dados-stack-modal">
+                                        <div class="cliente-linha-nome"><strong>${cliente.cliente}</strong> - ${cliente.nome || '-'}</div>
+                                        ${cliente.fantasia ? `<div class="cliente-linha-fantasia">${cliente.fantasia}</div>` : ''}
+                                        <div class="cliente-linha-doc">${documentoParaExibicao(cliente.cnpj_cpf) || '-'}</div>
+                                        <div class="cliente-linha-end">${enderecoCompleto || '-'}</div>
                                     </div>
                                 </td>
                                 <td class="col-cnpj desktop-only">${documentoParaExibicao(cliente.cnpj_cpf) || '-'}</td>
                                 <td class="col-endereco desktop-only">${[cliente.endereco, cliente.num_endereco].filter(Boolean).join(', ') || '-'}</td>
                                 <td class="col-bairro desktop-only">${cliente.bairro || '-'}</td>
-                                <td class="col-grupo">${formatarGrupo(cliente.grupo_desc)}</td>
+                                <td class="col-grupo desktop-only">${formatarGrupo(cliente.grupo_desc)}</td>
                             </tr>
                         `;
                     }).join('')}
