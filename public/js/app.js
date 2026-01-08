@@ -12946,7 +12946,7 @@ class App {
                 .despesa-card-rubricas { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
                 .despesa-rubrica-item { display: flex; justify-content: space-between; align-items: center; font-size: 0.875rem; }
                 .despesa-rubrica-nome { color: #6b7280; }
-                .despesa-rubrica-valor { font-weight: 600; color: #374151; font-family: monospace; }
+                .despesa-rubrica-valor { font-weight: 600; color: #374151; }
                 .despesa-card-footer { display: flex; justify-content: flex-end; }
             </style>
             <p style="margin-bottom: 12px; color: var(--gray-600); font-size: 0.875rem;">
@@ -13124,10 +13124,10 @@ class App {
                     body { font-family: Arial, sans-serif; padding: 20px; font-size: 12px; }
                     h1 { font-size: 18px; margin-bottom: 5px; }
                     .periodo { color: #666; margin-bottom: 20px; }
-                    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-                    th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 10px; table-layout: fixed; }
+                    th, td { border: 1px solid #ddd; padding: 6px 4px; text-align: center; word-wrap: break-word; font-size: 11px; }
                     th { background: #f5f5f5; font-weight: bold; }
-                    td:first-child, th:first-child { text-align: left; }
+                    td:first-child, th:first-child { text-align: left; width: 20%; }
                     .total { font-weight: bold; background: #f9f9f9; }
                     .valor-total { color: #dc2626; font-weight: bold; }
                     @media print { body { padding: 0; } }

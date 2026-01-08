@@ -4282,20 +4282,21 @@ export const pages = {
                     border-collapse: collapse;
                     margin-top: 16px;
                     font-size: 0.875rem;
+                    table-layout: fixed;
                 }
 
                 .despesas-table th,
                 .despesas-table td {
-                    padding: 10px 12px;
+                    padding: 10px 8px;
                     border-bottom: 1px solid var(--gray-200);
                     text-align: center;
+                    word-wrap: break-word;
                 }
 
                 .despesas-table th {
                     background: var(--gray-100);
                     font-weight: 600;
                     color: var(--gray-700);
-                    white-space: nowrap;
                 }
 
                 .despesas-table th:first-child,
@@ -4304,7 +4305,6 @@ export const pages = {
                 }
 
                 .despesas-table td.valor {
-                    font-family: var(--font-mono, monospace);
                     white-space: nowrap;
                 }
 
