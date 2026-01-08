@@ -597,6 +597,12 @@ router.post('/upload-multiplo', upload.array('arquivos', 10), async (req, res) =
     const { repositor_id, dct_id, observacao } = req.body;
     const arquivos = req.files;
 
+    console.log('📥 Dados recebidos:');
+    console.log('   repositor_id:', repositor_id);
+    console.log('   dct_id:', dct_id);
+    console.log('   observacao (100 chars):', observacao ? observacao.substring(0, 100) : 'vazio');
+    console.log('   arquivos:', arquivos?.length || 0);
+
     if (!repositor_id || !dct_id) {
       registrarFalhaValidacao('upload_multiplo', 'repositor_id ou dct_id ausente');
       return res.status(400).json({ ok: false, message: 'repositor_id e dct_id são obrigatórios' });
@@ -648,6 +654,7 @@ router.post('/upload-multiplo', upload.array('arquivos', 10), async (req, res) =
     }
 
     const tipo = tipoResult.rows[0];
+    console.log('📋 Tipo encontrado:', { dct_id: tipo.dct_id, dct_codigo: tipo.dct_codigo, dct_nome: tipo.dct_nome });
 
     // Buscar repositor
     const repoResult = await tursoService.execute(

@@ -800,7 +800,6 @@ class TursoDatabase {
                 }
             }
 
-            console.log('✅ Tabelas de pesquisa criadas/verificadas');
         } catch (error) {
             console.error('Erro ao criar tabelas de pesquisa:', error);
             throw error;
@@ -862,7 +861,6 @@ class TursoDatabase {
                 `);
             }
 
-            console.log('✅ Tabelas de configuração criadas/verificadas');
         } catch (error) {
             console.error('Erro ao criar tabelas de configuração:', error);
             // Não propagar erro para não bloquear o resto do sistema
