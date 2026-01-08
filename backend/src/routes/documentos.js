@@ -768,8 +768,18 @@ router.post('/upload-multiplo', upload.array('arquivos', 10), async (req, res) =
           });
 
           // Se for despesa de viagem, salvar valores na tabela cc_despesa_valores
-          const isDespesaViagem = tipo.dct_codigo && tipo.dct_codigo.toLowerCase().includes('despesa');
-          console.log(`🔍 Verificando se é despesa: dct_codigo="${tipo.dct_codigo}", isDespesaViagem=${isDespesaViagem}, temObservacao=${!!observacao}`);
+          // Verifica pelo código, nome ou conteúdo do JSON
+          const codigoLower = (tipo.dct_codigo || '').toLowerCase();
+          const nomeLower = (tipo.dct_nome || '').toLowerCase();
+          const isDespesaPorTipo = codigoLower.includes('despesa') || codigoLower.includes('viagem') ||
+                                   nomeLower.includes('despesa') || nomeLower.includes('viagem');
+          const isDespesaPorJson = observacao && observacao.includes('"tipo":"despesa_viagem"');
+          const isDespesaViagem = isDespesaPorTipo || isDespesaPorJson;
+
+          console.log(`🔍 Verificando despesa:`);
+          console.log(`   dct_codigo="${tipo.dct_codigo}", dct_nome="${tipo.dct_nome}"`);
+          console.log(`   isDespesaPorTipo=${isDespesaPorTipo}, isDespesaPorJson=${isDespesaPorJson}`);
+          console.log(`   isDespesaViagem=${isDespesaViagem}, temObservacao=${!!observacao}`);
 
           if (isDespesaViagem && observacao) {
             try {
