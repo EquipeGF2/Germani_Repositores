@@ -7727,3 +7727,204 @@ span.mobile-only {
         background: white !important;
     }
 }
+
+/* ==================== WEB: COLUNA GRUPO - NÃO SOBREPOR BOTÃO ==================== */
+.roteiro-clientes-table .col-grupo {
+    min-width: 180px !important;
+    max-width: 250px !important;
+    white-space: normal !important;
+    word-wrap: break-word !important;
+}
+
+.roteiro-clientes-table .table-actions {
+    min-width: 90px !important;
+    white-space: nowrap !important;
+}
+
+/* ==================== MOBILE: ROTEIRO CLIENTES - COLUNA MAIOR ==================== */
+@media (max-width: 768px) {
+    /* Aumentar coluna cliente para nome completo */
+    .roteiro-clientes-table .col-dados-mobile {
+        min-width: 200px !important;
+        max-width: none !important;
+    }
+
+    .cliente-dados-stack .cliente-linha-1 {
+        max-width: 220px !important;
+        white-space: normal !important;
+        word-wrap: break-word !important;
+    }
+
+    .cliente-dados-stack .cliente-linha-3 {
+        max-width: 220px !important;
+    }
+
+    /* Campo SEQ mesmo tamanho que busca */
+    .cidades-busca-seq-row {
+        align-items: stretch !important;
+    }
+
+    .cidades-busca-seq-row .cidade-input-larga input,
+    .cidades-busca-seq-row .cidade-ordem-wrapper input {
+        height: 42px !important;
+        font-size: 0.95rem !important;
+    }
+
+    .cidades-busca-seq-row .cidade-ordem-wrapper {
+        flex: 0 0 55px !important;
+    }
+
+    .cidades-busca-seq-row .cidade-ordem-wrapper input {
+        width: 55px !important;
+    }
+}
+
+/* ==================== MOBILE: MODAL ADICIONAR CLIENTE - SEM GRUPO ==================== */
+@media (max-width: 768px) {
+    /* Dados do cliente expandidos */
+    .cliente-dados-stack-modal {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        line-height: 1.35;
+    }
+
+    .cliente-dados-stack-modal .cliente-linha-nome {
+        font-size: 0.85rem;
+        white-space: normal !important;
+        word-wrap: break-word !important;
+    }
+
+    .cliente-dados-stack-modal .cliente-linha-fantasia {
+        font-size: 0.75rem;
+        color: var(--gray-600);
+        font-style: italic;
+    }
+
+    .cliente-dados-stack-modal .cliente-linha-doc {
+        font-size: 0.7rem;
+        color: var(--gray-500);
+    }
+
+    .cliente-dados-stack-modal .cliente-linha-end {
+        font-size: 0.65rem;
+        color: var(--gray-500);
+    }
+
+    /* Coluna dados expandida */
+    #modalAdicionarCliente .tabela-modal-clientes .col-dados-mobile {
+        min-width: auto !important;
+        width: 100% !important;
+    }
+}
+
+/* ==================== MODAL RATEIO - LAYOUT COMPACTO ==================== */
+.modal-rateio-content {
+    max-width: 400px !important;
+    width: 90% !important;
+    padding: 0 !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
+}
+
+.modal-rateio-content .modal-header {
+    padding: 12px 16px !important;
+    border-bottom: 1px solid var(--gray-200) !important;
+}
+
+.modal-rateio-content .modal-header h3 {
+    font-size: 1.1rem !important;
+    margin: 0 !important;
+}
+
+.modal-rateio-body {
+    padding: 16px !important;
+}
+
+.rateio-info-cliente {
+    font-size: 0.9rem !important;
+    font-weight: 600 !important;
+    margin: 0 0 4px 0 !important;
+    color: var(--gray-800) !important;
+}
+
+.rateio-info-repositor {
+    font-size: 0.8rem !important;
+    margin: 0 0 16px 0 !important;
+    color: var(--gray-600) !important;
+}
+
+.rateio-campos {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+}
+
+.rateio-campos .form-group {
+    margin: 0 !important;
+}
+
+.rateio-campos .form-group label {
+    font-size: 0.85rem !important;
+    margin-bottom: 4px !important;
+    display: block !important;
+}
+
+.rateio-campos .form-group input {
+    width: 100% !important;
+    padding: 10px 12px !important;
+    font-size: 1rem !important;
+}
+
+.rateio-campos .helper-compact {
+    font-size: 0.7rem !important;
+    margin-top: 4px !important;
+}
+
+.modal-rateio-footer {
+    padding: 12px 16px !important;
+    border-top: 1px solid var(--gray-200) !important;
+    display: flex !important;
+    gap: 10px !important;
+}
+
+.modal-rateio-footer .btn {
+    flex: 1 !important;
+    padding: 10px !important;
+}
+
+/* ==================== MODAL VINCULAR COMPRADOR - CORRIGIR ROLAGEM ==================== */
+#modalVincularComprador .modal-content {
+    max-height: 90vh !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+}
+
+#modalVincularComprador .modal-body {
+    flex: 1 !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+}
+
+/* Lista de clientes compradores com scroll */
+#modalVincularComprador .autocomplete-list {
+    max-height: 250px !important;
+    overflow-y: auto !important;
+    position: absolute !important;
+    z-index: 1000 !important;
+}
+
+@media (max-width: 768px) {
+    #modalVincularComprador .modal-content {
+        width: 95% !important;
+        max-width: 95% !important;
+        margin: 2.5% auto !important;
+        max-height: 95vh !important;
+    }
+
+    #modalVincularComprador .modal-body {
+        padding: 12px !important;
+        overflow-y: auto !important;
+    }
+}
