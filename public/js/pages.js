@@ -1723,6 +1723,19 @@ export const pages = {
                     border-left: 3px solid #f97316;
                 }
 
+                /* Indicador de despesas incluídas */
+                .custos-grid-table .custo-cell .despesa-indicator {
+                    font-size: 12px;
+                    cursor: help;
+                    opacity: 0.8;
+                    flex-shrink: 0;
+                }
+
+                .custos-grid-table .custo-cell .despesa-indicator:hover {
+                    opacity: 1;
+                    transform: scale(1.1);
+                }
+
                 /* Legenda da Grid */
                 .custos-grid-legenda {
                     display: flex;

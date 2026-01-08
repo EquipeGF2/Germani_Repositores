@@ -4445,12 +4445,12 @@ class App {
                         <th class="col-nome">Nome</th>
                         <th class="col-fantasia">Fantasia</th>
                         <th class="col-rateio">Rateio</th>
-                        <th class="col-venda">Venda centralizada</th>
+                        <th class="col-venda">V. Cent</th>
                         <th class="col-cnpj">CNPJ/CPF</th>
                         <th class="col-endereco">Endereço</th>
                         <th>Bairro</th>
                         <th class="col-grupo">Grupo</th>
-                        <th class="col-acao">Ação</th>
+                        <th class="col-acao">Remover</th>
                     </tr>
                 </thead>
                 <thead class="mobile-only">
@@ -8700,6 +8700,10 @@ class App {
                     <div class="legenda-cor var"></div>
                     <span>Custo Variável</span>
                 </div>
+                <div class="legenda-item">
+                    <span style="font-size: 14px;">💰</span>
+                    <span>Inclui despesas de viagem</span>
+                </div>
             </div>
         `;
 
@@ -8728,6 +8732,7 @@ class App {
             meses.forEach(m => {
                 const custoFixoAtual = repo.meses[m.num]?.custo_fixo || 0;
                 const custoVarAtual = repo.meses[m.num]?.custo_variavel || 0;
+                const despesaViagem = repo.meses[m.num]?.despesa_viagem || 0;
 
                 const keyFixo = `${repo.rep_id}_${m.num}_fixo`;
                 const keyVar = `${repo.rep_id}_${m.num}_var`;
@@ -8741,6 +8746,12 @@ class App {
                 const editavel = this.isMesEditavel(m.num);
                 const classModifiedFixo = valorFixoAlterado !== undefined ? 'modified' : '';
                 const classModifiedVar = valorVarAlterado !== undefined ? 'modified' : '';
+
+                // Indicador visual se há despesa de viagem incluída
+                const hasDespesa = despesaViagem > 0;
+                const despesaIndicator = hasDespesa
+                    ? `<span class="despesa-indicator" title="Inclui R$ ${despesaViagem.toFixed(2)} em despesas de viagem">💰</span>`
+                    : '';
 
                 const totalCelula = (parseFloat(valorFixo) || 0) + (parseFloat(valorVar) || 0);
                 totalRepositor += totalCelula;
@@ -8779,6 +8790,7 @@ class App {
                                     min="0"
                                     onchange="window.app.onCelulaCustoChanged(this, ${repo.rep_id}, ${m.num}, 'var')"
                                 />
+                                ${despesaIndicator}
                             </div>
                         </div>
                     </td>
@@ -15898,6 +15910,8 @@ class App {
             }
 
             container.innerHTML = pesquisas.map(p => {
+                // vigente considera: pes_ativa=1 E dentro do período de datas
+                const isVigente = p.vigente === 1 || p.vigente === true;
                 const badges = [];
                 badges.push(p.pes_obrigatorio ?
                     '<span class="pesquisa-badge pesquisa-badge-obrigatoria">Obrigatória</span>' :
@@ -15905,7 +15919,7 @@ class App {
                 if (p.pes_foto_obrigatoria) {
                     badges.push('<span class="pesquisa-badge pesquisa-badge-foto">Foto</span>');
                 }
-                badges.push(p.pes_ativa ?
+                badges.push(isVigente ?
                     '<span class="pesquisa-badge pesquisa-badge-ativa">Ativa</span>' :
                     '<span class="pesquisa-badge pesquisa-badge-inativa">Inativa</span>');
 
