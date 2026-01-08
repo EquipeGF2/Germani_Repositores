@@ -4440,8 +4440,8 @@ class App {
             <table class="roteiro-clientes-table">
                 <thead>
                     <tr>
-                        <th class="col-ordem-visita">Ordem</th>
-                        <th class="col-codigo">Código</th>
+                        <th class="col-ordem-visita">SEQ</th>
+                        <th class="col-codigo">Cód</th>
                         <th class="col-nome">Nome</th>
                         <th class="col-fantasia">Fantasia</th>
                         <th class="col-rateio">Rateio</th>
