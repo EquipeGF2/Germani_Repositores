@@ -2161,13 +2161,13 @@ class TursoService {
     return result?.rows || result || [];
   }
 
-  async criarTipoEspaco(nome, descricao = null) {
+  async criarTipoEspaco(nome, descricao = null, ativo = true) {
     await this.ensureSchemaEspacos();
     const result = await this.execute(
-      'INSERT INTO cc_tipos_espaco (esp_nome, esp_descricao) VALUES (?, ?)',
-      [nome, descricao]
+      'INSERT INTO cc_tipos_espaco (esp_nome, esp_descricao, esp_ativo) VALUES (?, ?, ?)',
+      [nome, descricao, ativo ? 1 : 0]
     );
-    return { id: Number(result.lastInsertRowid), nome, descricao };
+    return { id: Number(result.lastInsertRowid), nome, descricao, ativo };
   }
 
   async atualizarTipoEspaco(id, nome, descricao, ativo) {

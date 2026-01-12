@@ -20,11 +20,11 @@ router.get('/tipos', async (req, res) => {
 // POST /api/espacos/tipos - Criar tipo de espaço
 router.post('/tipos', async (req, res) => {
   try {
-    const { nome, descricao } = req.body;
+    const { nome, descricao, ativo } = req.body;
     if (!nome) {
       return res.status(400).json({ ok: false, message: 'Nome é obrigatório' });
     }
-    const resultado = await tursoService.criarTipoEspaco(nome, descricao);
+    const resultado = await tursoService.criarTipoEspaco(nome, descricao, ativo !== false);
     res.json({ ok: true, data: resultado });
   } catch (error) {
     console.error('Erro ao criar tipo de espaço:', error);
