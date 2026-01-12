@@ -2926,13 +2926,11 @@ export const pages = {
 
                     <!-- Aba Tipos de Espaço -->
                     <div class="config-tab-content" id="config-tab-espacos">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                            <div>
-                                <h4 style="color: var(--text-primary); margin: 0;">Tipos de Espaço</h4>
-                                <p class="text-muted" style="margin: 4px 0 0; font-size: 13px;">
-                                    Cadastre os tipos de espaço disponíveis para compra (ex: Ponta de Gôndola, Ilha, Display).
-                                </p>
-                            </div>
+                        <div style="margin-bottom: 16px;">
+                            <h4 style="color: var(--text-primary); margin: 0;">Tipos de Espaço</h4>
+                            <p class="text-muted" style="margin: 4px 0 12px; font-size: 13px;">
+                                Cadastre os tipos de espaço disponíveis para compra (ex: Ponta de Gôndola, Ilha, Display).
+                            </p>
                             <button type="button" class="btn btn-primary btn-sm" id="btnNovoTipoEspacoConfig">
                                 + Novo Tipo de Espaço
                             </button>
@@ -2976,6 +2974,13 @@ export const pages = {
                             <div class="form-group">
                                 <label for="tipoEspacoDescricaoConfig">Descrição</label>
                                 <textarea id="tipoEspacoDescricaoConfig" rows="3" placeholder="Descrição opcional do tipo de espaço"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label style="display: block; margin-bottom: 8px;">Status</label>
+                                <label class="switch-label" style="display: flex; align-items: center; gap: 8px;">
+                                    <input type="checkbox" id="tipoEspacoAtivoConfig" checked>
+                                    <span>Ativo</span>
+                                </label>
                             </div>
                         </form>
                     </div>

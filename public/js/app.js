@@ -12738,8 +12738,8 @@ class App {
 
     async inicializarRegistroDocumentos() {
         try {
-            // Carregar tipos de documentos
-            await this.carregarTiposDocumentos();
+            // Carregar tipos de documentos nos selects
+            await this.carregarSelectsTiposDocumentos();
 
             // Resetar fila de uploads
             this.documentosState.filaUploads = [];
@@ -12773,7 +12773,7 @@ class App {
 
     async inicializarConsultaDocumentos() {
         try {
-            await this.carregarTiposDocumentos();
+            await this.carregarSelectsTiposDocumentos();
             this.documentosState.documentosSelecionados.clear();
             this.atualizarContadorSelecionados();
 
@@ -13324,10 +13324,10 @@ class App {
         printWindow.document.close();
     }
 
-    async carregarTiposDocumentos() {
+    async carregarSelectsTiposDocumentos() {
         const tipos = await this.fetchTiposDocumentos();
 
-        console.log('Tipos de documentos carregados:', tipos.length);
+        console.log('Tipos de documentos para selects:', tipos.length);
 
         // Preencher selects
         const selectUpload = document.getElementById('uploadTipo');
@@ -18996,16 +18996,16 @@ class App {
 
             tbody.innerHTML = response.data.map(tipo => `
                 <tr>
-                    <td><strong>${tipo.te_nome}</strong></td>
-                    <td>${tipo.te_descricao || '-'}</td>
-                    <td>
-                        <span class="badge ${tipo.te_ativo ? 'badge-success' : 'badge-secondary'}">
-                            ${tipo.te_ativo ? 'Ativo' : 'Inativo'}
+                    <td><strong>${tipo.esp_nome}</strong></td>
+                    <td>${tipo.esp_descricao || '-'}</td>
+                    <td style="text-align: center;">
+                        <span class="badge ${tipo.esp_ativo ? 'badge-success' : 'badge-secondary'}">
+                            ${tipo.esp_ativo ? 'Ativo' : 'Inativo'}
                         </span>
                     </td>
-                    <td>
-                        <button class="btn btn-sm btn-secondary" onclick="window.app.editarTipoEspacoConfig(${tipo.te_id})">Editar</button>
-                        <button class="btn btn-sm btn-danger" onclick="window.app.excluirTipoEspacoConfig(${tipo.te_id})" ${tipo.te_ativo ? '' : 'disabled'}>Excluir</button>
+                    <td style="text-align: center; white-space: nowrap;">
+                        <button class="btn btn-sm btn-secondary" onclick="window.app.editarTipoEspacoConfig(${tipo.esp_id})" title="Editar" style="margin-right: 4px;">✏️</button>
+                        <button class="btn btn-sm btn-danger" onclick="window.app.excluirTipoEspacoConfig(${tipo.esp_id})" title="Excluir" ${tipo.esp_ativo ? '' : 'disabled'}>🗑️</button>
                     </td>
                 </tr>
             `).join('');
@@ -19022,6 +19022,7 @@ class App {
 
         if (form) form.reset();
         document.getElementById('tipoEspacoIdConfig').value = id || '';
+        document.getElementById('tipoEspacoAtivoConfig').checked = true; // Default ativo
         title.textContent = id ? 'Editar Tipo de Espaço' : 'Novo Tipo de Espaço';
 
         modal.classList.add('active');
@@ -19030,12 +19031,13 @@ class App {
     async editarTipoEspacoConfig(id) {
         try {
             const response = await fetchJson(`${API_BASE_URL}/api/espacos/tipos?ativos=false`);
-            const tipo = response?.data?.find(t => t.te_id === id);
+            const tipo = response?.data?.find(t => t.esp_id === id);
 
             if (tipo) {
                 this.abrirModalTipoEspacoConfig(id);
-                document.getElementById('tipoEspacoNomeConfig').value = tipo.te_nome || '';
-                document.getElementById('tipoEspacoDescricaoConfig').value = tipo.te_descricao || '';
+                document.getElementById('tipoEspacoNomeConfig').value = tipo.esp_nome || '';
+                document.getElementById('tipoEspacoDescricaoConfig').value = tipo.esp_descricao || '';
+                document.getElementById('tipoEspacoAtivoConfig').checked = tipo.esp_ativo === 1 || tipo.esp_ativo === true;
             }
         } catch (error) {
             console.error('Erro ao buscar tipo de espaço:', error);
@@ -19047,6 +19049,7 @@ class App {
         const id = document.getElementById('tipoEspacoIdConfig').value;
         const nome = document.getElementById('tipoEspacoNomeConfig').value.trim();
         const descricao = document.getElementById('tipoEspacoDescricaoConfig').value.trim();
+        const ativo = document.getElementById('tipoEspacoAtivoConfig').checked;
 
         if (!nome) {
             this.showNotification('Nome é obrigatório', 'warning');
@@ -19061,7 +19064,7 @@ class App {
             const response = await fetchJson(url, {
                 method: id ? 'PUT' : 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ nome, descricao })
+                body: JSON.stringify({ nome, descricao, ativo })
             });
 
             if (response?.ok) {
