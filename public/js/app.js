@@ -19476,13 +19476,28 @@ class App {
     }
 
     async abrirModalRegistroEspacos(repId, clienteId, clienteNome, dataVisita, espacosPendentes, gpsCoords) {
+        // Expandir espaços - cada unidade precisa de uma foto
+        // Se tem 2 ilhas, precisa registrar 2 vezes com foto cada
+        const espacosExpandidos = [];
+        espacosPendentes.forEach(esp => {
+            const qtd = esp.quantidade_esperada || esp.ces_quantidade || 1;
+            for (let i = 0; i < qtd; i++) {
+                espacosExpandidos.push({
+                    ...esp,
+                    unidade: i + 1,
+                    totalUnidades: qtd,
+                    fotoCapturada: null
+                });
+            }
+        });
+
         // Armazenar estado
         this.espacosRegistroState = {
             repId,
             clienteId,
             clienteNome,
             dataVisita,
-            espacosPendentes,
+            espacosPendentes: espacosExpandidos,
             gpsCoords,
             registrosRealizados: []
         };
@@ -19497,48 +19512,61 @@ class App {
         }
 
         modal.innerHTML = `
-            <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-content" style="max-width: 600px; max-height: 90vh; overflow-y: auto;">
                 <div class="modal-header">
                     <h3>📦 Registro de Espaços</h3>
                     <button class="modal-close" onclick="window.app.fecharModalRegistroEspacos()">&times;</button>
                 </div>
                 <div class="modal-body">
                     <div class="alert alert-warning" style="margin-bottom: 16px;">
-                        <strong>Atenção:</strong> Este cliente possui ${espacosPendentes.length} espaço(s) contratado(s) que precisam ser registrados antes do checkout.
+                        <strong>⚠️ Obrigatório:</strong> Registre cada espaço com foto antes do checkout.
                     </div>
                     <p style="margin-bottom: 16px;"><strong>Cliente:</strong> ${clienteId} - ${clienteNome}</p>
+                    <p style="margin-bottom: 16px; color: #6b7280; font-size: 13px;">
+                        Total de espaços a registrar: <strong>${espacosExpandidos.length}</strong>
+                    </p>
 
                     <div id="listaEspacosPendentes">
-                        ${espacosPendentes.map((esp, idx) => `
-                            <div class="espaco-pendente-item" data-idx="${idx}" style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
+                        ${espacosExpandidos.map((esp, idx) => `
+                            <div class="espaco-pendente-item" data-idx="${idx}" id="espacoItem${idx}" style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                                     <div>
-                                        <strong>${esp.tipo_espaco_nome || 'Espaço'}</strong>
-                                        <div class="text-muted" style="font-size: 13px;">Quantidade esperada: ${esp.quantidade_esperada || esp.ce_quantidade || 1}</div>
+                                        <strong>${esp.tipo_nome || esp.tipo_espaco_nome || 'Espaço'}</strong>
+                                        ${esp.totalUnidades > 1 ? `<span style="color: #6b7280;"> (${esp.unidade}/${esp.totalUnidades})</span>` : ''}
                                     </div>
-                                    <span class="badge badge-warning" id="statusEspaco${idx}">Pendente</span>
+                                    <span class="badge badge-warning" id="statusEspaco${idx}">📷 Foto pendente</span>
                                 </div>
-                                <div class="form-group" style="margin-bottom: 8px;">
-                                    <label style="font-size: 13px;">Quantidade registrada:</label>
-                                    <input type="number" id="qtdEspaco${idx}" min="0" value="${esp.quantidade_esperada || esp.ce_quantidade || 1}"
-                                           style="width: 100px; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
+
+                                <div id="fotoPreview${idx}" style="margin-bottom: 12px; display: none;">
+                                    <img id="fotoImg${idx}" style="max-width: 100%; border-radius: 8px; max-height: 200px; object-fit: cover;">
                                 </div>
+
                                 <div class="form-group" style="margin-bottom: 8px;">
                                     <label style="font-size: 13px;">Observação (opcional):</label>
                                     <input type="text" id="obsEspaco${idx}" placeholder="Observação..."
                                            style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
                                 </div>
-                                <button class="btn btn-primary btn-sm" onclick="window.app.registrarEspacoItem(${idx}, ${esp.tipo_espaco_id || esp.ce_tipo_espaco_id}, ${esp.quantidade_esperada || esp.ce_quantidade || 1})">
-                                    Confirmar Registro
-                                </button>
+
+                                <input type="file" id="inputFoto${idx}" accept="image/*" capture="environment" style="display: none;"
+                                       onchange="window.app.onFotoEspacoSelecionada(${idx}, this)">
+
+                                <div style="display: flex; gap: 8px;">
+                                    <button class="btn btn-secondary btn-sm" id="btnFoto${idx}" onclick="document.getElementById('inputFoto${idx}').click()">
+                                        📷 Tirar Foto
+                                    </button>
+                                    <button class="btn btn-primary btn-sm" id="btnConfirmar${idx}"
+                                            onclick="window.app.registrarEspacoItemComFoto(${idx}, ${esp.tipo_espaco_id || esp.ces_tipo_espaco_id})" disabled>
+                                        ✅ Confirmar
+                                    </button>
+                                </div>
                             </div>
                         `).join('')}
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="window.app.fecharModalRegistroEspacos()">Cancelar Checkout</button>
+                    <button type="button" class="btn btn-secondary" onclick="window.app.fecharModalRegistroEspacos()">Cancelar</button>
                     <button type="button" class="btn btn-primary" id="btnFinalizarEspacos" onclick="window.app.finalizarRegistroEspacos()" disabled>
-                        Continuar para Checkout
+                        Continuar para Checkout (0/${espacosExpandidos.length})
                     </button>
                 </div>
             </div>
@@ -19547,22 +19575,69 @@ class App {
         modal.classList.add('active');
     }
 
-    async registrarEspacoItem(idx, tipoEspacoId, quantidadeEsperada) {
-        const qtdInput = document.getElementById(`qtdEspaco${idx}`);
+    onFotoEspacoSelecionada(idx, input) {
+        const file = input.files?.[0];
+        if (!file) return;
+
+        const preview = document.getElementById(`fotoPreview${idx}`);
+        const img = document.getElementById(`fotoImg${idx}`);
+        const btnConfirmar = document.getElementById(`btnConfirmar${idx}`);
+        const btnFoto = document.getElementById(`btnFoto${idx}`);
+        const status = document.getElementById(`statusEspaco${idx}`);
+
+        // Mostrar preview
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            img.src = e.target.result;
+            preview.style.display = 'block';
+            btnConfirmar.disabled = false;
+            btnFoto.textContent = '📷 Trocar Foto';
+            status.textContent = '📷 Foto pronta';
+            status.className = 'badge badge-info';
+        };
+        reader.readAsDataURL(file);
+
+        // Armazenar arquivo
+        this.espacosRegistroState.espacosPendentes[idx].fotoFile = file;
+    }
+
+    async registrarEspacoItemComFoto(idx, tipoEspacoId) {
+        const esp = this.espacosRegistroState.espacosPendentes[idx];
         const obsInput = document.getElementById(`obsEspaco${idx}`);
         const statusBadge = document.getElementById(`statusEspaco${idx}`);
+        const btnConfirmar = document.getElementById(`btnConfirmar${idx}`);
+        const itemDiv = document.getElementById(`espacoItem${idx}`);
 
-        const quantidadeRegistrada = parseInt(qtdInput?.value) || 0;
-        const observacao = obsInput?.value || '';
-
-        if (quantidadeRegistrada < 0) {
-            this.showNotification('Quantidade deve ser maior ou igual a zero', 'warning');
+        if (!esp.fotoFile) {
+            this.showNotification('Tire uma foto antes de confirmar', 'warning');
             return;
         }
 
+        const observacao = obsInput?.value || '';
         const { repId, clienteId, dataVisita, gpsCoords } = this.espacosRegistroState;
 
+        btnConfirmar.disabled = true;
+        btnConfirmar.textContent = 'Enviando...';
+
         try {
+            // Upload da foto primeiro
+            const formData = new FormData();
+            formData.append('foto', esp.fotoFile);
+            formData.append('tipo', 'espaco');
+            formData.append('cliente_id', clienteId);
+            formData.append('repositor_id', repId);
+
+            const uploadResp = await fetch(`${API_BASE_URL}/api/upload-foto`, {
+                method: 'POST',
+                body: formData
+            });
+            const uploadResult = await uploadResp.json();
+
+            if (!uploadResult?.ok) {
+                throw new Error(uploadResult?.message || 'Erro ao enviar foto');
+            }
+
+            // Registrar espaço com URL da foto
             const response = await fetchJson(`${API_BASE_URL}/api/espacos/registros`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -19570,56 +19645,44 @@ class App {
                     repositor_id: repId,
                     cliente_id: clienteId,
                     tipo_espaco_id: tipoEspacoId,
-                    quantidade_esperada: quantidadeEsperada,
-                    quantidade_registrada: quantidadeRegistrada,
+                    quantidade_esperada: 1,
+                    quantidade_registrada: 1,
+                    foto_url: uploadResult.url || uploadResult.fileId,
                     observacao,
                     data_registro: dataVisita
                 })
             });
 
             if (response?.ok) {
-                // Marcar como registrado
                 this.espacosRegistroState.registrosRealizados.push(idx);
 
-                // Atualizar UI
-                if (statusBadge) {
-                    if (quantidadeRegistrada >= quantidadeEsperada) {
-                        statusBadge.className = 'badge badge-ok';
-                        statusBadge.textContent = 'OK';
-                    } else {
-                        statusBadge.className = 'badge badge-warning';
-                        statusBadge.textContent = 'Parcial';
-                    }
-                }
+                statusBadge.className = 'badge badge-success';
+                statusBadge.textContent = '✅ Registrado';
+                itemDiv.style.opacity = '0.7';
+                itemDiv.style.pointerEvents = 'none';
 
-                // Desabilitar inputs
-                if (qtdInput) qtdInput.disabled = true;
-                if (obsInput) obsInput.disabled = true;
-
-                // Desabilitar botão de confirmar
-                const btnConfirmar = document.querySelector(`[onclick*="registrarEspacoItem(${idx}"]`);
-                if (btnConfirmar) {
-                    btnConfirmar.disabled = true;
-                    btnConfirmar.textContent = 'Registrado';
-                }
-
-                this.showNotification('Espaço registrado com sucesso', 'success');
-
-                // Verificar se todos foram registrados
-                const totalPendentes = this.espacosRegistroState.espacosPendentes.length;
-                const totalRegistrados = this.espacosRegistroState.registrosRealizados.length;
-
-                if (totalRegistrados >= totalPendentes) {
-                    const btnFinalizar = document.getElementById('btnFinalizarEspacos');
-                    if (btnFinalizar) {
-                        btnFinalizar.disabled = false;
-                    }
-                }
+                this.atualizarBotaoFinalizarEspacos();
+                this.showNotification('Espaço registrado com sucesso!', 'success');
+            } else {
+                throw new Error(response?.message || 'Erro ao registrar');
             }
         } catch (error) {
             console.error('Erro ao registrar espaço:', error);
+            btnConfirmar.disabled = false;
+            btnConfirmar.textContent = '✅ Confirmar';
             this.showNotification(error.message || 'Erro ao registrar espaço', 'error');
         }
+    }
+
+    atualizarBotaoFinalizarEspacos() {
+        const btn = document.getElementById('btnFinalizarEspacos');
+        if (!btn) return;
+
+        const total = this.espacosRegistroState.espacosPendentes.length;
+        const registrados = this.espacosRegistroState.registrosRealizados.length;
+
+        btn.textContent = `Continuar para Checkout (${registrados}/${total})`;
+        btn.disabled = registrados < total;
     }
 
     async finalizarRegistroEspacos() {
