@@ -10387,6 +10387,8 @@ class App {
             if (this.registroRotaState.resumoVisitas instanceof Map) {
                 this.registroRotaState.resumoVisitas.delete(clienteIdNorm);
             }
+            // CRÍTICO: Limpar cache de sessão para evitar dados stale
+            this._sessaoCache = {};
         };
 
         const setLoading = (status) => {
@@ -10452,7 +10454,8 @@ class App {
 
     async reidratarAtendimentosAposCancelamento(repId) {
         try {
-            const sessaoAtualizada = await this.buscarSessaoAberta(repId);
+            // CRÍTICO: Usar forceRefresh=true para buscar dados frescos do backend
+            const sessaoAtualizada = await this.buscarSessaoAberta(repId, null, true);
             if (sessaoAtualizada) {
                 this.reconciliarSessaoAbertaLocal(sessaoAtualizada, repId);
             } else {
