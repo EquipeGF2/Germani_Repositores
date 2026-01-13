@@ -10370,12 +10370,23 @@ class App {
         let carregando = false;
 
         const limparEstadoLocal = () => {
+            // Limpar estado em memória
             this.atualizarStatusClienteLocal(clienteIdNorm, {
                 status: 'sem_checkin',
                 rv_id: null,
                 atividades_count: 0,
                 rep_id: repId
             });
+            // Limpar localStorage
+            this.limparAtendimentoLocal(repId, clienteIdNorm);
+            // Limpar do mapa de atendimentos abertos
+            if (this.registroRotaState.atendimentosAbertos instanceof Map) {
+                this.registroRotaState.atendimentosAbertos.delete(clienteIdNorm);
+            }
+            // Limpar do resumo de visitas
+            if (this.registroRotaState.resumoVisitas instanceof Map) {
+                this.registroRotaState.resumoVisitas.delete(clienteIdNorm);
+            }
         };
 
         const setLoading = (status) => {
@@ -19461,17 +19472,40 @@ class App {
             // Enriquecer com nomes dos clientes do IndexedDB local
             const clientesSemNome = response.data.filter(ce => !ce.cliente_nome && !ce.ces_cliente_nome);
             if (clientesSemNome.length > 0) {
-                const cidadesUnicas = [...new Set(clientesSemNome.map(ce => ce.ces_cidade))];
+                const cidadesUnicas = [...new Set(clientesSemNome.map(ce => ce.ces_cidade?.toUpperCase()))];
                 const clientesLocais = new Map();
 
-                for (const cidadeItem of cidadesUnicas) {
+                // Buscar clientes das cidades necessárias
+                for (const cidadeBusca of cidadesUnicas) {
+                    if (!cidadeBusca) continue;
                     try {
-                        const clientes = await db.getClientesPorCidade(cidadeItem);
-                        clientes.forEach(c => {
-                            const cod = String(c.cliente).trim().replace(/\.0$/, '');
-                            clientesLocais.set(cod, c.nome || c.fantasia || '');
-                        });
-                    } catch (e) { /* ignorar */ }
+                        // Tentar buscar pela cidade exata
+                        let clientes = await db.getClientesPorCidade(cidadeBusca);
+
+                        // Se não encontrou, tentar variações
+                        if (!clientes || clientes.length === 0) {
+                            const todasCidades = await db.getCidadesPotencial();
+                            const cidadeMatch = todasCidades.find(c =>
+                                c?.toUpperCase() === cidadeBusca ||
+                                c?.toUpperCase().includes(cidadeBusca) ||
+                                cidadeBusca.includes(c?.toUpperCase())
+                            );
+                            if (cidadeMatch) {
+                                clientes = await db.getClientesPorCidade(cidadeMatch);
+                            }
+                        }
+
+                        if (clientes && clientes.length > 0) {
+                            clientes.forEach(c => {
+                                const cod = String(c.cliente).trim().replace(/\.0$/, '');
+                                if (!clientesLocais.has(cod)) {
+                                    clientesLocais.set(cod, c.nome || c.fantasia || '');
+                                }
+                            });
+                        }
+                    } catch (e) {
+                        console.warn('Erro ao buscar clientes da cidade:', cidadeBusca, e);
+                    }
                 }
 
                 response.data.forEach(ce => {
