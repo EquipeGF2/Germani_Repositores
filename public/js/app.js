@@ -9947,18 +9947,18 @@ class App {
             return;
         }
 
-        // Buscar clientes com espaços cadastrados (em background para não bloquear)
+        // Buscar clientes com espaços cadastrados (em background, silencioso se falhar)
         const clienteIds = roteiro.map(c => normalizeClienteId(c.cli_codigo));
         this.registroRotaState.clientesComEspaco = new Set();
-        fetchJson(`${API_BASE_URL}/api/espacos/clientes-com-espaco?clientes=${clienteIds.join(',')}`)
+        fetch(`${API_BASE_URL}/api/espacos/clientes-com-espaco?clientes=${clienteIds.join(',')}`)
+            .then(r => r.ok ? r.json() : null)
             .then(resp => {
                 if (resp?.ok && resp.data) {
                     this.registroRotaState.clientesComEspaco = new Set(resp.data.map(c => normalizeClienteId(c)));
-                    // Re-renderizar botões de espaços se necessário
                     this.atualizarBotoesEspacosRoteiro();
                 }
             })
-            .catch(err => console.warn('Erro ao verificar clientes com espaço:', err));
+            .catch(() => { /* silencioso */ });
 
         // Buscar não atendimentos do dia (silencioso se falhar)
         fetch(`${API_BASE_URL}/api/registro-rota/nao-atendimentos?repositor_id=${repId}&data=${dataVisita}`)
