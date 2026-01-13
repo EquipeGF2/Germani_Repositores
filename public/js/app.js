@@ -9529,6 +9529,43 @@ class App {
         }
     }
 
+    // Marcar sessão como cancelada temporariamente (para ignorar dados stale do backend)
+    marcarSessaoCanceladaTemporariamente(repId, clienteId, rvId) {
+        try {
+            const chave = `SESSAO_CANCELADA_${repId}_${clienteId}`;
+            const payload = {
+                rv_id: rvId,
+                cancelado_em: Date.now(),
+                expira_em: Date.now() + (5 * 60 * 1000) // 5 minutos
+            };
+            localStorage.setItem(chave, JSON.stringify(payload));
+        } catch (error) {
+            console.warn('Não foi possível marcar sessão como cancelada', error);
+        }
+    }
+
+    // Verificar se sessão foi cancelada recentemente (últimos 5 minutos)
+    sessaoFoiCanceladaRecentemente(repId, clienteId) {
+        try {
+            const chave = `SESSAO_CANCELADA_${repId}_${clienteId}`;
+            const bruto = localStorage.getItem(chave);
+            if (!bruto) return false;
+
+            const dados = safeJsonParse(bruto, null);
+            if (!dados) return false;
+
+            // Verificar se ainda não expirou
+            if (Date.now() > dados.expira_em) {
+                localStorage.removeItem(chave);
+                return false;
+            }
+
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+
     salvarContextoRegistroRota(repId, dataVisita) {
         try {
             const payload = { repId, dataVisita };
@@ -9995,6 +10032,13 @@ class App {
 
         (atendimentosAbertos || []).forEach((aberto) => {
             const cliNorm = normalizeClienteId(aberto.cliente_id);
+
+            // CRÍTICO: Ignorar sessões que foram canceladas recentemente (dados stale do backend)
+            if (this.sessaoFoiCanceladaRecentemente(repId, cliNorm)) {
+                console.log(`Ignorando sessão cancelada recentemente: ${cliNorm}`);
+                return; // pular este cliente
+            }
+
             const atual = mapaResumo.get(cliNorm) || {};
             const atividades = Number(aberto.atividades_count || 0);
 
@@ -10392,6 +10436,9 @@ class App {
             }
             // CRÍTICO: Limpar cache de sessão para evitar dados stale
             this._sessaoCache = {};
+            // CRÍTICO: Marcar sessão como cancelada temporariamente (5 min)
+            // Isso previne restauração de dados stale do backend
+            this.marcarSessaoCanceladaTemporariamente(repId, clienteIdNorm, rvId);
         };
 
         const setLoading = (status) => {
@@ -10811,6 +10858,13 @@ class App {
 
         if (existeBackend) {
             const clienteIdNorm = normalizeClienteId(atendimento.cliente_id);
+
+            // CRÍTICO: Ignorar sessões canceladas recentemente (dados stale do backend)
+            if (this.sessaoFoiCanceladaRecentemente(repId, clienteIdNorm)) {
+                console.log(`syncAtendimentoAberto: Ignorando sessão cancelada recentemente: ${clienteIdNorm}`);
+                return atendimento;
+            }
+
             const sessaoRecon = {
                 sessao_id: atendimento.rv_id,
                 cliente_id: clienteIdNorm,
