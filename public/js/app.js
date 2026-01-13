@@ -10506,7 +10506,14 @@ class App {
         try {
             // CRÍTICO: Usar forceRefresh=true para buscar dados frescos do backend
             const sessaoAtualizada = await this.buscarSessaoAberta(repId, null, true);
-            if (sessaoAtualizada) {
+
+            // CRÍTICO: Não reconciliar se a sessão foi cancelada recentemente
+            // O backend pode retornar dados stale se ainda não processou o DELETE
+            const clienteIdNorm = sessaoAtualizada?.cliente_id
+                ? String(sessaoAtualizada.cliente_id).trim().replace(/\.0$/, '')
+                : null;
+
+            if (sessaoAtualizada && clienteIdNorm && !this.sessaoFoiCanceladaRecentemente(repId, clienteIdNorm)) {
                 this.reconciliarSessaoAbertaLocal(sessaoAtualizada, repId);
             } else {
                 const locais = this.listarAtendimentosLocais(repId);
