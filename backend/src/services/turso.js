@@ -1777,6 +1777,66 @@ class TursoService {
     await this.execute('CREATE INDEX IF NOT EXISTS idx_usuarios_username ON cc_usuarios(username)', []);
     await this.execute('CREATE INDEX IF NOT EXISTS idx_usuarios_rep_id ON cc_usuarios(rep_id)', []);
     await this.execute('CREATE INDEX IF NOT EXISTS idx_usuarios_perfil ON cc_usuarios(perfil)', []);
+
+    // Tabela de configuração de telas PWA
+    const sqlPermissoesPwa = `
+      CREATE TABLE IF NOT EXISTS cc_pwa_telas (
+        tela_id TEXT PRIMARY KEY,
+        tela_titulo TEXT NOT NULL,
+        tela_categoria TEXT NOT NULL,
+        liberado_pwa INTEGER DEFAULT 0,
+        ordem INTEGER DEFAULT 999,
+        criado_em TEXT DEFAULT (datetime('now')),
+        atualizado_em TEXT DEFAULT (datetime('now'))
+      )
+    `;
+    await this.execute(sqlPermissoesPwa, []);
+    console.log('✅ Tabela cc_pwa_telas garantida');
+
+    // Inserir telas padrão se não existirem
+    const telasDefault = [
+      // Cadastros
+      { id: 'cadastro-repositor', titulo: 'Cadastro de Repositores', categoria: 'cadastros', liberado: 0, ordem: 1 },
+      { id: 'roteiro-repositor', titulo: 'Roteiro do Repositor', categoria: 'cadastros', liberado: 0, ordem: 2 },
+      { id: 'cadastro-rateio', titulo: 'Manutenção de Rateio', categoria: 'cadastros', liberado: 0, ordem: 3 },
+      { id: 'manutencao-centralizacao', titulo: 'Manutenção de Centralização', categoria: 'cadastros', liberado: 0, ordem: 4 },
+      { id: 'cadastro-pesquisa', titulo: 'Pesquisas', categoria: 'cadastros', liberado: 0, ordem: 5 },
+      // Registros
+      { id: 'registro-rota', titulo: 'Registro de Rota', categoria: 'registros', liberado: 1, ordem: 10 },
+      { id: 'documentos', titulo: 'Registro de Documentos', categoria: 'registros', liberado: 1, ordem: 11 },
+      { id: 'cadastro-espacos', titulo: 'Compra de Espaço', categoria: 'registros', liberado: 1, ordem: 12 },
+      // Consultas
+      { id: 'consulta-visitas', titulo: 'Consulta de Visitas', categoria: 'consultas', liberado: 1, ordem: 20 },
+      { id: 'consulta-documentos', titulo: 'Consulta de Documentos', categoria: 'consultas', liberado: 1, ordem: 21 },
+      { id: 'consulta-espacos', titulo: 'Consulta de Espaços', categoria: 'consultas', liberado: 0, ordem: 22 },
+      { id: 'consulta-roteiro', titulo: 'Consulta de Roteiro', categoria: 'consultas', liberado: 0, ordem: 23 },
+      { id: 'consulta-alteracoes', titulo: 'Consulta de Alterações', categoria: 'consultas', liberado: 0, ordem: 24 },
+      { id: 'consulta-pesquisa', titulo: 'Consulta de Pesquisas', categoria: 'consultas', liberado: 0, ordem: 25 },
+      { id: 'consulta-despesas', titulo: 'Consulta de Despesas', categoria: 'consultas', liberado: 0, ordem: 26 },
+      { id: 'consulta-campanha', titulo: 'Consulta Campanha', categoria: 'consultas', liberado: 0, ordem: 27 },
+      // Relatórios
+      { id: 'resumo-periodo', titulo: 'Resumo do Período', categoria: 'relatorios', liberado: 0, ordem: 30 },
+      { id: 'resumo-mensal', titulo: 'Resumo Mensal', categoria: 'relatorios', liberado: 0, ordem: 31 },
+      { id: 'analise-performance', titulo: 'Análise de Visitas', categoria: 'relatorios', liberado: 0, ordem: 32 },
+      { id: 'relatorio-detalhado-repo', titulo: 'Relatório Detalhado', categoria: 'relatorios', liberado: 0, ordem: 33 },
+      { id: 'analise-grafica-repo', titulo: 'Análise Gráfica', categoria: 'relatorios', liberado: 0, ordem: 34 },
+      { id: 'custos-repositor', titulo: 'Custos por Repositor', categoria: 'relatorios', liberado: 0, ordem: 35 },
+      // Configurações (geralmente não liberado para repositor)
+      { id: 'configuracoes-sistema', titulo: 'Configurações do Sistema', categoria: 'configuracoes', liberado: 0, ordem: 40 },
+      { id: 'controle-acessos', titulo: 'Controle de Acessos', categoria: 'configuracoes', liberado: 0, ordem: 41 },
+      { id: 'gestao-usuarios', titulo: 'Gestão de Usuários', categoria: 'configuracoes', liberado: 0, ordem: 42 }
+    ];
+
+    for (const tela of telasDefault) {
+      const exists = await this.execute('SELECT 1 FROM cc_pwa_telas WHERE tela_id = ?', [tela.id]);
+      if (!exists.rows || exists.rows.length === 0) {
+        await this.execute(
+          'INSERT INTO cc_pwa_telas (tela_id, tela_titulo, tela_categoria, liberado_pwa, ordem) VALUES (?, ?, ?, ?, ?)',
+          [tela.id, tela.titulo, tela.categoria, tela.liberado, tela.ordem]
+        );
+      }
+    }
+    console.log('✅ Telas PWA configuradas');
   }
 
   async criarUsuario({ username, passwordHash, nomeCompleto, email, repId, perfil = 'repositor' }) {
@@ -1804,6 +1864,24 @@ class TursoService {
     const sql = 'SELECT * FROM cc_usuarios WHERE username = ? AND ativo = 1';
     const result = await this.execute(sql, [username]);
     return result.rows[0] || null;
+  }
+
+  // Busca usuário por username incluindo inativos (para validação de duplicidade)
+  async buscarUsuarioPorUsernameIncluindoInativos(username) {
+    const sql = 'SELECT * FROM cc_usuarios WHERE username = ?';
+    const result = await this.execute(sql, [username]);
+    return result.rows[0] || null;
+  }
+
+  // Reativar usuário existente com nova senha
+  async reativarUsuario(usuarioId, passwordHash, nomeCompleto, email, repId) {
+    const sql = `
+      UPDATE cc_usuarios
+      SET password_hash = ?, nome_completo = ?, email = ?, rep_id = ?, ativo = 1, atualizado_em = datetime('now')
+      WHERE usuario_id = ?
+    `;
+    await this.execute(sql, [passwordHash, nomeCompleto, email, repId, usuarioId]);
+    return { usuario_id: usuarioId, reativado: true };
   }
 
   async buscarUsuarioPorId(usuarioId) {
@@ -1880,6 +1958,48 @@ class TursoService {
     `;
     const result = await this.execute(sql, [repId]);
     return result.rows[0] || null;
+  }
+
+  // ==================== PERMISSÕES PWA ====================
+
+  // Listar todas as telas com status de liberação
+  async listarTelasPwa() {
+    const sql = `
+      SELECT tela_id, tela_titulo, tela_categoria, liberado_pwa, ordem
+      FROM cc_pwa_telas
+      ORDER BY ordem, tela_titulo
+    `;
+    const result = await this.execute(sql, []);
+    return result.rows || [];
+  }
+
+  // Listar apenas telas liberadas para o PWA
+  async listarTelasLiberadasPwa() {
+    const sql = `
+      SELECT tela_id, tela_titulo, tela_categoria, ordem
+      FROM cc_pwa_telas
+      WHERE liberado_pwa = 1
+      ORDER BY ordem, tela_titulo
+    `;
+    const result = await this.execute(sql, []);
+    return result.rows || [];
+  }
+
+  // Atualizar status de liberação de uma tela
+  async atualizarLiberacaoTelaPwa(telaId, liberado) {
+    const sql = `
+      UPDATE cc_pwa_telas
+      SET liberado_pwa = ?, atualizado_em = datetime('now')
+      WHERE tela_id = ?
+    `;
+    await this.execute(sql, [liberado ? 1 : 0, telaId]);
+  }
+
+  // Atualizar múltiplas telas de uma vez
+  async atualizarLiberacoesTelasPwa(telas) {
+    for (const { telaId, liberado } of telas) {
+      await this.atualizarLiberacaoTelaPwa(telaId, liberado);
+    }
   }
 
   async ensureSchemaRegistroRota() {

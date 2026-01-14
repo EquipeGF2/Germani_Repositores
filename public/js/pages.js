@@ -6471,6 +6471,130 @@ export const pages = {
                 }
             </style>
         `;
+    },
+
+    // ==================== PERMISSÕES PWA ====================
+
+    'permissoes-pwa': async () => {
+        return `
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h3 class="card-title">Permissões do PWA</h3>
+                        <p class="text-muted" style="margin: 4px 0 0;">Configure quais telas estarão disponíveis para os repositores no aplicativo PWA</p>
+                    </div>
+                    <button class="btn btn-primary" id="btnSalvarPermissoesPwa">
+                        <span>💾 Salvar Alterações</span>
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="permissoes-pwa-info" style="background: #e8f4fd; border: 1px solid #b8daff; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                        <p style="margin: 0; color: #004085;">
+                            <strong>ℹ️ Sobre as Permissões PWA:</strong><br>
+                            As telas marcadas aqui estarão disponíveis para <strong>todos os repositores</strong> no aplicativo PWA.<br>
+                            Repositores terão acesso apenas às telas liberadas e aos seus próprios dados.<br>
+                            Administradores sempre têm acesso total pelo sistema web.
+                        </p>
+                    </div>
+
+                    <div id="containerPermissoesPwa" style="display: grid; gap: 24px;">
+                        <div style="text-align: center; padding: 40px;">
+                            <div class="spinner"></div>
+                            <p>Carregando configurações...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <style>
+                .categoria-pwa {
+                    background: #fff;
+                    border: 1px solid #e0e0e0;
+                    border-radius: 8px;
+                    overflow: hidden;
+                }
+                .categoria-pwa-header {
+                    background: #f5f5f5;
+                    padding: 12px 16px;
+                    font-weight: 600;
+                    font-size: 14px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                    color: #555;
+                    border-bottom: 1px solid #e0e0e0;
+                }
+                .categoria-pwa-body {
+                    padding: 8px 0;
+                }
+                .tela-pwa-item {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    padding: 12px 16px;
+                    border-bottom: 1px solid #f0f0f0;
+                    transition: background 0.2s;
+                }
+                .tela-pwa-item:last-child {
+                    border-bottom: none;
+                }
+                .tela-pwa-item:hover {
+                    background: #fafafa;
+                }
+                .tela-pwa-info {
+                    flex: 1;
+                }
+                .tela-pwa-titulo {
+                    font-weight: 500;
+                    color: #333;
+                }
+                .tela-pwa-id {
+                    font-size: 12px;
+                    color: #888;
+                    margin-top: 2px;
+                }
+                .toggle-switch {
+                    position: relative;
+                    width: 48px;
+                    height: 26px;
+                    cursor: pointer;
+                }
+                .toggle-switch input {
+                    opacity: 0;
+                    width: 0;
+                    height: 0;
+                }
+                .toggle-slider {
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background-color: #ccc;
+                    border-radius: 26px;
+                    transition: 0.3s;
+                }
+                .toggle-slider:before {
+                    position: absolute;
+                    content: "";
+                    height: 20px;
+                    width: 20px;
+                    left: 3px;
+                    bottom: 3px;
+                    background-color: white;
+                    border-radius: 50%;
+                    transition: 0.3s;
+                }
+                .toggle-switch input:checked + .toggle-slider {
+                    background-color: #28a745;
+                }
+                .toggle-switch input:checked + .toggle-slider:before {
+                    transform: translateX(22px);
+                }
+                .toggle-switch input:focus + .toggle-slider {
+                    box-shadow: 0 0 0 3px rgba(40, 167, 69, 0.25);
+                }
+            </style>
+        `;
     }
 };
 
@@ -6492,6 +6616,7 @@ export const pageTitles = {
     'estrutura-banco-comercial': 'Estrutura do Banco Comercial',
     'manutencao-coordenadas': 'Coordenadas',
     'configuracoes-sistema': 'Configurações do Sistema',
+    'permissoes-pwa': 'Permissões PWA',
     'controle-acessos': 'Controle de Acessos',
     'gestao-usuarios': 'Gestão de Usuários',
     'roteiro-repositor': 'Roteiro do Repositor',

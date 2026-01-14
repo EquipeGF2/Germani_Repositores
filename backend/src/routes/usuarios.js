@@ -57,13 +57,33 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Verificar se username já existe
-    const usuarioExistente = await tursoService.buscarUsuarioPorUsername(username);
+    // Verificar se username já existe (incluindo inativos)
+    const usuarioExistente = await tursoService.buscarUsuarioPorUsernameIncluindoInativos(username);
+
     if (usuarioExistente) {
-      return res.status(409).json({
-        ok: false,
-        code: 'USERNAME_EXISTS',
-        message: 'Nome de usuário já está em uso'
+      // Se o usuário está ativo, retorna erro de duplicidade
+      if (usuarioExistente.ativo === 1) {
+        return res.status(409).json({
+          ok: false,
+          code: 'USERNAME_EXISTS',
+          message: 'Nome de usuário já está em uso'
+        });
+      }
+
+      // Se o usuário está inativo, reativar com os novos dados
+      const passwordHash = await authService.hashPassword(password);
+      const usuarioReativado = await tursoService.reativarUsuario(
+        usuarioExistente.usuario_id,
+        passwordHash,
+        nome_completo,
+        email,
+        rep_id || null
+      );
+
+      return res.status(200).json({
+        ok: true,
+        message: 'Usuário reativado com sucesso',
+        usuario: { ...usuarioReativado, username, perfil: usuarioExistente.perfil }
       });
     }
 
