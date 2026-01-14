@@ -16,6 +16,7 @@ import authRoutes from './routes/auth.js';
 import usuariosRoutes from './routes/usuarios.js';
 import pesquisaRoutes from './routes/pesquisa.js';
 import espacosRoutes from './routes/espacos.js';
+import pwaRoutes from './routes/pwa-telas.js';
 import { authService } from './services/auth.js';
 
 const app = express();
@@ -127,6 +128,7 @@ app.use('/api/rateio', rateioRoutes);
 app.use('/api/venda-centralizada', vendaCentralizadaRoutes);
 app.use('/api/pesquisa', pesquisaRoutes);
 app.use('/api/espacos', espacosRoutes);
+app.use('/api/pwa', pwaRoutes);
 
 // Rota 404
 app.use((req, res) => {

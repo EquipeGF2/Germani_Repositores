@@ -428,6 +428,9 @@ class App {
             'consulta-campanha': 'mod_repositores',
             'estrutura-banco-comercial': 'mod_repositores',
             'controle-acessos': 'mod_configuracoes',
+            'permissoes-pwa': 'mod_configuracoes',
+            'gestao-usuarios': 'mod_configuracoes',
+            'configuracoes-sistema': 'mod_configuracoes',
             'roteiro-repositor': 'mod_repositores',
             'cadastro-espacos': 'mod_repositores',
             'consulta-espacos': 'mod_repositores'
@@ -2535,6 +2538,115 @@ class App {
         }
     }
 
+    // ==================== PERMISSÕES PWA ====================
+
+    async inicializarPermissoesPwa() {
+        console.log('[PERMISSOES_PWA] Inicializando página de permissões PWA...');
+
+        try {
+            // Carregar telas do backend
+            const data = await fetchJson(`${API_BASE_URL}/api/pwa/telas`);
+            const telas = data.telas || [];
+
+            // Agrupar por categoria
+            const categorias = {
+                'cadastros': { nome: 'Cadastros', telas: [] },
+                'registros': { nome: 'Registros', telas: [] },
+                'consultas': { nome: 'Consultas', telas: [] },
+                'relatorios': { nome: 'Relatórios', telas: [] },
+                'configuracoes': { nome: 'Configurações', telas: [] }
+            };
+
+            for (const tela of telas) {
+                const cat = tela.tela_categoria || 'outros';
+                if (!categorias[cat]) {
+                    categorias[cat] = { nome: cat.charAt(0).toUpperCase() + cat.slice(1), telas: [] };
+                }
+                categorias[cat].telas.push(tela);
+            }
+
+            // Renderizar interface
+            const container = document.getElementById('containerPermissoesPwa');
+            if (!container) return;
+
+            let html = '';
+            for (const [catKey, catData] of Object.entries(categorias)) {
+                if (catData.telas.length === 0) continue;
+
+                html += `
+                    <div class="categoria-pwa">
+                        <div class="categoria-pwa-header">${catData.nome}</div>
+                        <div class="categoria-pwa-body">
+                `;
+
+                for (const tela of catData.telas) {
+                    html += `
+                        <div class="tela-pwa-item">
+                            <div class="tela-pwa-info">
+                                <div class="tela-pwa-titulo">${tela.tela_titulo}</div>
+                                <div class="tela-pwa-id">${tela.tela_id}</div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" data-tela-id="${tela.tela_id}" ${tela.liberado_pwa ? 'checked' : ''}>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    `;
+                }
+
+                html += `
+                        </div>
+                    </div>
+                `;
+            }
+
+            container.innerHTML = html;
+
+            // Configurar evento de salvar
+            document.getElementById('btnSalvarPermissoesPwa')?.addEventListener('click', () => this.salvarPermissoesPwa());
+
+            console.log('[PERMISSOES_PWA] Página inicializada com', telas.length, 'telas');
+        } catch (error) {
+            console.error('[PERMISSOES_PWA] Erro ao carregar permissões:', error);
+            const container = document.getElementById('containerPermissoesPwa');
+            if (container) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 40px; color: #dc3545;">
+                        <p>Erro ao carregar configurações: ${error.message}</p>
+                        <button class="btn btn-primary" onclick="window.app.inicializarPermissoesPwa()">Tentar Novamente</button>
+                    </div>
+                `;
+            }
+        }
+    }
+
+    async salvarPermissoesPwa() {
+        console.log('[PERMISSOES_PWA] Salvando permissões...');
+
+        try {
+            const checkboxes = document.querySelectorAll('#containerPermissoesPwa input[type="checkbox"]');
+            const telas = [];
+
+            for (const checkbox of checkboxes) {
+                const telaId = checkbox.dataset.telaId;
+                const liberado = checkbox.checked;
+                telas.push({ telaId, liberado });
+            }
+
+            await fetchJson(`${API_BASE_URL}/api/pwa/telas`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ telas })
+            });
+
+            this.showNotification('Permissões salvas com sucesso!', 'success');
+            console.log('[PERMISSOES_PWA] Permissões salvas:', telas.length, 'telas');
+        } catch (error) {
+            console.error('[PERMISSOES_PWA] Erro ao salvar permissões:', error);
+            this.showNotification('Erro ao salvar permissões: ' + error.message, 'error');
+        }
+    }
+
     // ==================== GESTÃO DE USUÁRIOS ====================
 
     async inicializarGestaoUsuarios() {
@@ -2948,6 +3060,8 @@ class App {
                 await this.inicializarControleAcessos();
             } else if (pageName === 'gestao-usuarios') {
                 await this.inicializarGestaoUsuarios();
+            } else if (pageName === 'permissoes-pwa') {
+                await this.inicializarPermissoesPwa();
             } else if (pageName === 'roteiro-repositor') {
                 await this.inicializarRoteiroRepositor();
             } else if (pageName === 'consulta-alteracoes') {
