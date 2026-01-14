@@ -107,10 +107,29 @@ router.post('/', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao criar usuário:', error);
+
+    // Verificar se é erro de repositor não encontrado
+    if (error.message && error.message.includes('não encontrado')) {
+      return res.status(400).json({
+        ok: false,
+        code: 'REPOSITOR_NOT_FOUND',
+        message: error.message
+      });
+    }
+
+    // Verificar se é erro de constraint (username duplicado, etc)
+    if (error.message && (error.message.includes('UNIQUE') || error.message.includes('constraint'))) {
+      return res.status(409).json({
+        ok: false,
+        code: 'USERNAME_EXISTS',
+        message: 'Nome de usuário já está em uso'
+      });
+    }
+
     return res.status(500).json({
       ok: false,
       code: 'CREATE_USER_ERROR',
-      message: 'Erro ao criar usuário'
+      message: error.message || 'Erro ao criar usuário'
     });
   }
 });
