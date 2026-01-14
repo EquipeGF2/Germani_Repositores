@@ -2969,6 +2969,13 @@ class App {
                 console.log('Usuário já existe para este repositor');
                 return;
             }
+
+            // Se o repositor não foi encontrado, pode ser um problema de sincronização
+            if (error.body?.code === 'REPOSITOR_NOT_FOUND') {
+                console.warn('Repositor não encontrado no banco. Pode ser um problema de sincronização:', error.body?.message);
+                throw new Error('Repositor não encontrado. Tente novamente em alguns segundos.');
+            }
+
             console.error('Erro ao criar usuário automaticamente:', error);
             throw error;
         }
@@ -3237,7 +3244,8 @@ class App {
                     await this.criarUsuarioParaRepositor(repoCodCriado, nome, email);
                 } catch (userError) {
                     console.warn('Erro ao criar usuário para repositor:', userError);
-                    this.showNotification('Repositor salvo, mas houve erro ao criar o usuário. Crie manualmente na tela de Gestão de Usuários.', 'warning');
+                    const msgErro = userError?.body?.message || userError?.message || 'Erro desconhecido';
+                    this.showNotification(`Repositor salvo, mas houve erro ao criar o usuário: ${msgErro}`, 'warning');
                 }
             }
 
