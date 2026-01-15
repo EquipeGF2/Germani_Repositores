@@ -3233,78 +3233,87 @@ export const pages = {
 
             <!-- Modal para Atividade -->
             <div class="modal" id="modalAtividadeConfig">
-                <div class="modal-content" style="max-width: 550px;">
+                <div class="modal-content modal-atividade-config">
                     <div class="modal-header">
                         <h3 id="modalAtividadeConfigTitulo">Nova Atividade</h3>
                         <button class="modal-close" onclick="document.getElementById('modalAtividadeConfig').classList.remove('active')">&times;</button>
                     </div>
-                    <div class="modal-body">
+                    <div class="modal-body" style="padding: 20px;">
                         <form id="formAtividadeConfig">
                             <input type="hidden" id="atividadeIdConfig">
 
-                            <div class="form-group">
-                                <label for="atividadeNomeConfig">Nome da Atividade *</label>
-                                <input type="text" id="atividadeNomeConfig" required maxlength="100" placeholder="Ex: Abastecimento">
+                            <!-- Nome -->
+                            <div class="form-group" style="margin-bottom: 16px;">
+                                <label for="atividadeNomeConfig" style="font-weight: 600; margin-bottom: 6px; display: block;">Nome da Atividade *</label>
+                                <input type="text" id="atividadeNomeConfig" required maxlength="100" placeholder="Ex: Abastecimento de Loja" style="width: 100%;">
                             </div>
 
-                            <div class="form-group">
-                                <label for="atividadeDescricaoConfig">Descrição</label>
-                                <textarea id="atividadeDescricaoConfig" rows="2" placeholder="Descrição opcional"></textarea>
+                            <!-- Descrição -->
+                            <div class="form-group" style="margin-bottom: 16px;">
+                                <label for="atividadeDescricaoConfig" style="font-weight: 600; margin-bottom: 6px; display: block;">Descrição</label>
+                                <textarea id="atividadeDescricaoConfig" rows="2" placeholder="Descrição opcional" style="width: 100%; resize: vertical;"></textarea>
                             </div>
 
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                                <div class="form-group">
-                                    <label for="atividadeTipoConfig">Tipo de Campo *</label>
-                                    <select id="atividadeTipoConfig" required>
-                                        <option value="checkbox">Checkbox (marcar/desmarcar)</option>
-                                        <option value="boolean">Sim/Não (radio)</option>
+                            <!-- Grid: Tipo + Grupo -->
+                            <div class="atv-config-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="atividadeTipoConfig" style="font-weight: 600; margin-bottom: 6px; display: block;">Tipo de Campo *</label>
+                                    <select id="atividadeTipoConfig" required style="width: 100%;">
+                                        <option value="checkbox">Checkbox</option>
+                                        <option value="boolean">Sim/Não</option>
                                         <option value="number">Número</option>
                                         <option value="text">Texto</option>
                                     </select>
                                 </div>
 
-                                <div class="form-group">
-                                    <label for="atividadeGrupoConfig">Grupo</label>
-                                    <select id="atividadeGrupoConfig">
-                                        <option value="checklist">Checklist de Atividades</option>
-                                        <option value="campos">Campos Obrigatórios</option>
-                                        <option value="extras">Informações Extras</option>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="atividadeGrupoConfig" style="font-weight: 600; margin-bottom: 6px; display: block;">Grupo</label>
+                                    <select id="atividadeGrupoConfig" style="width: 100%;">
+                                        <option value="checklist">Checklist</option>
+                                        <option value="campos">Campos</option>
+                                        <option value="extras">Extras</option>
                                     </select>
                                 </div>
                             </div>
 
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                                <div class="form-group">
-                                    <label for="atividadeOrdemConfig">Ordem de Exibição</label>
-                                    <input type="number" id="atividadeOrdemConfig" value="0" min="0" max="999">
+                            <!-- Grid: Ordem + Checkboxes -->
+                            <div class="atv-config-grid" style="display: grid; grid-template-columns: 120px 1fr; gap: 16px; margin-bottom: 16px; align-items: end;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="atividadeOrdemConfig" style="font-weight: 600; margin-bottom: 6px; display: block;">Ordem</label>
+                                    <input type="number" id="atividadeOrdemConfig" value="0" min="0" max="999" style="width: 100%;">
                                 </div>
 
-                                <div class="form-group">
-                                    <label style="display: flex; align-items: center; gap: 8px; margin-top: 24px;">
-                                        <input type="checkbox" id="atividadeObrigatorioConfig">
+                                <div style="display: flex; gap: 20px; flex-wrap: wrap; padding-bottom: 8px;">
+                                    <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap;">
+                                        <input type="checkbox" id="atividadeObrigatorioConfig" style="margin: 0; width: 16px; height: 16px;">
                                         <span>Obrigatório</span>
+                                    </label>
+                                    <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap;">
+                                        <input type="checkbox" id="atividadeAtivoConfig" checked style="margin: 0; width: 16px; height: 16px;">
+                                        <span>Ativo</span>
                                     </label>
                                 </div>
                             </div>
 
-                            <div class="form-group" style="padding: 12px; background: #f3f4f6; border-radius: 8px;">
-                                <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                                    <input type="checkbox" id="atividadeRequerValorConfig">
-                                    <span>Requer valor adicional ao marcar</span>
+                            <!-- Valor Adicional -->
+                            <div style="padding: 16px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+                                <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 600;">
+                                    <input type="checkbox" id="atividadeRequerValorConfig" style="margin: 0; width: 16px; height: 16px;">
+                                    <span>Requer valor adicional</span>
                                 </label>
-                                <small class="text-muted" style="display: block; margin-bottom: 12px;">
-                                    Ex: "Pontos Extras" requer informar a quantidade
-                                </small>
+                                <p class="text-muted" style="margin: 6px 0 0; font-size: 12px;">
+                                    Ex: "Pontos Extras" abre campo para informar quantidade
+                                </p>
 
-                                <div id="grupoValorAdicional" style="display: none;">
-                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                                <div id="grupoValorAdicional" style="display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0;">
+                                    <div class="atv-config-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                                         <div class="form-group" style="margin-bottom: 0;">
-                                            <label for="atividadeValorLabelConfig">Rótulo do Campo</label>
-                                            <input type="text" id="atividadeValorLabelConfig" placeholder="Ex: Quantidade">
+                                            <label for="atividadeValorLabelConfig" style="font-size: 13px; margin-bottom: 4px; display: block;">Rótulo</label>
+                                            <input type="text" id="atividadeValorLabelConfig" placeholder="Ex: Quantidade" style="width: 100%;">
                                         </div>
                                         <div class="form-group" style="margin-bottom: 0;">
-                                            <label for="atividadeValorTipoConfig">Tipo do Valor</label>
-                                            <select id="atividadeValorTipoConfig">
+                                            <label for="atividadeValorTipoConfig" style="font-size: 13px; margin-bottom: 4px; display: block;">Tipo</label>
+                                            <select id="atividadeValorTipoConfig" style="width: 100%;">
                                                 <option value="number">Número</option>
                                                 <option value="text">Texto</option>
                                                 <option value="currency">Valor (R$)</option>
@@ -3313,21 +3322,47 @@ export const pages = {
                                     </div>
                                 </div>
                             </div>
-
-                            <div class="form-group">
-                                <label style="display: flex; align-items: center; gap: 8px;">
-                                    <input type="checkbox" id="atividadeAtivoConfig" checked>
-                                    <span>Atividade Ativa</span>
-                                </label>
-                            </div>
                         </form>
                     </div>
-                    <div class="modal-footer">
+                    <div class="modal-footer" style="padding: 16px 20px; gap: 12px;">
                         <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalAtividadeConfig').classList.remove('active')">Cancelar</button>
                         <button type="button" class="btn btn-primary" id="btnSalvarAtividadeConfig">Salvar</button>
                     </div>
                 </div>
             </div>
+
+            <style>
+                .modal-atividade-config {
+                    width: 90%;
+                    max-width: 500px;
+                    max-height: 85vh;
+                    overflow-y: auto;
+                }
+
+                @media (max-width: 600px) {
+                    .modal-atividade-config {
+                        width: 95%;
+                        max-width: none;
+                        margin: 10px;
+                        max-height: 90vh;
+                    }
+
+                    .modal-atividade-config .atv-config-grid {
+                        grid-template-columns: 1fr !important;
+                    }
+
+                    .modal-atividade-config .modal-body {
+                        padding: 16px !important;
+                    }
+
+                    .modal-atividade-config input[type="text"],
+                    .modal-atividade-config input[type="number"],
+                    .modal-atividade-config select,
+                    .modal-atividade-config textarea {
+                        font-size: 16px !important;
+                    }
+                }
+            </style>
 
             <!-- Modal para Tipo de Espaço -->
             <div class="modal" id="modalTipoEspacoConfig">
