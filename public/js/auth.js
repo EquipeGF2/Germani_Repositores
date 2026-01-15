@@ -1,6 +1,7 @@
 /**
  * Gerenciador de Autenticação
  * Sistema JWT com controle de sessão e permissões
+ * Suporta login PWA e login Web separados
  */
 
 class AuthManager {
@@ -8,23 +9,19 @@ class AuthManager {
     this.token = null;
     this.usuario = null;
     this.permissoes = [];
+    this.telas = [];
+    this.deveTrocarSenha = false;
     this.apiBaseUrl = window.API_BASE_URL || 'https://repositor-backend.onrender.com';
     this.isPWA = this.detectarPWA();
+    this.modoLoginWeb = false; // Flag para indicar se está no modo de login web obrigatório
   }
 
   /**
    * Detectar se está rodando como PWA (aplicativo instalado)
-   * Apenas modo standalone requer login - acesso web (desktop ou mobile) não exige
    */
   detectarPWA() {
-    // Verifica se está em modo standalone (app instalado)
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-
-    // Verifica se foi adicionado à tela inicial (iOS)
     const isIOSStandalone = window.navigator.standalone === true;
-
-    // Apenas considerar PWA se estiver em modo standalone (app instalado)
-    // Acesso via navegador (mesmo mobile) não exige login
     return isStandalone || isIOSStandalone;
   }
 
@@ -33,7 +30,6 @@ class AuthManager {
    */
   init() {
     console.log('[AUTH] Modo de execução:', this.isPWA ? 'PWA/Mobile' : 'Web Desktop');
-
     this.carregarSessao();
     return this.verificarAutenticacao();
   }
@@ -45,25 +41,33 @@ class AuthManager {
     const token = localStorage.getItem('auth_token');
     const usuario = localStorage.getItem('auth_usuario');
     const permissoes = localStorage.getItem('auth_permissoes');
+    const telas = localStorage.getItem('auth_telas');
+    const deveTrocarSenha = localStorage.getItem('auth_deve_trocar_senha');
 
-    if (token && usuario && permissoes) {
+    if (token && usuario) {
       this.token = token;
       this.usuario = JSON.parse(usuario);
-      this.permissoes = JSON.parse(permissoes);
+      this.permissoes = permissoes ? JSON.parse(permissoes) : [];
+      this.telas = telas ? JSON.parse(telas) : [];
+      this.deveTrocarSenha = deveTrocarSenha === 'true';
     }
   }
 
   /**
    * Salvar sessão no localStorage
    */
-  salvarSessao(token, usuario, permissoes) {
+  salvarSessao(token, usuario, permissoes, telas = [], deveTrocarSenha = false) {
     this.token = token;
     this.usuario = usuario;
-    this.permissoes = permissoes;
+    this.permissoes = permissoes || [];
+    this.telas = telas || [];
+    this.deveTrocarSenha = deveTrocarSenha;
 
     localStorage.setItem('auth_token', token);
     localStorage.setItem('auth_usuario', JSON.stringify(usuario));
-    localStorage.setItem('auth_permissoes', JSON.stringify(permissoes));
+    localStorage.setItem('auth_permissoes', JSON.stringify(this.permissoes));
+    localStorage.setItem('auth_telas', JSON.stringify(this.telas));
+    localStorage.setItem('auth_deve_trocar_senha', String(deveTrocarSenha));
 
     // Manter compatibilidade com sistema antigo
     localStorage.setItem('GERMANI_AUTH_USER', JSON.stringify({
@@ -80,10 +84,14 @@ class AuthManager {
     this.token = null;
     this.usuario = null;
     this.permissoes = [];
+    this.telas = [];
+    this.deveTrocarSenha = false;
 
     localStorage.removeItem('auth_token');
     localStorage.removeItem('auth_usuario');
     localStorage.removeItem('auth_permissoes');
+    localStorage.removeItem('auth_telas');
+    localStorage.removeItem('auth_deve_trocar_senha');
     localStorage.removeItem('GERMANI_AUTH_USER');
   }
 
@@ -105,7 +113,10 @@ class AuthManager {
    * Verificar se tem permissão para uma tela
    */
   hasPermission(tela) {
-    return this.permissoes.includes(tela);
+    // Admin tem acesso a tudo
+    if (this.isAdmin()) return true;
+    // Verificar nas telas permitidas
+    return this.telas.some(t => t.id === tela);
   }
 
   /**
@@ -116,7 +127,7 @@ class AuthManager {
   }
 
   /**
-   * Obter o rep_id do usuário logado (isolamento de dados no PWA)
+   * Obter o rep_id do usuário logado
    */
   getRepId() {
     return this.usuario?.rep_id || null;
@@ -124,7 +135,6 @@ class AuthManager {
 
   /**
    * Verificar se deve aplicar filtro de repositor
-   * Retorna true se estiver no PWA e o usuário for um repositor (não admin)
    */
   deveAplicarFiltroRepositor() {
     return this.isPWA && this.usuario?.perfil === 'repositor' && this.getRepId();
@@ -132,47 +142,118 @@ class AuthManager {
 
   /**
    * Obter filtro de repositor para consultas
-   * Se for PWA e repositor, retorna o rep_id; senão retorna null
    */
   getFiltroRepositor() {
     return this.deveAplicarFiltroRepositor() ? this.getRepId() : null;
   }
 
   /**
-   * Login
+   * Login PWA (original)
    */
   async login(username, password) {
     try {
-      console.log('[AUTH] Tentando login...', { username, url: `${this.apiBaseUrl}/api/auth/login` });
+      console.log('[AUTH] Tentando login PWA...', { username });
 
       const response = await fetch(`${this.apiBaseUrl}/api/auth/login`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
       });
 
-      console.log('[AUTH] Resposta recebida:', { status: response.status, ok: response.ok });
-
       const data = await response.json();
-      console.log('[AUTH] Dados da resposta:', data);
 
-      if (!response.ok) {
-        throw new Error(data.message || 'Erro ao fazer login');
-      }
-
-      if (!data.ok) {
+      if (!response.ok || !data.ok) {
         throw new Error(data.message || 'Credenciais inválidas');
       }
 
-      // Salvar sessão
-      this.salvarSessao(data.token, data.usuario, data.permissoes);
-      console.log('[AUTH] Login bem-sucedido!', { usuario: data.usuario.username, perfil: data.usuario.perfil });
+      this.salvarSessao(data.token, data.usuario, data.permissoes || []);
+      console.log('[AUTH] Login PWA bem-sucedido!', { usuario: data.usuario.username });
 
       return { success: true, usuario: data.usuario };
     } catch (error) {
-      console.error('[AUTH] Erro no login:', error);
+      console.error('[AUTH] Erro no login PWA:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Login Web (novo endpoint)
+   */
+  async loginWeb(username, password) {
+    try {
+      console.log('[AUTH] Tentando login Web...', { username });
+
+      const response = await fetch(`${this.apiBaseUrl}/api/auth/login-web`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || 'Credenciais inválidas');
+      }
+
+      // Salvar sessão com telas permitidas
+      this.salvarSessao(
+        data.token,
+        data.usuario,
+        [], // permissoes - não usado no web
+        data.telas || [],
+        data.deve_trocar_senha || false
+      );
+
+      console.log('[AUTH] Login Web bem-sucedido!', {
+        usuario: data.usuario.username,
+        telas: data.telas?.length || 0,
+        deveTrocarSenha: data.deve_trocar_senha
+      });
+
+      return {
+        success: true,
+        usuario: data.usuario,
+        deveTrocarSenha: data.deve_trocar_senha,
+        telas: data.telas
+      };
+    } catch (error) {
+      console.error('[AUTH] Erro no login Web:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Trocar senha (obrigatória ou voluntária)
+   */
+  async trocarSenha(senhaAtual, novaSenha, forcado = false) {
+    try {
+      const endpoint = forcado ? '/api/auth/force-change-password' : '/api/auth/change-password';
+      const body = forcado
+        ? { senha_nova: novaSenha }
+        : { senha_atual: senhaAtual, senha_nova: novaSenha };
+
+      const response = await fetch(`${this.apiBaseUrl}${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...this.getAuthHeader()
+        },
+        body: JSON.stringify(body)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || 'Erro ao alterar senha');
+      }
+
+      // Remover flag de troca obrigatória
+      this.deveTrocarSenha = false;
+      localStorage.setItem('auth_deve_trocar_senha', 'false');
+
+      return { success: true };
+    } catch (error) {
+      console.error('[AUTH] Erro ao trocar senha:', error);
       throw error;
     }
   }
@@ -189,15 +270,24 @@ class AuthManager {
    * Verificar autenticação e redirecionar se necessário
    */
   verificarAutenticacao() {
-    // Se NÃO é PWA (web desktop), permitir acesso sem login
+    // Se NÃO é PWA (web desktop)
     if (!this.isPWA) {
-      console.log('[AUTH] Acesso web desktop - login não obrigatório');
+      console.log('[AUTH] Acesso web desktop');
 
-      // Se não tem sessão, criar uma sessão guest para compatibilidade
-      if (!this.isAuthenticated()) {
-        this.criarSessaoGuest();
+      // Se tem sessão válida
+      if (this.isAuthenticated()) {
+        // Verificar se precisa trocar senha
+        if (this.deveTrocarSenha) {
+          console.log('[AUTH] Usuário deve trocar senha');
+          this.mostrarModalTrocarSenha();
+          return true;
+        }
+        this.mostrarAplicacao();
+        return true;
       }
 
+      // Se não está autenticado no web, criar sessão guest (acesso livre)
+      this.criarSessaoGuest();
       this.mostrarAplicacao();
       return true;
     }
@@ -220,40 +310,36 @@ class AuthManager {
   criarSessaoGuest() {
     console.log('[AUTH] Criando sessão guest para acesso web');
 
-    // Criar usuário guest com permissões de admin para web
     this.usuario = {
       usuario_id: null,
       username: 'guest',
-      nome_completo: 'Usuário Web',
-      perfil: 'admin', // Web tem acesso total
+      nome_completo: 'Visitante',
+      perfil: 'visitante',
       rep_id: null
     };
 
-    this.permissoes = [
-      'home',
-      'cadastro-repositor',
-      'roteiro-repositor',
-      'cadastro-rateio',
-      'validacao-dados',
-      'consulta-visitas',
-      'consulta-campanha',
-      'consulta-alteracoes',
-      'consulta-roteiro',
-      'consulta-documentos',
-      'registro-rota',
-      'registro-documentos'
-    ];
+    // Guest não tem permissões - só pode ver a home
+    this.permissoes = ['home'];
+    this.telas = [{ id: 'home', titulo: 'Início', categoria: 'geral' }];
 
-    // Manter compatibilidade com sistema antigo
     localStorage.setItem('GERMANI_AUTH_USER', JSON.stringify({
       rep_id: null,
-      rep_name: 'Usuário Web',
-      perfil: 'admin'
+      rep_name: 'Visitante',
+      perfil: 'visitante'
     }));
   }
 
   /**
-   * Mostrar tela de login
+   * Habilitar modo de login web obrigatório
+   */
+  habilitarLoginWeb() {
+    this.modoLoginWeb = true;
+    this.limparSessao();
+    this.mostrarTelaLoginWeb();
+  }
+
+  /**
+   * Mostrar tela de login PWA
    */
   mostrarTelaLogin() {
     const loginScreen = document.getElementById('loginScreen');
@@ -261,6 +347,180 @@ class AuthManager {
 
     if (loginScreen) loginScreen.classList.remove('hidden');
     if (appScreen) appScreen.classList.add('hidden');
+  }
+
+  /**
+   * Mostrar modal de login Web
+   */
+  mostrarTelaLoginWeb() {
+    // Criar modal de login web se não existir
+    let modal = document.getElementById('modalLoginWeb');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'modalLoginWeb';
+      modal.className = 'modal active';
+      modal.innerHTML = `
+        <div class="modal-content" style="max-width: 400px;">
+          <div class="modal-header">
+            <h3>Login - Sistema Web</h3>
+          </div>
+          <div class="modal-body">
+            <form id="formLoginWeb">
+              <div class="form-group">
+                <label for="loginWebUsuario">Usuário</label>
+                <input type="text" id="loginWebUsuario" required placeholder="Digite seu usuário" autocomplete="username">
+              </div>
+              <div class="form-group">
+                <label for="loginWebSenha">Senha</label>
+                <input type="password" id="loginWebSenha" required placeholder="Digite sua senha" autocomplete="current-password">
+              </div>
+              <div id="loginWebErro" style="color: #dc2626; margin-bottom: 12px; display: none;"></div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" id="btnCancelarLoginWeb">Continuar como Visitante</button>
+            <button type="submit" form="formLoginWeb" class="btn btn-primary" id="btnEntrarWeb">Entrar</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+
+      // Event listeners
+      document.getElementById('formLoginWeb').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await this.processarLoginWeb();
+      });
+
+      document.getElementById('btnCancelarLoginWeb').addEventListener('click', () => {
+        modal.classList.remove('active');
+        this.criarSessaoGuest();
+        this.mostrarAplicacao();
+      });
+    }
+
+    modal.classList.add('active');
+  }
+
+  /**
+   * Processar login web
+   */
+  async processarLoginWeb() {
+    const usuario = document.getElementById('loginWebUsuario').value.trim();
+    const senha = document.getElementById('loginWebSenha').value;
+    const erroEl = document.getElementById('loginWebErro');
+    const btnEntrar = document.getElementById('btnEntrarWeb');
+
+    try {
+      btnEntrar.disabled = true;
+      btnEntrar.textContent = 'Entrando...';
+      erroEl.style.display = 'none';
+
+      const result = await this.loginWeb(usuario, senha);
+
+      // Fechar modal de login
+      document.getElementById('modalLoginWeb').classList.remove('active');
+
+      // Se precisa trocar senha, mostrar modal
+      if (result.deveTrocarSenha) {
+        this.mostrarModalTrocarSenha();
+      } else {
+        this.mostrarAplicacao();
+        // Recarregar a página para aplicar permissões
+        window.location.reload();
+      }
+    } catch (error) {
+      erroEl.textContent = error.message;
+      erroEl.style.display = 'block';
+    } finally {
+      btnEntrar.disabled = false;
+      btnEntrar.textContent = 'Entrar';
+    }
+  }
+
+  /**
+   * Mostrar modal de troca de senha obrigatória
+   */
+  mostrarModalTrocarSenha() {
+    let modal = document.getElementById('modalTrocarSenha');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'modalTrocarSenha';
+      modal.className = 'modal active';
+      modal.innerHTML = `
+        <div class="modal-content" style="max-width: 400px;">
+          <div class="modal-header">
+            <h3>Alterar Senha</h3>
+          </div>
+          <div class="modal-body">
+            <div class="alert warning" style="margin-bottom: 16px;">
+              <strong>Atenção:</strong> Você precisa alterar sua senha antes de continuar.
+            </div>
+            <form id="formTrocarSenha">
+              <div class="form-group">
+                <label for="trocarSenhaNova">Nova Senha</label>
+                <input type="password" id="trocarSenhaNova" required minlength="6" placeholder="Mínimo 6 caracteres">
+              </div>
+              <div class="form-group">
+                <label for="trocarSenhaConfirmar">Confirmar Nova Senha</label>
+                <input type="password" id="trocarSenhaConfirmar" required minlength="6" placeholder="Digite novamente">
+              </div>
+              <div id="trocarSenhaErro" style="color: #dc2626; margin-bottom: 12px; display: none;"></div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" form="formTrocarSenha" class="btn btn-primary" id="btnConfirmarTrocaSenha">Alterar Senha</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+
+      document.getElementById('formTrocarSenha').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await this.processarTrocaSenha();
+      });
+    }
+
+    modal.classList.add('active');
+  }
+
+  /**
+   * Processar troca de senha obrigatória
+   */
+  async processarTrocaSenha() {
+    const novaSenha = document.getElementById('trocarSenhaNova').value;
+    const confirmar = document.getElementById('trocarSenhaConfirmar').value;
+    const erroEl = document.getElementById('trocarSenhaErro');
+    const btnConfirmar = document.getElementById('btnConfirmarTrocaSenha');
+
+    if (novaSenha !== confirmar) {
+      erroEl.textContent = 'As senhas não conferem';
+      erroEl.style.display = 'block';
+      return;
+    }
+
+    try {
+      btnConfirmar.disabled = true;
+      btnConfirmar.textContent = 'Alterando...';
+      erroEl.style.display = 'none';
+
+      await this.trocarSenha(null, novaSenha, true);
+
+      // Fechar modal
+      document.getElementById('modalTrocarSenha').classList.remove('active');
+
+      // Mostrar mensagem de sucesso
+      alert('Senha alterada com sucesso!');
+
+      // Mostrar aplicação
+      this.mostrarAplicacao();
+      window.location.reload();
+    } catch (error) {
+      erroEl.textContent = error.message;
+      erroEl.style.display = 'block';
+    } finally {
+      btnConfirmar.disabled = false;
+      btnConfirmar.textContent = 'Alterar Senha';
+    }
   }
 
   /**
@@ -273,6 +533,9 @@ class AuthManager {
     if (loginScreen) loginScreen.classList.add('hidden');
     if (appScreen) appScreen.classList.remove('hidden');
 
+    // Atualizar header com info do usuário
+    this.atualizarHeaderUsuario();
+
     // Filtrar menu baseado em permissões (apenas no PWA)
     if (this.isPWA) {
       this.filtrarMenu();
@@ -280,10 +543,31 @@ class AuthManager {
   }
 
   /**
+   * Atualizar header com informações do usuário
+   */
+  atualizarHeaderUsuario() {
+    const headerUser = document.getElementById('headerUserInfo');
+    if (!headerUser) return;
+
+    if (this.isAuthenticated() && this.usuario?.username !== 'guest') {
+      headerUser.innerHTML = `
+        <span style="font-size: 13px; color: #6b7280;">
+          ${this.usuario.nome_completo || this.usuario.username}
+          ${this.isAdmin() ? '<span style="background: #dc2626; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-left: 4px;">ADMIN</span>' : ''}
+        </span>
+        <button onclick="authManager.logout()" class="btn btn-outline btn-sm" style="margin-left: 8px;">Sair</button>
+      `;
+    } else {
+      headerUser.innerHTML = `
+        <button onclick="authManager.habilitarLoginWeb()" class="btn btn-primary btn-sm">Entrar</button>
+      `;
+    }
+  }
+
+  /**
    * Filtrar menu baseado em permissões
    */
   filtrarMenu() {
-    // Mapear permissões para páginas
     const permissaoParaPagina = {
       'home': 'home',
       'cadastro-repositor': 'cadastro-repositor',
@@ -301,20 +585,17 @@ class AuthManager {
       'configuracoes': 'configuracoes'
     };
 
-    // Ocultar itens de menu sem permissão
     const menuItems = document.querySelectorAll('.sidebar-nav a[data-page]');
 
     menuItems.forEach(item => {
       const pageName = item.getAttribute('data-page');
       const permissaoNecessaria = permissaoParaPagina[pageName];
 
-      // Se é admin, mostrar tudo
       if (this.isAdmin()) {
         item.closest('li').style.display = '';
         return;
       }
 
-      // Se não tem permissão, ocultar
       if (permissaoNecessaria && !this.hasPermission(permissaoNecessaria)) {
         item.closest('li').style.display = 'none';
       } else {
@@ -322,7 +603,6 @@ class AuthManager {
       }
     });
 
-    // Ocultar seções vazias (quando todos os itens estão ocultos)
     const sections = document.querySelectorAll('.nav-section');
     sections.forEach(section => {
       const visibleItems = section.querySelectorAll('li:not([style*="display: none"])');
@@ -335,37 +615,14 @@ class AuthManager {
   }
 
   /**
-   * Alterar senha
+   * Alterar senha (método legado)
    */
   async alterarSenha(senhaAtual, novaSenha) {
-    try {
-      const response = await fetch(`${this.apiBaseUrl}/api/auth/alterar-senha`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...this.getAuthHeader()
-        },
-        body: JSON.stringify({
-          senha_atual: senhaAtual,
-          nova_senha: novaSenha
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok || !data.ok) {
-        throw new Error(data.message || 'Erro ao alterar senha');
-      }
-
-      return { success: true };
-    } catch (error) {
-      console.error('Erro ao alterar senha:', error);
-      throw error;
-    }
+    return this.trocarSenha(senhaAtual, novaSenha, false);
   }
 
   /**
-   * Interceptor de requisições - adiciona token automaticamente
+   * Interceptor de requisições
    */
   async fetch(url, options = {}) {
     const headers = {
@@ -378,7 +635,6 @@ class AuthManager {
       headers
     });
 
-    // Se retornar 401, token expirou - fazer logout
     if (response.status === 401) {
       console.warn('Token expirado, fazendo logout...');
       this.logout();
