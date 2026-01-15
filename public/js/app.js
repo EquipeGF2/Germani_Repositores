@@ -19894,12 +19894,21 @@ class App {
     async carregarConfigSync() {
         try {
             const token = localStorage.getItem('auth_token');
-            const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+            if (!token) {
+                console.log('Sem token para carregar config sync');
+                return;
+            }
 
-            const response = await fetchJson(`${API_BASE_URL}/api/sync/config`, { headers });
+            const response = await fetch(`${API_BASE_URL}/api/sync/config`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
 
-            if (response?.ok && response.config) {
-                const config = response.config;
+            if (!response.ok) return;
+
+            const data = await response.json();
+
+            if (data?.ok && data.config) {
+                const config = data.config;
 
                 // Preencher horários
                 const horarios = config.horariosDownload || ['06:00', '12:00'];
@@ -19916,7 +19925,7 @@ class App {
                 if (tempoMinEl) tempoMinEl.value = config.tempoMinimoEntreVisitas || 5;
             }
         } catch (error) {
-            console.error('Erro ao carregar config sync:', error);
+            console.warn('Erro ao carregar config sync:', error.message);
         }
     }
 
@@ -19960,20 +19969,32 @@ class App {
         const container = document.getElementById('listaStatusSync');
         if (!container) return;
 
+        const token = localStorage.getItem('auth_token');
+        if (!token) {
+            container.innerHTML = '<p class="text-muted" style="text-align: center; padding: 20px;">Faça login para visualizar</p>';
+            return;
+        }
+
         container.innerHTML = '<p class="text-muted" style="text-align: center; padding: 20px;">Carregando...</p>';
 
         try {
-            const token = localStorage.getItem('auth_token');
-            const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+            const response = await fetch(`${API_BASE_URL}/api/sync/status`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
 
-            const response = await fetchJson(`${API_BASE_URL}/api/sync/status`, { headers });
-
-            if (!response?.ok || !response.repositores) {
+            if (!response.ok) {
                 container.innerHTML = '<p class="text-muted" style="text-align: center; padding: 20px;">Nenhum dado disponível</p>';
                 return;
             }
 
-            const repositores = response.repositores;
+            const data = await response.json();
+
+            if (!data?.ok || !data.repositores) {
+                container.innerHTML = '<p class="text-muted" style="text-align: center; padding: 20px;">Nenhum dado disponível</p>';
+                return;
+            }
+
+            const repositores = data.repositores;
 
             if (repositores.length === 0) {
                 container.innerHTML = '<p class="text-muted" style="text-align: center; padding: 20px;">Nenhum repositor encontrado</p>';
@@ -20169,12 +20190,17 @@ class App {
         const container = document.getElementById('listaAtividadesConfig');
         if (!container) return;
 
+        const token = localStorage.getItem('auth_token');
+        if (!token) {
+            container.innerHTML = '<p class="text-muted" style="text-align: center; padding: 40px;">Faça login para gerenciar atividades</p>';
+            return;
+        }
+
         container.innerHTML = '<p class="text-muted" style="text-align: center; padding: 40px;">Carregando...</p>';
 
         try {
-            const token = localStorage.getItem('auth_token');
             const response = await fetch(`${API_BASE_URL}/api/atividades`, {
-                headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                headers: { 'Authorization': `Bearer ${token}` }
             });
 
             if (!response.ok) throw new Error('Erro ao carregar atividades');
