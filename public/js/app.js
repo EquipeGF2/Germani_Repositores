@@ -20577,6 +20577,12 @@ class App {
 
     async salvarAtividadeConfig() {
         try {
+            const token = localStorage.getItem('auth_token');
+            if (!token) {
+                this.showNotification('Faça login para salvar atividades', 'warning');
+                return;
+            }
+
             const atvId = document.getElementById('atividadeIdConfig').value;
             const isEditing = !!atvId;
 
@@ -20598,7 +20604,6 @@ class App {
                 return;
             }
 
-            const token = localStorage.getItem('auth_token');
             const url = isEditing ? `${API_BASE_URL}/api/atividades/${atvId}` : `${API_BASE_URL}/api/atividades`;
             const method = isEditing ? 'PUT' : 'POST';
 
@@ -20606,7 +20611,7 @@ class App {
                 method,
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': token ? `Bearer ${token}` : ''
+                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify(dados)
             });
