@@ -727,6 +727,33 @@ class App {
         const modal = document.createElement('div');
         modal.className = 'modal-overlay geo-overlay';
         const textoErro = typeof erro === 'string' ? erro : (erro?.message || 'Não foi possível capturar a latitude/longitude.');
+
+        // Detectar se é problema do Windows (permissão do navegador está OK mas falhou)
+        const isWindowsIssue = erro?.estadoPermissao === 'granted' && erro?.code === 1;
+
+        // Customizar dicas baseado no tipo de problema
+        const dicasHTML = isWindowsIssue ? `
+            <div class="geo-tips">
+                <strong>⚠️ Problema detectado: Serviço de Localização do Windows desativado</strong>
+                <ul>
+                    <li><span>Passo 1:</span> Abra as Configurações do Windows (Win + I)</li>
+                    <li><span>Passo 2:</span> Vá em Privacidade e segurança ➜ Localização</li>
+                    <li><span>Passo 3:</span> Ative "Serviços de localização"</li>
+                    <li><span>Passo 4:</span> Ative também "Permitir que apps acessem sua localização"</li>
+                    <li><span>Passo 5:</span> Clique em "Tentar novamente" abaixo</li>
+                </ul>
+            </div>
+        ` : `
+            <div class="geo-tips">
+                <strong>Dicas rápidas:</strong>
+                <ul>
+                    <li><span>Chrome:</span> Clique no cadeado ➜ Permissões ➜ Localização ➜ Permitir.</li>
+                    <li><span>Android:</span> Verifique se o GPS está ativo e permita o acesso quando solicitado.</li>
+                    <li><span>Windows:</span> Configurações ➜ Privacidade ➜ Localização ➜ Ativar para o navegador.</li>
+                </ul>
+            </div>
+        `;
+
         modal.innerHTML = `
             <div class="modal-content geo-modal" role="dialog" aria-labelledby="geoTitulo">
                 <div class="modal-header">
@@ -740,14 +767,7 @@ class App {
                     <div class="alert warning" style="margin:0;">
                         <strong>Obrigatório:</strong> habilite o GPS/Localização do navegador ou dispositivo.
                     </div>
-                    <div class="geo-tips">
-                        <strong>Dicas rápidas:</strong>
-                        <ul>
-                            <li><span>Chrome:</span> Clique no cadeado ➜ Permissões ➜ Localização ➜ Permitir.</li>
-                            <li><span>Android:</span> Verifique se o GPS está ativo e permita o acesso quando solicitado.</li>
-                            <li><span>Windows:</span> Configurações ➜ Privacidade ➜ Localização ➜ Ativar para o navegador.</li>
-                        </ul>
-                    </div>
+                    ${dicasHTML}
                     <div style="display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap;">
                         <button class="btn btn-secondary" type="button" data-geo-close>Fechar</button>
                         <button class="btn btn-primary" type="button" data-geo-retry>Tentar novamente</button>
@@ -789,7 +809,9 @@ class App {
             console.error('Localização não liberada:', error);
             if (obrigatoria) {
                 this.ocultarOverlayGeoCarregando();
-                this.showNotification('Ative a localização do Windows e clique em “Tentar novamente”.', 'warning');
+                // Usar mensagem de erro específica do geoService
+                const notifMsg = error?.message || 'Ative a localização e clique em "Tentar novamente".';
+                this.showNotification(notifMsg, 'warning');
                 this.mostrarModalGeoObrigatoria(error, () => this.exigirLocalizacaoInicial(true));
             }
             return false;
@@ -802,11 +824,16 @@ class App {
             this.geoState.ultimaCaptura = posicao;
             return posicao;
         } catch (error) {
-            const mensagem = contextoDescricao
-                ? `${contextoDescricao}: ${error?.message || 'Habilite o GPS para continuar.'}`
-                : error;
-            this.showNotification('Ative a localização do Windows e clique em “Tentar novamente”.', 'warning');
-            this.mostrarModalGeoObrigatoria(mensagem, onRetry);
+            // Preservar erro original com estadoPermissao para o modal detectar tipo de problema
+            const erroEnriquecido = {
+                ...error,
+                message: contextoDescricao
+                    ? `${contextoDescricao}: ${error?.message || 'Habilite o GPS para continuar.'}`
+                    : error?.message
+            };
+            const notifMsg = error?.message || 'Ative a localização e clique em "Tentar novamente".';
+            this.showNotification(notifMsg, 'warning');
+            this.mostrarModalGeoObrigatoria(erroEnriquecido, onRetry);
             return null;
         }
     }
