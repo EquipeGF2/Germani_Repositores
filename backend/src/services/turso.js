@@ -2753,6 +2753,316 @@ class TursoService {
       }))
     };
   }
+
+  // ==================== SINCRONIZAÇÃO PWA ====================
+
+  /**
+   * Buscar roteiro do repositor para sincronização
+   */
+  async buscarRoteiroRepositor(repId, dataInicio, dataFim) {
+    try {
+      const sql = `
+        SELECT
+          rc.rot_cli_id,
+          rc.rot_cid_id,
+          rc.cli_codigo as cliente_id,
+          rc.ordem_visita,
+          rc.rateio,
+          rc.venda_centralizada,
+          rcid.dia_semana,
+          rcid.cidade
+        FROM cc_roteiro_cliente rc
+        LEFT JOIN cc_roteiro_cidade rcid ON rc.rot_cid_id = rcid.rot_cid_id
+        LEFT JOIN cc_roteiro r ON rcid.rot_id = r.rot_id
+        WHERE r.repo_cod = ?
+        ORDER BY rcid.dia_semana, rc.ordem_visita
+      `;
+      const result = await this.execute(sql, [repId]);
+      return result?.rows || result || [];
+    } catch (error) {
+      console.error('[TursoService] Erro ao buscar roteiro:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Buscar clientes do repositor para sincronização
+   */
+  async buscarClientesRepositor(repId) {
+    try {
+      // Buscar códigos de clientes do roteiro
+      const roteiro = await this.buscarRoteiroRepositor(repId);
+      const clienteIds = [...new Set(roteiro.map(r => r.cliente_id))];
+
+      if (clienteIds.length === 0) return [];
+
+      // Buscar dados dos clientes no banco comercial
+      const comercialClient = this.getComercialClient();
+      if (!comercialClient) return [];
+
+      const placeholders = clienteIds.map(() => '?').join(',');
+      const result = await comercialClient.execute({
+        sql: `SELECT cliente as cli_codigo, nome as cli_nome, fantasia as cli_fantasia,
+                     endereco as cli_endereco, bairro as cli_bairro, cidade as cli_cidade,
+                     uf as cli_uf, cep as cli_cep, telefone as cli_telefone
+              FROM tab_cliente WHERE cliente IN (${placeholders})`,
+        args: clienteIds
+      });
+
+      return result?.rows || [];
+    } catch (error) {
+      console.error('[TursoService] Erro ao buscar clientes:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Buscar coordenadas dos clientes do repositor
+   */
+  async buscarCoordenadasRepositor(repId) {
+    try {
+      const roteiro = await this.buscarRoteiroRepositor(repId);
+      const clienteIds = [...new Set(roteiro.map(r => r.cliente_id))];
+
+      if (clienteIds.length === 0) return [];
+
+      const placeholders = clienteIds.map(() => '?').join(',');
+      const sql = `
+        SELECT cliente_id, latitude, longitude, precisao, fonte, atualizado_em
+        FROM cc_coordenadas_clientes
+        WHERE cliente_id IN (${placeholders})
+      `;
+      const result = await this.execute(sql, clienteIds);
+      return result?.rows || result || [];
+    } catch (error) {
+      console.error('[TursoService] Erro ao buscar coordenadas:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Registrar evento de sincronização
+   */
+  async registrarSync({ rep_id, usuario_id, tipo, timestamp, dispositivo, ip }) {
+    try {
+      // Criar tabela se não existir
+      await this.execute(`
+        CREATE TABLE IF NOT EXISTS cc_sync_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          rep_id INTEGER,
+          usuario_id INTEGER,
+          tipo TEXT NOT NULL,
+          timestamp TEXT NOT NULL,
+          dispositivo TEXT,
+          ip TEXT,
+          criado_em TEXT DEFAULT (datetime('now'))
+        )
+      `, []);
+
+      await this.execute(`
+        INSERT INTO cc_sync_log (rep_id, usuario_id, tipo, timestamp, dispositivo, ip)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, [rep_id, usuario_id, tipo, timestamp, dispositivo, ip]);
+
+    } catch (error) {
+      console.error('[TursoService] Erro ao registrar sync:', error);
+    }
+  }
+
+  /**
+   * Buscar status de sincronização de um repositor
+   */
+  async buscarStatusSync(repId) {
+    try {
+      const sql = `
+        SELECT
+          rep_id,
+          MAX(CASE WHEN tipo = 'download' THEN timestamp END) as ultimo_download,
+          MAX(CASE WHEN tipo = 'upload' THEN timestamp END) as ultimo_upload,
+          COUNT(CASE WHEN tipo = 'download' THEN 1 END) as total_downloads,
+          COUNT(CASE WHEN tipo = 'upload' THEN 1 END) as total_uploads
+        FROM cc_sync_log
+        WHERE rep_id = ?
+        GROUP BY rep_id
+      `;
+      const result = await this.execute(sql, [repId]);
+      const rows = result?.rows || result || [];
+      return rows[0] || { rep_id: repId, ultimo_download: null, ultimo_upload: null };
+    } catch (error) {
+      console.error('[TursoService] Erro ao buscar status sync:', error);
+      return { rep_id: repId, ultimo_download: null, ultimo_upload: null };
+    }
+  }
+
+  /**
+   * Buscar status de sincronização de todos os repositores (admin)
+   */
+  async buscarStatusSyncTodos() {
+    try {
+      // Buscar todos repositores ativos
+      const comercialClient = this.getComercialClient();
+      if (!comercialClient) return [];
+
+      const reposResult = await comercialClient.execute({
+        sql: `SELECT repo_cod, repo_nome FROM tab_repositor WHERE repo_status = 'ATIVO' ORDER BY repo_nome`,
+        args: []
+      });
+      const repositores = reposResult?.rows || [];
+
+      // Buscar último sync de cada um
+      const sql = `
+        SELECT
+          rep_id,
+          MAX(CASE WHEN tipo = 'download' THEN timestamp END) as ultimo_download,
+          MAX(CASE WHEN tipo = 'upload' THEN timestamp END) as ultimo_upload
+        FROM cc_sync_log
+        GROUP BY rep_id
+      `;
+      const syncResult = await this.execute(sql, []);
+      const syncMap = new Map();
+      (syncResult?.rows || syncResult || []).forEach(s => {
+        syncMap.set(s.rep_id, s);
+      });
+
+      // Combinar dados
+      return repositores.map(repo => ({
+        rep_id: repo.repo_cod,
+        repo_nome: repo.repo_nome,
+        ultimo_download: syncMap.get(repo.repo_cod)?.ultimo_download || null,
+        ultimo_upload: syncMap.get(repo.repo_cod)?.ultimo_upload || null
+      }));
+    } catch (error) {
+      console.error('[TursoService] Erro ao buscar status sync todos:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Obter configurações de sincronização
+   */
+  async getConfigSync() {
+    try {
+      await this.execute(`
+        CREATE TABLE IF NOT EXISTS cc_config_sync (
+          id INTEGER PRIMARY KEY,
+          config TEXT NOT NULL,
+          atualizado_em TEXT DEFAULT (datetime('now'))
+        )
+      `, []);
+
+      const result = await this.execute('SELECT config FROM cc_config_sync WHERE id = 1', []);
+      const rows = result?.rows || result || [];
+
+      if (rows.length > 0 && rows[0].config) {
+        return JSON.parse(rows[0].config);
+      }
+
+      return {
+        horariosDownload: ['06:00', '12:00'],
+        enviarNoCheckout: true
+      };
+    } catch (error) {
+      console.error('[TursoService] Erro ao obter config sync:', error);
+      return {
+        horariosDownload: ['06:00', '12:00'],
+        enviarNoCheckout: true
+      };
+    }
+  }
+
+  /**
+   * Salvar configurações de sincronização
+   */
+  async salvarConfigSync(config) {
+    try {
+      await this.execute(`
+        CREATE TABLE IF NOT EXISTS cc_config_sync (
+          id INTEGER PRIMARY KEY,
+          config TEXT NOT NULL,
+          atualizado_em TEXT DEFAULT (datetime('now'))
+        )
+      `, []);
+
+      await this.execute(`
+        INSERT OR REPLACE INTO cc_config_sync (id, config, atualizado_em)
+        VALUES (1, ?, datetime('now'))
+      `, [JSON.stringify(config)]);
+
+    } catch (error) {
+      console.error('[TursoService] Erro ao salvar config sync:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Criar ou atualizar sessão de visita (para sync offline)
+   */
+  async criarOuAtualizarSessaoVisita(dados) {
+    try {
+      // Verificar se já existe sessão com esse localId
+      if (dados.localId) {
+        const existing = await this.execute(
+          'SELECT sessao_id FROM cc_visita_sessao WHERE local_id = ?',
+          [dados.localId]
+        );
+        if (existing?.rows?.length > 0) {
+          // Atualizar sessão existente
+          await this.execute(`
+            UPDATE cc_visita_sessao SET
+              checkout_at = COALESCE(?, checkout_at),
+              checkout_lat = COALESCE(?, checkout_lat),
+              checkout_lng = COALESCE(?, checkout_lng),
+              observacoes = COALESCE(?, observacoes),
+              atualizado_em = datetime('now')
+            WHERE local_id = ?
+          `, [
+            dados.checkout_at,
+            dados.checkout_lat,
+            dados.checkout_lng,
+            dados.observacoes,
+            dados.localId
+          ]);
+          return { sessao_id: existing.rows[0].sessao_id };
+        }
+      }
+
+      // Adicionar coluna local_id se não existir
+      await this.execute(`
+        ALTER TABLE cc_visita_sessao ADD COLUMN local_id TEXT
+      `, []).catch(() => {}); // Ignora se já existe
+
+      await this.execute(`
+        ALTER TABLE cc_visita_sessao ADD COLUMN origem TEXT DEFAULT 'web'
+      `, []).catch(() => {});
+
+      // Criar nova sessão
+      const result = await this.execute(`
+        INSERT INTO cc_visita_sessao (
+          rep_id, cliente_id, checkin_at, checkin_lat, checkin_lng,
+          checkout_at, checkout_lat, checkout_lng, data_planejada,
+          observacoes, origem, local_id, criado_em
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      `, [
+        dados.rep_id,
+        dados.cliente_id,
+        dados.checkin_at,
+        dados.checkin_lat,
+        dados.checkin_lng,
+        dados.checkout_at,
+        dados.checkout_lat,
+        dados.checkout_lng,
+        dados.data_planejada,
+        dados.observacoes,
+        dados.origem || 'pwa_offline',
+        dados.localId
+      ]);
+
+      return { sessao_id: result.lastInsertRowid };
+    } catch (error) {
+      console.error('[TursoService] Erro ao criar sessão:', error);
+      throw error;
+    }
+  }
 }
 
 export const tursoService = new TursoService();
