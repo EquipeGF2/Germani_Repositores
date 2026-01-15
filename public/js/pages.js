@@ -3046,8 +3046,8 @@ export const pages = {
                                 </div>
 
                                 <div class="form-group" style="margin-bottom: 16px;">
-                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                                        <input type="checkbox" id="syncEnviarCheckout" checked>
+                                    <label style="display: inline-flex; align-items: center; cursor: pointer;">
+                                        <input type="checkbox" id="syncEnviarCheckout" checked style="margin: 0 6px 0 0;">
                                         <span>Enviar dados automaticamente no checkout</span>
                                     </label>
                                     <small class="text-muted" style="display: block; margin-top: 4px;">
