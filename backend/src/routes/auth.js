@@ -117,9 +117,18 @@ router.post('/login-web', async (req, res) => {
     // Obter telas que o usuário pode acessar
     let telas = [];
     if (usuario.perfil === 'admin') {
+      // Admin tem acesso a tudo
       telas = await tursoService.listarTelasWeb();
     } else {
+      // Buscar permissões específicas do usuário
       telas = await tursoService.listarTelasUsuario(usuario.usuario_id);
+
+      // Se usuário não tem permissões configuradas, dar acesso a todas as telas
+      // Isso permite que novos usuários acessem o sistema antes de serem configurados
+      if (telas.length === 0) {
+        console.log(`[LOGIN-WEB] Usuário ${usuario.username} sem permissões configuradas - dando acesso total`);
+        telas = await tursoService.listarTelasWeb();
+      }
     }
 
     return res.json({
