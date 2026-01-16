@@ -170,7 +170,7 @@
                     ☰
                 </button>
                 <h2 id="pageTitle">Resumo do Período</h2>
-                <div class="user-info">
+                <div class="user-info" style="display: flex; align-items: center; gap: 12px;">
                     <!-- Indicador de Sync PWA -->
                     <div id="syncIndicator" class="sync-indicator hidden">
                         <span id="syncStatusIcon" class="sync-icon">&#8635;</span>
@@ -180,6 +180,8 @@
                         </button>
                     </div>
                     <span id="userStatus">Sistema Online</span>
+                    <!-- Info do usuário logado -->
+                    <div id="headerUserInfo" style="display: flex; align-items: center; gap: 8px;"></div>
                 </div>
             </div>
 
@@ -274,7 +276,7 @@
     <script src="js/offline-db.js"></script>
     <script src="js/sync-service.js"></script>
     <script type="module" src="js/db.js"></script>
-    <script type="module" src="js/app.js?v=20260115_06"></script>
+    <script type="module" src="js/app.js?v=20260116_01"></script>
 
     <!-- Handler do formulário de login -->
     <script>
