@@ -3561,12 +3561,12 @@ class TursoService {
     }
 
     // Criar hash da senha
-    const passwordHash = await authService.hashPassword('troca@admin');
+    const passwordHash = await authService.hashPassword('troca@123456');
 
     // Inserir usuário admin
     const result = await this.execute(`
       INSERT INTO cc_usuarios (username, password_hash, nome_completo, email, perfil, tipo_acesso, deve_trocar_senha, ativo)
-      VALUES ('admin', ?, 'Administrador', 'admin@sistema.local', 'admin', 'web', 1, 1)
+      VALUES ('admin', ?, 'Administrador', 'admin@sistema.local', 'admin', 'web', 0, 1)
     `, [passwordHash]);
 
     const adminId = Number(result.lastInsertRowid);
@@ -3733,6 +3733,53 @@ class TursoService {
   // Excluir tela web (soft delete)
   async excluirTelaWeb(telaId) {
     await this.execute(`UPDATE cc_web_telas SET ativo = 0 WHERE tela_id = ?`, [telaId]);
+  }
+
+  // Dar acesso web completo a um usuário por username
+  async darAcessoWebCompleto(username) {
+    // Buscar usuário
+    const usuario = await this.buscarUsuarioPorUsernameIncluindoInativos(username);
+    if (!usuario) {
+      console.log(`[darAcessoWebCompleto] Usuário ${username} não encontrado`);
+      return { encontrado: false };
+    }
+
+    // Atualizar tipo de acesso para web
+    await this.execute(`
+      UPDATE cc_usuarios
+      SET tipo_acesso = 'web', atualizado_em = datetime('now')
+      WHERE usuario_id = ?
+    `, [usuario.usuario_id]);
+
+    // Dar acesso a todas as telas
+    const telas = await this.listarTelasWeb();
+    for (const tela of telas) {
+      await this.execute(`
+        INSERT OR REPLACE INTO cc_usuario_telas_web (usuario_id, tela_id, pode_visualizar, pode_editar)
+        VALUES (?, ?, 1, 1)
+      `, [usuario.usuario_id, tela.tela_id]);
+    }
+
+    console.log(`✅ Acesso web completo dado ao usuário ${username} (ID: ${usuario.usuario_id})`);
+    return { sucesso: true, usuario_id: usuario.usuario_id };
+  }
+
+  // Habilitar usuário existente para acesso web
+  async habilitarUsuarioWeb(usuarioId, senha = null) {
+    const { authService } = await import('./auth.js');
+
+    const updates = [`tipo_acesso = 'web'`, `atualizado_em = datetime('now')`];
+    const params = [];
+
+    if (senha) {
+      const passwordHash = await authService.hashPassword(senha);
+      updates.push(`password_hash = ?`);
+      updates.push(`deve_trocar_senha = 1`);
+      params.push(passwordHash);
+    }
+
+    params.push(usuarioId);
+    await this.execute(`UPDATE cc_usuarios SET ${updates.join(', ')} WHERE usuario_id = ?`, params);
   }
 }
 

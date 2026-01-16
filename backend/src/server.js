@@ -179,11 +179,17 @@ async function inicializar() {
       const result = await tursoService.criarUsuarioAdmin();
       if (result.criado) {
         console.log('✅ Usuário admin criado com sucesso!');
-        console.log('   Usuário: admin | Senha: troca@admin');
-        console.log('   ⚠️  IMPORTANTE: A senha deve ser alterada no primeiro login!');
+        console.log('   Usuário: admin | Senha: troca@123456');
       }
     } catch (adminError) {
       console.warn('⚠️  Aviso ao verificar/criar admin:', adminError.message);
+    }
+
+    // Dar acesso web completo ao usuário Genaro
+    try {
+      await tursoService.darAcessoWebCompleto('genaro');
+    } catch (genaroError) {
+      console.log('ℹ️  Usuário genaro não encontrado ou já configurado');
     }
 
     // Iniciar servidor

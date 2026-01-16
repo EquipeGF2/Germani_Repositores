@@ -350,40 +350,219 @@ class AuthManager {
   }
 
   /**
-   * Mostrar modal de login Web
+   * Mostrar página de login Web
    */
   mostrarTelaLoginWeb() {
-    // Criar modal de login web se não existir
-    let modal = document.getElementById('modalLoginWeb');
-    if (!modal) {
-      modal = document.createElement('div');
-      modal.id = 'modalLoginWeb';
-      modal.className = 'modal active';
-      modal.innerHTML = `
-        <div class="modal-content" style="max-width: 400px;">
-          <div class="modal-header">
-            <h3>Login - Sistema Web</h3>
-          </div>
-          <div class="modal-body">
-            <form id="formLoginWeb">
-              <div class="form-group">
-                <label for="loginWebUsuario">Usuário</label>
-                <input type="text" id="loginWebUsuario" required placeholder="Digite seu usuário" autocomplete="username">
+    // Criar página de login se não existir
+    let loginPage = document.getElementById('loginPageWeb');
+    if (!loginPage) {
+      loginPage = document.createElement('div');
+      loginPage.id = 'loginPageWeb';
+      loginPage.innerHTML = `
+        <div class="login-page-overlay">
+          <div class="login-page-container">
+            <div class="login-page-header">
+              <img src="icon-512.png" alt="Logo" class="login-logo">
+              <h1>Sistema de Gestão</h1>
+              <p>Germani Repositores</p>
+            </div>
+
+            <div class="login-page-form">
+              <h2>Acesso ao Sistema</h2>
+              <form id="formLoginWeb">
+                <div class="form-group">
+                  <label for="loginWebUsuario">Usuário</label>
+                  <input type="text" id="loginWebUsuario" required placeholder="Digite seu usuário" autocomplete="username">
+                </div>
+                <div class="form-group">
+                  <label for="loginWebSenha">Senha</label>
+                  <input type="password" id="loginWebSenha" required placeholder="Digite sua senha" autocomplete="current-password">
+                </div>
+                <div id="loginWebErro" class="login-error"></div>
+                <button type="submit" class="btn btn-primary btn-login" id="btnEntrarWeb">Entrar</button>
+              </form>
+
+              <div class="login-divider">
+                <span>ou</span>
               </div>
-              <div class="form-group">
-                <label for="loginWebSenha">Senha</label>
-                <input type="password" id="loginWebSenha" required placeholder="Digite sua senha" autocomplete="current-password">
-              </div>
-              <div id="loginWebErro" style="color: #dc2626; margin-bottom: 12px; display: none;"></div>
-            </form>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" id="btnCancelarLoginWeb">Continuar como Visitante</button>
-            <button type="submit" form="formLoginWeb" class="btn btn-primary" id="btnEntrarWeb">Entrar</button>
+
+              <button type="button" class="btn btn-outline btn-visitante" id="btnContinuarVisitante">
+                Continuar como Visitante
+              </button>
+              <p class="login-hint">Visitantes têm acesso limitado ao sistema</p>
+            </div>
           </div>
         </div>
+
+        <style>
+          .login-page-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 50%, #1e3a5f 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            padding: 20px;
+          }
+
+          .login-page-container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 420px;
+            width: 100%;
+            overflow: hidden;
+          }
+
+          .login-page-header {
+            background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+            color: white;
+            padding: 32px 24px;
+            text-align: center;
+          }
+
+          .login-logo {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 16px;
+            border-radius: 12px;
+            background: white;
+            padding: 8px;
+          }
+
+          .login-page-header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+          }
+
+          .login-page-header p {
+            margin: 8px 0 0;
+            opacity: 0.9;
+            font-size: 14px;
+          }
+
+          .login-page-form {
+            padding: 32px 24px;
+          }
+
+          .login-page-form h2 {
+            margin: 0 0 24px;
+            font-size: 18px;
+            color: #1f2937;
+            text-align: center;
+          }
+
+          .login-page-form .form-group {
+            margin-bottom: 16px;
+          }
+
+          .login-page-form label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 500;
+            color: #374151;
+          }
+
+          .login-page-form input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+          }
+
+          .login-page-form input:focus {
+            border-color: #dc2626;
+            box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+            outline: none;
+          }
+
+          .login-error {
+            color: #dc2626;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            padding: 10px 12px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+            font-size: 14px;
+            display: none;
+          }
+
+          .login-error.show {
+            display: block;
+          }
+
+          .btn-login {
+            width: 100%;
+            padding: 14px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 8px;
+            margin-top: 8px;
+          }
+
+          .login-divider {
+            display: flex;
+            align-items: center;
+            margin: 24px 0;
+          }
+
+          .login-divider::before,
+          .login-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: #e5e7eb;
+          }
+
+          .login-divider span {
+            padding: 0 16px;
+            color: #9ca3af;
+            font-size: 13px;
+          }
+
+          .btn-visitante {
+            width: 100%;
+            padding: 12px;
+            font-size: 14px;
+            border-radius: 8px;
+          }
+
+          .login-hint {
+            text-align: center;
+            color: #9ca3af;
+            font-size: 12px;
+            margin: 12px 0 0;
+          }
+
+          @media (max-width: 480px) {
+            .login-page-overlay {
+              padding: 0;
+            }
+
+            .login-page-container {
+              border-radius: 0;
+              min-height: 100vh;
+              display: flex;
+              flex-direction: column;
+            }
+
+            .login-page-form {
+              flex: 1;
+              display: flex;
+              flex-direction: column;
+              justify-content: center;
+            }
+          }
+        </style>
       `;
-      document.body.appendChild(modal);
+      document.body.appendChild(loginPage);
 
       // Event listeners
       document.getElementById('formLoginWeb').addEventListener('submit', async (e) => {
@@ -391,14 +570,12 @@ class AuthManager {
         await this.processarLoginWeb();
       });
 
-      document.getElementById('btnCancelarLoginWeb').addEventListener('click', () => {
-        modal.classList.remove('active');
+      document.getElementById('btnContinuarVisitante').addEventListener('click', () => {
+        loginPage.remove();
         this.criarSessaoGuest();
         this.mostrarAplicacao();
       });
     }
-
-    modal.classList.add('active');
   }
 
   /**
@@ -413,12 +590,13 @@ class AuthManager {
     try {
       btnEntrar.disabled = true;
       btnEntrar.textContent = 'Entrando...';
-      erroEl.style.display = 'none';
+      erroEl.classList.remove('show');
 
       const result = await this.loginWeb(usuario, senha);
 
-      // Fechar modal de login
-      document.getElementById('modalLoginWeb').classList.remove('active');
+      // Remover página de login
+      const loginPage = document.getElementById('loginPageWeb');
+      if (loginPage) loginPage.remove();
 
       // Se precisa trocar senha, mostrar modal
       if (result.deveTrocarSenha) {
@@ -430,7 +608,7 @@ class AuthManager {
       }
     } catch (error) {
       erroEl.textContent = error.message;
-      erroEl.style.display = 'block';
+      erroEl.classList.add('show');
     } finally {
       btnEntrar.disabled = false;
       btnEntrar.textContent = 'Entrar';
