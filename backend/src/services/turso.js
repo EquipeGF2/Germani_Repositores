@@ -3670,31 +3670,21 @@ class TursoService {
     `, [usuarioId]);
   }
 
-  // Buscar usuário na tabela users do banco comercial
-  // Retorna id, username e password para validação de login
-  async buscarUsuarioComercialPorUsername(username) {
+  // Buscar usuário na tabela users para login web
+  // Tabela users: username (texto), password (texto)
+  async buscarUsuarioLoginWeb(username) {
     try {
-      const comercialClient = this.getComercialClient();
-      if (!comercialClient) {
-        console.error('[buscarUsuarioComercialPorUsername] Cliente do banco não disponível');
-        return null;
-      }
-
-      const result = await comercialClient.execute({
-        sql: 'SELECT id, username, password FROM users WHERE username = ? LIMIT 1',
-        args: [username]
-      });
-
-      console.log(`[buscarUsuarioComercialPorUsername] Buscando usuario: ${username}, encontrado: ${result.rows?.length > 0}`);
+      const sql = `SELECT id, username, password FROM users WHERE username = ? LIMIT 1`;
+      const result = await this.execute(sql, [username]);
+      console.log(`[buscarUsuarioLoginWeb] Buscando: ${username}, encontrado: ${result.rows?.length > 0}`);
       return result.rows?.[0] || null;
     } catch (error) {
-      console.error('[buscarUsuarioComercialPorUsername] Erro:', error.message);
+      console.error('[buscarUsuarioLoginWeb] Erro:', error.message);
       return null;
     }
   }
 
-  // Buscar usuário web (inclui campos adicionais do cc_usuarios)
-  // Usado para obter dados adicionais após autenticação via tabela users
+  // Buscar usuário web (inclui campos adicionais)
   async buscarUsuarioWebPorUsername(username) {
     const sql = `
       SELECT u.*, r.repo_nome

@@ -74,7 +74,7 @@ router.post('/login', async (req, res) => {
 });
 
 // POST /api/auth/login-web - Login de usuário Web
-// Autenticação via tabela users do banco comercial
+// Autenticação via tabela users (username, password em texto plano)
 router.post('/login-web', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -87,11 +87,11 @@ router.post('/login-web', async (req, res) => {
       });
     }
 
-    // Buscar usuário na tabela users (banco comercial)
-    const usuarioComercial = await tursoService.buscarUsuarioComercialPorUsername(username);
+    // Buscar usuário na tabela users
+    const usuarioLogin = await tursoService.buscarUsuarioLoginWeb(username);
 
-    if (!usuarioComercial) {
-      console.log(`[LOGIN-WEB] Usuário não encontrado na tabela users: ${username}`);
+    if (!usuarioLogin) {
+      console.log(`[LOGIN-WEB] Usuário não encontrado: ${username}`);
       return res.status(401).json({
         ok: false,
         code: 'INVALID_CREDENTIALS',
@@ -100,8 +100,8 @@ router.post('/login-web', async (req, res) => {
     }
 
     // Verificar senha (comparação direta - texto plano)
-    if (password !== usuarioComercial.password) {
-      console.log(`[LOGIN-WEB] Senha incorreta para usuário: ${username}`);
+    if (password !== usuarioLogin.password) {
+      console.log(`[LOGIN-WEB] Senha incorreta para: ${username}`);
       return res.status(401).json({
         ok: false,
         code: 'INVALID_CREDENTIALS',
@@ -109,13 +109,13 @@ router.post('/login-web', async (req, res) => {
       });
     }
 
-    console.log(`[LOGIN-WEB] Login bem-sucedido para usuário: ${username} (ID: ${usuarioComercial.id})`);
+    console.log(`[LOGIN-WEB] Login bem-sucedido: ${username} (ID: ${usuarioLogin.id})`);
 
     // Criar objeto de usuário para o token
     const usuario = {
-      usuario_id: usuarioComercial.id,
-      username: usuarioComercial.username,
-      nome_completo: usuarioComercial.username,
+      usuario_id: usuarioLogin.id,
+      username: usuarioLogin.username,
+      nome_completo: usuarioLogin.username,
       email: null,
       perfil: 'usuario',
       rep_id: null,
@@ -126,15 +126,13 @@ router.post('/login-web', async (req, res) => {
     // Gerar token
     const token = authService.generateToken(usuario);
 
-    // Buscar permissões do usuário (usando ID do banco comercial)
-    let telas = await tursoService.listarTelasUsuario(usuarioComercial.id);
+    // Buscar permissões do usuário (se existirem)
+    let telas = await tursoService.listarTelasUsuario(usuarioLogin.id);
 
     // Se não tem permissões configuradas, dar acesso total
     if (!telas || telas.length === 0) {
-      console.log(`[LOGIN-WEB] Usuário ${username} sem permissões configuradas - dando acesso total`);
+      console.log(`[LOGIN-WEB] Usuário ${username} sem permissões - acesso total`);
       telas = await tursoService.listarTelasWeb();
-    } else {
-      console.log(`[LOGIN-WEB] Usuário ${username} tem ${telas.length} telas liberadas`);
     }
 
     return res.json({
@@ -156,7 +154,7 @@ router.post('/login-web', async (req, res) => {
         titulo: t.tela_titulo,
         categoria: t.tela_categoria,
         icone: t.tela_icone,
-        pode_editar: t.pode_editar || 0
+        pode_editar: 1
       }))
     });
   } catch (error) {
