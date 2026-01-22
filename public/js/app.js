@@ -510,7 +510,7 @@ class App {
 
         // Verificar se usuário tem acesso a alguma tela
         const telasPermitidas = authManager?.telas || [];
-        if (telasPermitidas.length === 0 && authManager?.isLoggedIn()) {
+        if (telasPermitidas.length === 0 && authManager?.isAuthenticated()) {
             // Usuário logado mas sem permissões
             this.elements.pageTitle.textContent = 'Sem permissões';
             this.elements.contentBody.innerHTML = `
@@ -1144,7 +1144,7 @@ class App {
 
     usuarioTemPermissao(tela) {
         // Verificar usando o sistema de telas do authManager
-        if (typeof authManager !== 'undefined' && authManager.isLoggedIn()) {
+        if (typeof authManager !== 'undefined' && authManager.isAuthenticated()) {
             return authManager.podeAcessarTela(tela);
         }
         // Se não está logado, não tem permissão
