@@ -3690,7 +3690,7 @@ class TursoService {
       SELECT u.*, r.repo_nome
       FROM cc_usuarios u
       LEFT JOIN cad_repositor r ON u.rep_id = r.repo_cod
-      WHERE u.username = ? AND u.ativo = 1 AND (u.tipo_acesso = 'web' OR u.tipo_acesso = 'ambos' OR u.perfil = 'admin')
+      WHERE u.username = ? AND u.ativo = 1
     `;
     const result = await this.execute(sql, [username]);
     return result.rows[0] || null;
