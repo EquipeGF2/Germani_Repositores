@@ -109,7 +109,7 @@ router.post('/login-web', async (req, res) => {
       });
     }
 
-    console.log(`[LOGIN-WEB] Login bem-sucedido para usuário: ${username}`);
+    console.log(`[LOGIN-WEB] Login bem-sucedido para usuário: ${username} (ID: ${usuarioComercial.id})`);
 
     // Criar objeto de usuário para o token
     const usuario = {
@@ -126,8 +126,16 @@ router.post('/login-web', async (req, res) => {
     // Gerar token
     const token = authService.generateToken(usuario);
 
-    // Obter todas as telas (acesso total para usuários autenticados)
-    const telas = await tursoService.listarTelasWeb();
+    // Buscar permissões do usuário (usando ID do banco comercial)
+    let telas = await tursoService.listarTelasUsuario(usuarioComercial.id);
+
+    // Se não tem permissões configuradas, dar acesso total
+    if (!telas || telas.length === 0) {
+      console.log(`[LOGIN-WEB] Usuário ${username} sem permissões configuradas - dando acesso total`);
+      telas = await tursoService.listarTelasWeb();
+    } else {
+      console.log(`[LOGIN-WEB] Usuário ${username} tem ${telas.length} telas liberadas`);
+    }
 
     return res.json({
       ok: true,
@@ -148,7 +156,7 @@ router.post('/login-web', async (req, res) => {
         titulo: t.tela_titulo,
         categoria: t.tela_categoria,
         icone: t.tela_icone,
-        pode_editar: 1
+        pode_editar: t.pode_editar || 0
       }))
     });
   } catch (error) {
