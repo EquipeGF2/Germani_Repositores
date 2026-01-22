@@ -508,8 +508,19 @@ class App {
         this.configurarVisibilidadeConfiguracoes();
         // await this.atualizarAlertaRateioGlobal(); // DESABILITADO - tabela cliente não existe no banco principal
 
-        if (!this.usuarioTemPermissao('mod_repositores')) {
-            this.renderAcessoNegado('mod_repositores');
+        // Verificar se usuário tem acesso a alguma tela
+        const telasPermitidas = auth?.telas || [];
+        if (telasPermitidas.length === 0 && auth?.isLoggedIn()) {
+            // Usuário logado mas sem permissões
+            this.elements.pageTitle.textContent = 'Sem permissões';
+            this.elements.contentBody.innerHTML = `
+                <div class="acesso-negado">
+                    <div class="acesso-negado__icon">🔒</div>
+                    <h3>Sem permissões configuradas</h3>
+                    <p>Você não tem permissão para acessar nenhuma tela do sistema.</p>
+                    <p style="color: #6b7280; font-size: 14px; margin-top: 8px;">Solicite liberação ao administrador.</p>
+                </div>
+            `;
             return;
         }
 
@@ -924,7 +935,25 @@ class App {
     }
 
     definirPaginaInicial() {
-        return this.obterPaginaDoHash() || this.currentPage;
+        const paginaHash = this.obterPaginaDoHash();
+
+        // Se tem hash e o usuário tem permissão, usar
+        if (paginaHash && auth?.podeAcessarTela(paginaHash)) {
+            return paginaHash;
+        }
+
+        // Se a página atual está nas permissões, usar
+        if (this.currentPage && auth?.podeAcessarTela(this.currentPage)) {
+            return this.currentPage;
+        }
+
+        // Se não, usar a primeira tela permitida
+        const primeiraTela = auth?.telas?.[0]?.id;
+        if (primeiraTela) {
+            return primeiraTela;
+        }
+
+        return this.currentPage;
     }
 
     obterPaginaDoHash() {
@@ -1113,15 +1142,45 @@ class App {
         this.permissoes = mapa;
     }
 
-    usuarioTemPermissao() {
-        return true;
+    usuarioTemPermissao(tela) {
+        // Verificar usando o sistema de telas do auth
+        if (typeof auth !== 'undefined' && auth.isLoggedIn()) {
+            return auth.podeAcessarTela(tela);
+        }
+        // Se não está logado, não tem permissão
+        return false;
     }
 
     configurarVisibilidadeConfiguracoes() {
+        // Configurar visibilidade de todas as telas do menu baseado nas permissões
+        document.querySelectorAll('[data-page]').forEach(link => {
+            const pageName = link.getAttribute('data-page');
+            const temPermissao = this.usuarioTemPermissao(pageName);
+
+            if (temPermissao) {
+                link.classList.remove('hidden');
+                link.parentElement?.classList.remove('hidden');
+            } else {
+                link.classList.add('hidden');
+                link.parentElement?.classList.add('hidden');
+            }
+        });
+
+        // Esconder categorias vazias (onde todos os itens estão ocultos)
+        document.querySelectorAll('.nav-links__group').forEach(group => {
+            const visibleLinks = group.querySelectorAll('[data-page]:not(.hidden)');
+            if (visibleLinks.length === 0) {
+                group.classList.add('hidden');
+            } else {
+                group.classList.remove('hidden');
+            }
+        });
+
+        // Manter compatibilidade com links de controle/gestão
         const linkControle = document.querySelector('[data-page="controle-acessos"]');
         const linkGestaoUsuarios = document.querySelector('[data-page="gestao-usuarios"]');
 
-        if (this.usuarioTemPermissao('mod_configuracoes')) {
+        if (this.usuarioTemPermissao('configuracoes-sistema')) {
             linkControle?.classList.remove('hidden');
             linkControle?.parentElement?.classList.remove('hidden');
             linkGestaoUsuarios?.classList.remove('hidden');
@@ -1134,14 +1193,17 @@ class App {
         }
     }
 
-    renderAcessoNegado(recurso) {
-        const recursoLabel = ACL_RECURSOS.find(r => r.codigo === recurso)?.titulo || 'módulo';
+    renderAcessoNegado(tela) {
+        // Buscar título da tela nas telas do auth ou usar nome da tela
+        const telaInfo = auth?.telas?.find(t => t.id === tela);
+        const telaLabel = telaInfo?.titulo || tela || 'esta página';
         this.elements.pageTitle.textContent = 'Acesso negado';
         this.elements.contentBody.innerHTML = `
             <div class="acesso-negado">
                 <div class="acesso-negado__icon">🔒</div>
                 <h3>Acesso negado</h3>
-                <p>Você não tem permissão para acessar ${recursoLabel}. Solicite liberação ao administrador.</p>
+                <p>Você não tem permissão para acessar "${telaLabel}".</p>
+                <p style="color: #6b7280; font-size: 14px; margin-top: 8px;">Solicite liberação ao administrador do sistema.</p>
             </div>
         `;
     }
@@ -1872,6 +1934,7 @@ class App {
 
         matrizPermissoes.innerHTML = '<p class="text-muted">Selecione um usuário para exibir as permissões.</p>';
 
+        // Carregar usuários do banco comercial
         const usuarios = await db.listarUsuariosComercial();
         seletorUsuario.innerHTML = '<option value="">Selecione um usuário</option>' +
             usuarios.map(user => `<option value="${user.id}" data-username="${user.username}">${user.username}</option>`).join('');
@@ -1905,8 +1968,18 @@ class App {
         matrizPermissoes.innerHTML = '<p class="text-muted">Carregando permissões...</p>';
 
         try {
-            const permissoes = await db.getPermissoesUsuario(this.usuarioSelecionadoAclConfig.id);
-            this.permissoesAtuaisConfig = permissoes || {};
+            const backendUrl = this.registroRotaState?.backendUrl || 'https://repositor-backend.onrender.com';
+            const token = auth.token;
+
+            // Buscar permissões do usuário via API
+            const response = await fetch(`${backendUrl}/api/auth/usuario/${this.usuarioSelecionadoAclConfig.id}/permissoes`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (!response.ok) throw new Error('Erro ao carregar permissões');
+
+            const data = await response.json();
+            this.telasAcessosConfig = data.permissoes || [];
             this.renderMatrizPermissoesConfig();
         } catch (error) {
             console.error('Erro ao carregar permissões:', error);
@@ -1916,31 +1989,55 @@ class App {
 
     renderMatrizPermissoesConfig() {
         const matrizPermissoes = document.getElementById('configControleAcessoMatriz');
-        if (!matrizPermissoes) return;
+        if (!matrizPermissoes || !this.telasAcessosConfig) return;
 
-        const modulos = [
-            { id: 'dashboard', nome: 'Dashboard', icon: '📊' },
-            { id: 'registro-rota', nome: 'Registro de Rota', icon: '📍' },
-            { id: 'consultar-alteracoes', nome: 'Consultar Alterações', icon: '🔍' },
-            { id: 'consulta-roteiro', nome: 'Consulta Roteiro', icon: '🗺️' },
-            { id: 'cadastro-repositor', nome: 'Cadastro Repositor', icon: '👤' },
-            { id: 'custos-repositor', nome: 'Custos Repositor', icon: '💰' },
-            { id: 'configuracoes', nome: 'Configurações', icon: '⚙️' }
-        ];
+        // Agrupar telas por categoria
+        const categorias = {};
+        this.telasAcessosConfig.forEach(tela => {
+            const cat = tela.tela_categoria || 'geral';
+            if (!categorias[cat]) categorias[cat] = [];
+            categorias[cat].push(tela);
+        });
+
+        const nomesCategorias = {
+            'geral': 'Geral',
+            'repositores': 'Repositores',
+            'cadastros': 'Cadastros',
+            'consultas': 'Consultas',
+            'configuracoes': 'Configurações'
+        };
 
         matrizPermissoes.innerHTML = `
-            <div style="display: grid; gap: 8px; margin-top: 16px;">
-                ${modulos.map(modulo => {
-                    const ativo = this.permissoesAtuaisConfig?.[modulo.id] ?? true;
-                    return `
-                        <label style="display: flex; align-items: center; gap: 8px; padding: 8px; background: #f9fafb; border-radius: 6px; cursor: pointer;">
-                            <input type="checkbox" data-modulo="${modulo.id}" ${ativo ? 'checked' : ''}>
-                            <span>${modulo.icon} ${modulo.nome}</span>
-                        </label>
-                    `;
-                }).join('')}
+            <div style="margin-top: 16px;">
+                <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                    <button type="button" class="btn btn-sm btn-outline" onclick="app.marcarTodosAcessos(true)">Marcar Todos</button>
+                    <button type="button" class="btn btn-sm btn-outline" onclick="app.marcarTodosAcessos(false)">Desmarcar Todos</button>
+                </div>
+                ${Object.entries(categorias).map(([cat, telas]) => `
+                    <div style="margin-bottom: 16px;">
+                        <h4 style="font-size: 14px; font-weight: 600; margin-bottom: 8px; color: #374151;">
+                            ${nomesCategorias[cat] || cat}
+                        </h4>
+                        <div style="display: grid; gap: 6px;">
+                            ${telas.map(tela => `
+                                <label style="display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #f9fafb; border-radius: 6px; cursor: pointer; border: 1px solid #e5e7eb;">
+                                    <input type="checkbox" data-tela="${tela.tela_id}" ${tela.pode_visualizar ? 'checked' : ''}>
+                                    <span style="flex: 1;">${tela.tela_icone || '📄'} ${tela.tela_titulo}</span>
+                                </label>
+                            `).join('')}
+                        </div>
+                    </div>
+                `).join('')}
             </div>
         `;
+    }
+
+    marcarTodosAcessos(marcar) {
+        const matrizPermissoes = document.getElementById('configControleAcessoMatriz');
+        if (!matrizPermissoes) return;
+
+        const checkboxes = matrizPermissoes.querySelectorAll('input[type="checkbox"]');
+        checkboxes.forEach(cb => cb.checked = marcar);
     }
 
     async salvarPermissoesConfig() {
@@ -1952,13 +2049,31 @@ class App {
         const matrizPermissoes = document.getElementById('configControleAcessoMatriz');
         const checkboxes = matrizPermissoes.querySelectorAll('input[type="checkbox"]');
 
-        const permissoes = {};
+        // Montar array de telas com permissões
+        const telas = [];
         checkboxes.forEach(cb => {
-            permissoes[cb.dataset.modulo] = cb.checked;
+            telas.push({
+                tela_id: cb.dataset.tela,
+                pode_visualizar: cb.checked,
+                pode_editar: cb.checked
+            });
         });
 
         try {
-            await db.salvarPermissoesUsuario(this.usuarioSelecionadoAclConfig.id, permissoes);
+            const backendUrl = this.registroRotaState?.backendUrl || 'https://repositor-backend.onrender.com';
+            const token = auth.token;
+
+            const response = await fetch(`${backendUrl}/api/auth/usuario/${this.usuarioSelecionadoAclConfig.id}/permissoes`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ telas })
+            });
+
+            if (!response.ok) throw new Error('Erro ao salvar permissões');
+
             this.showNotification('Permissões salvas com sucesso!', 'success');
         } catch (error) {
             console.error('Erro ao salvar permissões:', error);
@@ -3206,9 +3321,9 @@ class App {
             if (!temSessao) return;
         }
 
-        const recursoNecessario = this.recursosPorPagina[pageName] || 'mod_repositores';
-        if (!this.usuarioTemPermissao(recursoNecessario)) {
-            this.renderAcessoNegado(recursoNecessario);
+        // Verificar permissão de acesso à tela
+        if (!this.usuarioTemPermissao(pageName)) {
+            this.renderAcessoNegado(pageName);
             return;
         }
 
