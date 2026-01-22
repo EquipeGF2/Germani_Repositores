@@ -27,6 +27,12 @@ export const config = {
     authToken: process.env.TURSO_AUTH_TOKEN || process.env.TURSO_MAIN_TOKEN
   },
 
+  // Banco comercial (APENAS LEITURA - para autenticação e dados comerciais)
+  tursoComercial: {
+    url: process.env.TURSO_COMERCIAL_URL,
+    authToken: process.env.TURSO_COMERCIAL_TOKEN
+  },
+
   drive: {
     rootFolderId: process.env.GOOGLE_DRIVE_FOLDER_ID || process.env.DRIVE_VISITAS_ROOT_ID
   },

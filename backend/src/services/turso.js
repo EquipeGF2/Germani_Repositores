@@ -1,4 +1,4 @@
-import { getDbClient, DatabaseNotConfiguredError } from '../config/db.js';
+import { getDbClient, getComercialDbClient, DatabaseNotConfiguredError } from '../config/db.js';
 import { config } from '../config/env.js';
 
 function normalizeClienteId(clienteId) {
@@ -460,6 +460,12 @@ class TursoService {
   }
 
   getComercialClient() {
+    // Tenta usar o banco comercial, se não disponível usa o banco principal como fallback
+    const comercialClient = getComercialDbClient();
+    if (comercialClient) {
+      return comercialClient;
+    }
+    console.warn('[getComercialClient] Banco comercial não configurado, usando banco principal como fallback');
     return this.getClient();
   }
 
