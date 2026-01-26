@@ -3678,31 +3678,30 @@ class TursoService {
     `, [usuarioId]);
   }
 
-  // ==================== USERS_WEB - Login Web com sincronização ====================
+  // ==================== USERS_WEB - Usuários do Sistema Web ====================
 
-  // Garantir schema da tabela users_web (réplica local do banco comercial)
+  // Garantir schema da tabela users_web
   async ensureUsersWebSchema() {
     const sql = `
       CREATE TABLE IF NOT EXISTS users_web (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
-        nome TEXT,
-        ativo INTEGER DEFAULT 1,
-        comercial_id INTEGER,
-        sincronizado_em TEXT,
-        criado_em TEXT DEFAULT (datetime('now')),
-        atualizado_em TEXT DEFAULT (datetime('now'))
+        full_name TEXT,
+        permissions TEXT,
+        active INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
       )
     `;
     await this.execute(sql, []);
     console.log('✅ Tabela users_web garantida');
   }
 
-  // Buscar usuário na tabela users_web (local) para login web
+  // Buscar usuário na tabela users_web para login web
   async buscarUsuarioLoginWeb(username) {
     try {
-      const sql = `SELECT id, username, password, nome, ativo FROM users_web WHERE username = ? AND ativo = 1 LIMIT 1`;
+      const sql = `SELECT id, username, password, full_name, permissions, active FROM users_web WHERE username = ? AND active = 1 LIMIT 1`;
       const result = await this.execute(sql, [username]);
       console.log(`[buscarUsuarioLoginWeb] Buscando: ${username}, encontrado: ${result.rows?.length > 0}`);
       return result.rows?.[0] || null;
@@ -3712,78 +3711,89 @@ class TursoService {
     }
   }
 
-  // Sincronizar usuários do banco comercial para a tabela local users_web
-  async sincronizarUsuariosComercial() {
-    try {
-      const comercialClient = this.getComercialClient();
-      if (!comercialClient) {
-        console.error('[sincronizarUsuariosComercial] Banco comercial não disponível');
-        return { success: false, error: 'Banco comercial não configurado' };
-      }
-
-      // Buscar todos usuários do banco comercial
-      const sql = `SELECT id, username, password FROM users`;
-      const result = await comercialClient.execute({ sql, args: [] });
-      const usuariosComercial = result.rows || [];
-
-      console.log(`[sincronizarUsuariosComercial] Encontrados ${usuariosComercial.length} usuários no banco comercial`);
-
-      if (usuariosComercial.length === 0) {
-        return { success: true, sincronizados: 0, mensagem: 'Nenhum usuário encontrado no banco comercial' };
-      }
-
-      let sincronizados = 0;
-      let erros = 0;
-
-      for (const usuario of usuariosComercial) {
-        try {
-          // Verificar se usuário já existe localmente
-          const existente = await this.execute(
-            `SELECT id FROM users_web WHERE username = ?`,
-            [usuario.username]
-          );
-
-          const agora = new Date().toISOString();
-
-          if (existente.rows?.length > 0) {
-            // Atualizar usuário existente
-            await this.execute(
-              `UPDATE users_web SET password = ?, comercial_id = ?, sincronizado_em = ?, atualizado_em = ? WHERE username = ?`,
-              [usuario.password, usuario.id, agora, agora, usuario.username]
-            );
-          } else {
-            // Inserir novo usuário
-            await this.execute(
-              `INSERT INTO users_web (username, password, comercial_id, sincronizado_em, criado_em, atualizado_em) VALUES (?, ?, ?, ?, ?, ?)`,
-              [usuario.username, usuario.password, usuario.id, agora, agora, agora]
-            );
-          }
-          sincronizados++;
-        } catch (err) {
-          console.error(`[sincronizarUsuariosComercial] Erro ao sincronizar ${usuario.username}:`, err.message);
-          erros++;
-        }
-      }
-
-      console.log(`[sincronizarUsuariosComercial] Sincronização concluída: ${sincronizados} OK, ${erros} erros`);
-      return {
-        success: true,
-        sincronizados,
-        erros,
-        total: usuariosComercial.length,
-        mensagem: `${sincronizados} usuários sincronizados${erros > 0 ? `, ${erros} erros` : ''}`
-      };
-    } catch (error) {
-      console.error('[sincronizarUsuariosComercial] Erro:', error.message);
-      return { success: false, error: error.message };
-    }
-  }
-
-  // Listar todos usuários web (para admin)
+  // Listar todos usuários web
   async listarUsuariosWeb() {
-    const sql = `SELECT id, username, nome, ativo, comercial_id, sincronizado_em, criado_em FROM users_web ORDER BY username`;
+    const sql = `SELECT id, username, full_name, permissions, active, created_at, updated_at FROM users_web ORDER BY username`;
     const result = await this.execute(sql, []);
     return result.rows || [];
+  }
+
+  // Buscar usuário web por ID
+  async buscarUsuarioWebPorId(id) {
+    const sql = `SELECT id, username, full_name, permissions, active, created_at, updated_at FROM users_web WHERE id = ?`;
+    const result = await this.execute(sql, [id]);
+    return result.rows?.[0] || null;
+  }
+
+  // Criar usuário web
+  async criarUsuarioWeb(dados) {
+    const { username, password, full_name, permissions, active } = dados;
+    const agora = new Date().toISOString();
+
+    const sql = `
+      INSERT INTO users_web (username, password, full_name, permissions, active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `;
+
+    await this.execute(sql, [
+      username,
+      password,
+      full_name || null,
+      permissions || null,
+      active !== undefined ? active : 1,
+      agora,
+      agora
+    ]);
+
+    // Retornar o usuário criado
+    return this.buscarUsuarioLoginWeb(username);
+  }
+
+  // Atualizar usuário web
+  async atualizarUsuarioWeb(id, dados) {
+    const { username, password, full_name, permissions, active } = dados;
+    const agora = new Date().toISOString();
+
+    // Montar query dinâmica apenas com campos fornecidos
+    const campos = [];
+    const valores = [];
+
+    if (username !== undefined) {
+      campos.push('username = ?');
+      valores.push(username);
+    }
+    if (password !== undefined) {
+      campos.push('password = ?');
+      valores.push(password);
+    }
+    if (full_name !== undefined) {
+      campos.push('full_name = ?');
+      valores.push(full_name);
+    }
+    if (permissions !== undefined) {
+      campos.push('permissions = ?');
+      valores.push(permissions);
+    }
+    if (active !== undefined) {
+      campos.push('active = ?');
+      valores.push(active);
+    }
+
+    campos.push('updated_at = ?');
+    valores.push(agora);
+    valores.push(id);
+
+    const sql = `UPDATE users_web SET ${campos.join(', ')} WHERE id = ?`;
+    await this.execute(sql, valores);
+
+    return this.buscarUsuarioWebPorId(id);
+  }
+
+  // Deletar usuário web
+  async deletarUsuarioWeb(id) {
+    const sql = `DELETE FROM users_web WHERE id = ?`;
+    await this.execute(sql, [id]);
+    return { success: true };
   }
 
   // Buscar usuário web (inclui campos adicionais)

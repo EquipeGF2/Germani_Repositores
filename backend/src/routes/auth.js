@@ -115,9 +115,10 @@ router.post('/login-web', async (req, res) => {
     const usuario = {
       usuario_id: usuarioLogin.id,
       username: usuarioLogin.username,
-      nome_completo: usuarioLogin.username,
+      nome_completo: usuarioLogin.full_name || usuarioLogin.username,
       email: null,
       perfil: 'usuario',
+      permissions: usuarioLogin.permissions,
       rep_id: null,
       repo_nome: null,
       tipo_acesso: 'web'
@@ -167,37 +168,9 @@ router.post('/login-web', async (req, res) => {
   }
 });
 
-// POST /api/auth/sync-users - Sincronizar usuários do banco comercial
-// Copia usuários da tabela users (banco comercial) para users_web (banco local)
-router.post('/sync-users', async (req, res) => {
-  try {
-    console.log('[SYNC-USERS] Iniciando sincronização de usuários...');
+// ==================== CRUD de Usuários Web ====================
 
-    const resultado = await tursoService.sincronizarUsuariosComercial();
-
-    if (!resultado.success) {
-      return res.status(500).json({
-        ok: false,
-        code: 'SYNC_ERROR',
-        message: resultado.error || 'Erro na sincronização'
-      });
-    }
-
-    return res.json({
-      ok: true,
-      ...resultado
-    });
-  } catch (error) {
-    console.error('Erro ao sincronizar usuários:', error);
-    return res.status(500).json({
-      ok: false,
-      code: 'SYNC_ERROR',
-      message: 'Erro ao sincronizar usuários'
-    });
-  }
-});
-
-// GET /api/auth/users-web - Listar usuários web sincronizados
+// GET /api/auth/users-web - Listar usuários web
 router.get('/users-web', requireAuth, async (req, res) => {
   try {
     const usuarios = await tursoService.listarUsuariosWeb();
@@ -211,6 +184,151 @@ router.get('/users-web', requireAuth, async (req, res) => {
       ok: false,
       code: 'LIST_ERROR',
       message: 'Erro ao listar usuários'
+    });
+  }
+});
+
+// GET /api/auth/users-web/:id - Buscar usuário web por ID
+router.get('/users-web/:id', requireAuth, async (req, res) => {
+  try {
+    const usuario = await tursoService.buscarUsuarioWebPorId(req.params.id);
+    if (!usuario) {
+      return res.status(404).json({
+        ok: false,
+        code: 'NOT_FOUND',
+        message: 'Usuário não encontrado'
+      });
+    }
+    return res.json({
+      ok: true,
+      usuario
+    });
+  } catch (error) {
+    console.error('Erro ao buscar usuário web:', error);
+    return res.status(500).json({
+      ok: false,
+      code: 'FETCH_ERROR',
+      message: 'Erro ao buscar usuário'
+    });
+  }
+});
+
+// POST /api/auth/users-web - Criar usuário web
+router.post('/users-web', requireAuth, async (req, res) => {
+  try {
+    const { username, password, full_name, permissions, active } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({
+        ok: false,
+        code: 'INVALID_DATA',
+        message: 'Username e password são obrigatórios'
+      });
+    }
+
+    const usuario = await tursoService.criarUsuarioWeb({
+      username,
+      password,
+      full_name,
+      permissions,
+      active
+    });
+
+    return res.status(201).json({
+      ok: true,
+      usuario,
+      message: 'Usuário criado com sucesso'
+    });
+  } catch (error) {
+    console.error('Erro ao criar usuário web:', error);
+
+    // Verificar se é erro de username duplicado
+    if (error.message?.includes('UNIQUE constraint')) {
+      return res.status(409).json({
+        ok: false,
+        code: 'DUPLICATE_USERNAME',
+        message: 'Username já existe'
+      });
+    }
+
+    return res.status(500).json({
+      ok: false,
+      code: 'CREATE_ERROR',
+      message: 'Erro ao criar usuário'
+    });
+  }
+});
+
+// PUT /api/auth/users-web/:id - Atualizar usuário web
+router.put('/users-web/:id', requireAuth, async (req, res) => {
+  try {
+    const { username, password, full_name, permissions, active } = req.body;
+
+    const usuarioExistente = await tursoService.buscarUsuarioWebPorId(req.params.id);
+    if (!usuarioExistente) {
+      return res.status(404).json({
+        ok: false,
+        code: 'NOT_FOUND',
+        message: 'Usuário não encontrado'
+      });
+    }
+
+    const usuario = await tursoService.atualizarUsuarioWeb(req.params.id, {
+      username,
+      password,
+      full_name,
+      permissions,
+      active
+    });
+
+    return res.json({
+      ok: true,
+      usuario,
+      message: 'Usuário atualizado com sucesso'
+    });
+  } catch (error) {
+    console.error('Erro ao atualizar usuário web:', error);
+
+    if (error.message?.includes('UNIQUE constraint')) {
+      return res.status(409).json({
+        ok: false,
+        code: 'DUPLICATE_USERNAME',
+        message: 'Username já existe'
+      });
+    }
+
+    return res.status(500).json({
+      ok: false,
+      code: 'UPDATE_ERROR',
+      message: 'Erro ao atualizar usuário'
+    });
+  }
+});
+
+// DELETE /api/auth/users-web/:id - Deletar usuário web
+router.delete('/users-web/:id', requireAuth, async (req, res) => {
+  try {
+    const usuarioExistente = await tursoService.buscarUsuarioWebPorId(req.params.id);
+    if (!usuarioExistente) {
+      return res.status(404).json({
+        ok: false,
+        code: 'NOT_FOUND',
+        message: 'Usuário não encontrado'
+      });
+    }
+
+    await tursoService.deletarUsuarioWeb(req.params.id);
+
+    return res.json({
+      ok: true,
+      message: 'Usuário deletado com sucesso'
+    });
+  } catch (error) {
+    console.error('Erro ao deletar usuário web:', error);
+    return res.status(500).json({
+      ok: false,
+      code: 'DELETE_ERROR',
+      message: 'Erro ao deletar usuário'
     });
   }
 });
