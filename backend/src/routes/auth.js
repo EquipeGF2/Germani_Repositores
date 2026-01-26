@@ -170,9 +170,26 @@ router.post('/login-web', async (req, res) => {
 
 // ==================== CRUD de Usuários Web ====================
 
-// POST /api/auth/users-web/seed - Popular usuários iniciais (SEM autenticação - usar apenas uma vez)
+// POST /api/auth/users-web/seed - Recriar tabela e popular usuários iniciais (SEM autenticação)
 router.post('/users-web/seed', async (req, res) => {
   try {
+    // Primeiro, recriar a tabela com a estrutura correta
+    console.log('[SEED] Recriando tabela users_web...');
+    await tursoService.execute('DROP TABLE IF EXISTS users_web', []);
+    await tursoService.execute(`
+      CREATE TABLE users_web (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        full_name TEXT,
+        permissions TEXT,
+        active INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )
+    `, []);
+    console.log('[SEED] Tabela users_web recriada com sucesso');
+
     const usuariosIniciais = [
       { username: 'Angelo', password: 'geR*123*', full_name: 'Angelo Lopes' },
       { username: 'Fabricio', password: 'Ger@123*', full_name: 'Fabricio - MKT Grupo Dallas' },
@@ -183,36 +200,27 @@ router.post('/users-web/seed', async (req, res) => {
     ];
 
     let criados = 0;
-    let existentes = 0;
     let erros = 0;
 
     for (const usuario of usuariosIniciais) {
       try {
-        // Verificar se já existe
-        const existente = await tursoService.buscarUsuarioLoginWeb(usuario.username);
-        if (existente) {
-          existentes++;
-          continue;
-        }
-
-        await tursoService.criarUsuarioWeb({
-          username: usuario.username,
-          password: usuario.password,
-          full_name: usuario.full_name,
-          active: 1
-        });
+        const agora = new Date().toISOString();
+        await tursoService.execute(`
+          INSERT INTO users_web (username, password, full_name, active, created_at, updated_at)
+          VALUES (?, ?, ?, 1, ?, ?)
+        `, [usuario.username, usuario.password, usuario.full_name, agora, agora]);
         criados++;
+        console.log(`[SEED] Usuário ${usuario.username} criado`);
       } catch (err) {
-        console.error(`Erro ao criar ${usuario.username}:`, err.message);
+        console.error(`[SEED] Erro ao criar ${usuario.username}:`, err.message);
         erros++;
       }
     }
 
     return res.json({
       ok: true,
-      message: `Seed concluído: ${criados} criados, ${existentes} já existiam, ${erros} erros`,
+      message: `Seed concluído: tabela recriada, ${criados} usuários criados, ${erros} erros`,
       criados,
-      existentes,
       erros
     });
   } catch (error) {
@@ -220,7 +228,7 @@ router.post('/users-web/seed', async (req, res) => {
     return res.status(500).json({
       ok: false,
       code: 'SEED_ERROR',
-      message: 'Erro ao popular usuários'
+      message: error.message || 'Erro ao popular usuários'
     });
   }
 });
