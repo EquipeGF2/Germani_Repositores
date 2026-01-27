@@ -1119,7 +1119,11 @@ class App {
         const userStatus = document.getElementById('userStatus');
         if (!userStatus) return;
 
-        if (this.usuarioLogado?.username) {
+        // Verificar se há usuário autenticado via authManager
+        if (typeof authManager !== 'undefined' && authManager.isAuthenticated() && authManager.usuario) {
+            const nome = authManager.usuario.nome_completo || authManager.usuario.username;
+            userStatus.textContent = `Usuário: ${nome}`;
+        } else if (this.usuarioLogado?.username && this.usuarioLogado.username !== 'Visitante') {
             userStatus.textContent = `Usuário: ${this.usuarioLogado.username}`;
         } else {
             userStatus.textContent = 'Usuário não autenticado';
