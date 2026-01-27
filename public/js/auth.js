@@ -344,9 +344,11 @@ class AuthManager {
   mostrarTelaLogin() {
     const loginScreen = document.getElementById('loginScreen');
     const appScreen = document.getElementById('appScreen');
+    const pwaScreen = document.getElementById('pwaScreen');
 
     if (loginScreen) loginScreen.classList.remove('hidden');
     if (appScreen) appScreen.classList.add('hidden');
+    if (pwaScreen) pwaScreen.classList.add('hidden');
   }
 
   /**
@@ -659,15 +661,30 @@ class AuthManager {
   mostrarAplicacao() {
     const loginScreen = document.getElementById('loginScreen');
     const appScreen = document.getElementById('appScreen');
+    const pwaScreen = document.getElementById('pwaScreen');
 
     if (loginScreen) loginScreen.classList.add('hidden');
-    if (appScreen) appScreen.classList.remove('hidden');
+
+    // Se é PWA, mostrar layout mobile; senão, layout web
+    if (this.isPWA) {
+      if (appScreen) appScreen.classList.add('hidden');
+      if (pwaScreen) pwaScreen.classList.remove('hidden');
+      document.body.classList.add('pwa-mode');
+
+      // Inicializar PWA app controller
+      if (typeof pwaApp !== 'undefined' && pwaApp.init) {
+        pwaApp.init();
+      }
+    } else {
+      if (appScreen) appScreen.classList.remove('hidden');
+      if (pwaScreen) pwaScreen.classList.add('hidden');
+    }
 
     // Atualizar header com info do usuário
     this.atualizarHeaderUsuario();
 
-    // Filtrar menu baseado em permissões (apenas no PWA)
-    if (this.isPWA) {
+    // Filtrar menu baseado em permissões (apenas no PWA com layout web)
+    if (this.isPWA && !pwaScreen) {
       this.filtrarMenu();
     }
   }

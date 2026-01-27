@@ -20,6 +20,7 @@
     <link rel="apple-touch-icon" href="icon-512.png">
 
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/pwa.css">
 </head>
 <body>
     <!-- Tela de Login (hidden por padrão - AuthManager decide mostrar) -->
@@ -200,6 +201,52 @@
         </main>
     </div>
 
+    <!-- ==================== PWA MOBILE ==================== -->
+    <div id="pwaScreen" class="pwa-screen hidden">
+        <!-- Header PWA -->
+        <header class="pwa-header">
+            <div class="pwa-header-left">
+                <span class="pwa-user-name" id="pwaUserName">Repositor</span>
+            </div>
+            <div class="pwa-header-right">
+                <div class="pwa-sync-badge" id="pwaSyncBadge" title="Sincronizar">
+                    <span id="pwaSyncIcon">&#10003;</span>
+                    <span id="pwaPendingCount" class="pwa-pending hidden">0</span>
+                </div>
+                <div class="pwa-online-dot" id="pwaOnlineDot"></div>
+            </div>
+        </header>
+
+        <!-- Conteúdo PWA -->
+        <main class="pwa-content" id="pwaContent">
+            <!-- Carregado dinamicamente -->
+        </main>
+
+        <!-- Bottom Tabs -->
+        <nav class="pwa-tabs">
+            <button class="pwa-tab active" data-pwa-tab="pwa-home">
+                <span class="pwa-tab-icon">&#127968;</span>
+                <span class="pwa-tab-label">Início</span>
+            </button>
+            <button class="pwa-tab" data-pwa-tab="registro-rota">
+                <span class="pwa-tab-icon">&#128205;</span>
+                <span class="pwa-tab-label">Rota</span>
+            </button>
+            <button class="pwa-tab" data-pwa-tab="documentos">
+                <span class="pwa-tab-icon">&#128196;</span>
+                <span class="pwa-tab-label">Docs</span>
+            </button>
+            <button class="pwa-tab" data-pwa-tab="pwa-consultas">
+                <span class="pwa-tab-icon">&#128270;</span>
+                <span class="pwa-tab-label">Consultas</span>
+            </button>
+            <button class="pwa-tab" data-pwa-tab="pwa-mais">
+                <span class="pwa-tab-icon">&#9776;</span>
+                <span class="pwa-tab-label">Mais</span>
+            </button>
+        </nav>
+    </div>
+
     <!-- Modal Global: Confirmação -->
     <div class="modal" id="modalConfirmacao">
         <div class="modal-content" style="max-width: 500px;">
@@ -275,8 +322,9 @@
     <script src="js/auth.js"></script>
     <script src="js/offline-db.js"></script>
     <script src="js/sync-service.js"></script>
+    <script src="js/pwa-app.js"></script>
     <script type="module" src="js/db.js"></script>
-    <script type="module" src="js/app.js?v=20260116_01"></script>
+    <script type="module" src="js/app.js?v=20260127_01"></script>
 
     <!-- Handler do formulário de login -->
     <script>
