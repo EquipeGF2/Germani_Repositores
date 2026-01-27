@@ -38,18 +38,23 @@ class AuthManager {
    * Carregar sessão do localStorage
    */
   carregarSessao() {
-    const token = localStorage.getItem('auth_token');
-    const usuario = localStorage.getItem('auth_usuario');
-    const permissoes = localStorage.getItem('auth_permissoes');
-    const telas = localStorage.getItem('auth_telas');
-    const deveTrocarSenha = localStorage.getItem('auth_deve_trocar_senha');
+    try {
+      const token = localStorage.getItem('auth_token');
+      const usuario = localStorage.getItem('auth_usuario');
+      const permissoes = localStorage.getItem('auth_permissoes');
+      const telas = localStorage.getItem('auth_telas');
+      const deveTrocarSenha = localStorage.getItem('auth_deve_trocar_senha');
 
-    if (token && usuario) {
-      this.token = token;
-      this.usuario = JSON.parse(usuario);
-      this.permissoes = permissoes ? JSON.parse(permissoes) : [];
-      this.telas = telas ? JSON.parse(telas) : [];
-      this.deveTrocarSenha = deveTrocarSenha === 'true';
+      if (token && usuario) {
+        this.token = token;
+        this.usuario = JSON.parse(usuario);
+        this.permissoes = permissoes ? JSON.parse(permissoes) : [];
+        this.telas = telas ? JSON.parse(telas) : [];
+        this.deveTrocarSenha = deveTrocarSenha === 'true';
+      }
+    } catch (error) {
+      console.error('[AUTH] Erro ao carregar sessão, limpando dados:', error);
+      this.limparSessao();
     }
   }
 
@@ -166,7 +171,9 @@ class AuthManager {
         throw new Error(data.message || 'Credenciais inválidas');
       }
 
-      this.salvarSessao(data.token, data.usuario, data.permissoes || []);
+      // Salvar sessão (permissoes pode estar no top-level ou dentro de usuario)
+      const permissoes = data.permissoes || data.usuario?.permissoes || [];
+      this.salvarSessao(data.token, data.usuario, permissoes);
       console.log('[AUTH] Login PWA bem-sucedido!', { usuario: data.usuario.username });
 
       return { success: true, usuario: data.usuario };
