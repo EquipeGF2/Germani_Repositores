@@ -3520,25 +3520,42 @@ class TursoService {
 
     // Inserir telas web padrão se não existirem
     const telasWeb = [
+      // Início
+      { id: 'home', titulo: 'Início', categoria: 'geral', icone: '🏠', ordem: 0 },
       // Cadastros
       { id: 'cadastro-repositor', titulo: 'Cadastro de Repositores', categoria: 'cadastros', icone: '👥', ordem: 1 },
       { id: 'roteiro-repositor', titulo: 'Roteiro do Repositor', categoria: 'cadastros', icone: '🗺️', ordem: 2 },
       { id: 'cadastro-rateio', titulo: 'Manutenção de Rateio', categoria: 'cadastros', icone: '📊', ordem: 3 },
+      { id: 'manutencao-centralizacao', titulo: 'Centralização', categoria: 'cadastros', icone: '🔗', ordem: 4 },
       { id: 'cadastro-pesquisa', titulo: 'Pesquisas', categoria: 'cadastros', icone: '📝', ordem: 5 },
       { id: 'cadastro-espacos', titulo: 'Compra de Espaço', categoria: 'cadastros', icone: '📦', ordem: 6 },
+      { id: 'validacao-dados', titulo: 'Validação de Dados', categoria: 'cadastros', icone: '✅', ordem: 7 },
       // Registros
       { id: 'registro-rota', titulo: 'Registro de Rota', categoria: 'registros', icone: '📍', ordem: 10 },
+      { id: 'documentos', titulo: 'Registro de Documentos', categoria: 'registros', icone: '📄', ordem: 11 },
       // Consultas
       { id: 'consulta-visitas', titulo: 'Consulta de Visitas', categoria: 'consultas', icone: '🔍', ordem: 20 },
-      { id: 'consulta-roteiro', titulo: 'Consulta de Roteiro', categoria: 'consultas', icone: '📋', ordem: 21 },
+      { id: 'consulta-campanha', titulo: 'Consulta Campanha', categoria: 'consultas', icone: '📸', ordem: 21 },
       { id: 'consulta-alteracoes', titulo: 'Consulta de Alterações', categoria: 'consultas', icone: '📝', ordem: 22 },
-      { id: 'consulta-documentos', titulo: 'Consulta de Documentos', categoria: 'consultas', icone: '📄', ordem: 23 },
-      { id: 'consulta-despesas', titulo: 'Consulta de Despesas', categoria: 'consultas', icone: '💰', ordem: 24 },
-      { id: 'consulta-campanha', titulo: 'Consulta de Campanha', categoria: 'consultas', icone: '📸', ordem: 25 },
-      { id: 'consulta-pesquisa', titulo: 'Consulta de Pesquisas', categoria: 'consultas', icone: '📊', ordem: 26 },
-      { id: 'consulta-espacos', titulo: 'Consulta de Espaços', categoria: 'consultas', icone: '📦', ordem: 27 },
+      { id: 'consulta-roteiro', titulo: 'Consulta de Roteiro', categoria: 'consultas', icone: '📋', ordem: 23 },
+      { id: 'consulta-documentos', titulo: 'Consulta de Documentos', categoria: 'consultas', icone: '📄', ordem: 24 },
+      { id: 'consulta-pesquisa', titulo: 'Consulta de Pesquisas', categoria: 'consultas', icone: '📊', ordem: 25 },
+      { id: 'consulta-espacos', titulo: 'Consulta de Espaços', categoria: 'consultas', icone: '📦', ordem: 26 },
+      { id: 'consulta-despesas', titulo: 'Consulta de Despesas', categoria: 'consultas', icone: '💰', ordem: 27 },
+      // Relatórios
+      { id: 'resumo-periodo', titulo: 'Resumo do Período', categoria: 'relatorios', icone: '📅', ordem: 30 },
+      { id: 'resumo-mensal', titulo: 'Resumo Mensal', categoria: 'relatorios', icone: '📆', ordem: 31 },
+      { id: 'relatorio-detalhado-repo', titulo: 'Relatório Detalhado', categoria: 'relatorios', icone: '📑', ordem: 32 },
+      { id: 'analise-grafica-repo', titulo: 'Análise Gráfica', categoria: 'relatorios', icone: '📈', ordem: 33 },
+      { id: 'alteracoes-rota', titulo: 'Alterações de Rota', categoria: 'relatorios', icone: '🔄', ordem: 34 },
+      // Análises
+      { id: 'analise-performance', titulo: 'Análise de Visitas', categoria: 'analises', icone: '📊', ordem: 40 },
+      // Custos
+      { id: 'custos-grid', titulo: 'Grid de Custos', categoria: 'custos', icone: '💲', ordem: 50 },
       // Configurações
-      { id: 'configuracoes-sistema', titulo: 'Configurações do Sistema', categoria: 'configuracoes', icone: '⚙️', ordem: 90 }
+      { id: 'configuracoes-sistema', titulo: 'Configurações do Sistema', categoria: 'configuracoes', icone: '⚙️', ordem: 90 },
+      { id: 'permissoes-pwa', titulo: 'Permissões PWA', categoria: 'configuracoes', icone: '📱', ordem: 91 },
+      { id: 'estrutura-banco-comercial', titulo: 'Estrutura Banco Comercial', categoria: 'configuracoes', icone: '🗄️', ordem: 92 }
     ];
 
     for (const tela of telasWeb) {
