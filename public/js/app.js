@@ -21842,10 +21842,25 @@ class App {
         const resumoEl = document.getElementById('fatResumo');
         if (!resumoEl || !this.faturamentoState.dados) return;
 
-        const { totais, cidades, meses } = this.faturamentoState.dados;
+        const { totais, cidades, meses_ativos, rep_nome, competencia } = this.faturamentoState.dados;
         const totalClientes = cidades.reduce((sum, c) => sum + c.clientes.length, 0);
 
+        let compLabel = '';
+        if (competencia) {
+            const ini = competencia.repo_inicio || '-';
+            const fim = competencia.repo_fim || 'atual';
+            compLabel = `<div class="fat-resumo-card">
+                <div class="fat-resumo-label">Competencia</div>
+                <div class="fat-resumo-valor" style="font-size:0.85rem;">${ini} a ${fim}</div>
+                <div style="font-size:0.7rem;color:var(--gray-400);">${meses_ativos || 0} meses ativos</div>
+            </div>`;
+        }
+
         resumoEl.innerHTML = `
+            <div class="fat-resumo-card">
+                <div class="fat-resumo-label">Repositor</div>
+                <div class="fat-resumo-valor" style="font-size:1rem;">${this.escaparHTMLFat(rep_nome || '')}</div>
+            </div>
             <div class="fat-resumo-card">
                 <div class="fat-resumo-label">Total Faturamento</div>
                 <div class="fat-resumo-valor">${this.formatarMoeda(totais.valor_financeiro)}</div>
@@ -21862,6 +21877,7 @@ class App {
                 <div class="fat-resumo-label">Cidades / Clientes</div>
                 <div class="fat-resumo-valor">${cidades.length} / ${totalClientes}</div>
             </div>
+            ${compLabel}
         `;
     }
 
@@ -21869,7 +21885,7 @@ class App {
         const dados = this.faturamentoState.dados;
         if (!dados) return;
 
-        const { periodos, cidades, totais } = dados;
+        const { periodos, cidades, totais, meses_ativos } = dados;
         const metrica = this.faturamentoState.metrica;
         const isValor = metrica === 'valor';
 
@@ -21877,22 +21893,24 @@ class App {
         const tbody = document.getElementById('fatTableBody');
         if (!thead || !tbody) return;
 
-        // Header
+        const numAtivos = meses_ativos || periodos.length || 1;
+
+        // Header - meses inativos em cinza
         let headerHTML = '<tr><th>Cliente</th>';
         periodos.forEach(p => {
-            headerHTML += `<th>${p.label}</th>`;
+            const inativo = p.ativo === false ? ' style="color:#bbb;background:#f3f4f6;"' : '';
+            headerHTML += `<th${inativo}>${p.label}</th>`;
         });
         headerHTML += '<th>Total</th><th>Media</th></tr>';
         thead.innerHTML = headerHTML;
 
         // Body
         let bodyHTML = '';
-        const numMeses = periodos.length;
 
         cidades.forEach(cidade => {
             // Linha da cidade
             const cidadeTotal = isValor ? cidade.total_valor : cidade.total_peso;
-            const cidadeMedia = cidadeTotal / numMeses;
+            const cidadeMedia = cidadeTotal / numAtivos;
 
             bodyHTML += '<tr class="fat-row-cidade">';
             bodyHTML += `<td>${this.escaparHTMLFat(cidade.cidade)}</td>`;
@@ -21902,7 +21920,8 @@ class App {
                     const m = cl.meses[p.key];
                     somaPerMes += m ? (isValor ? m.valor : m.peso) : 0;
                 });
-                bodyHTML += `<td>${this.formatarValorFat(somaPerMes, isValor)}</td>`;
+                const inativo = p.ativo === false ? ' style="background:#eef0f3;"' : '';
+                bodyHTML += `<td${inativo}>${this.formatarValorFat(somaPerMes, isValor)}</td>`;
             });
             bodyHTML += `<td>${this.formatarValorFat(cidadeTotal, isValor)}</td>`;
             bodyHTML += `<td>${this.formatarValorFat(cidadeMedia, isValor)}</td>`;
@@ -21911,15 +21930,17 @@ class App {
             // Linhas dos clientes
             cidade.clientes.forEach(cl => {
                 const clTotal = isValor ? cl.total_valor : cl.total_peso;
-                const clMedia = clTotal / numMeses;
+                const clMedia = clTotal / numAtivos;
 
                 bodyHTML += '<tr class="fat-row-cliente">';
                 bodyHTML += `<td>${this.escaparHTMLFat(cl.codigo)} - ${this.escaparHTMLFat(cl.nome)}</td>`;
                 periodos.forEach(p => {
                     const m = cl.meses[p.key];
                     const val = m ? (isValor ? m.valor : m.peso) : 0;
-                    const cls = val === 0 ? ' class="fat-valor-zero"' : '';
-                    bodyHTML += `<td${cls}>${this.formatarValorFat(val, isValor)}</td>`;
+                    const inativo = p.ativo === false;
+                    const cls = (val === 0 || inativo) ? ' class="fat-valor-zero"' : '';
+                    const sty = inativo ? ' style="background:#f9fafb;"' : '';
+                    bodyHTML += `<td${cls}${sty}>${this.formatarValorFat(val, isValor)}</td>`;
                 });
                 bodyHTML += `<td>${this.formatarValorFat(clTotal, isValor)}</td>`;
                 bodyHTML += `<td>${this.formatarValorFat(clMedia, isValor)}</td>`;
@@ -21929,7 +21950,7 @@ class App {
 
         // Linha total geral
         const totalGeral = isValor ? totais.valor_financeiro : totais.peso_liq;
-        const mediaGeral = totalGeral / numMeses;
+        const mediaGeral = totalGeral / numAtivos;
 
         bodyHTML += '<tr class="fat-row-total">';
         bodyHTML += '<td>TOTAL GERAL</td>';

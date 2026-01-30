@@ -3935,6 +3935,12 @@ class TursoService {
   /**
    * Buscar todos os clientes vinculados a um repositor via roteiro
    */
+  async buscarRepositorInfo(repId) {
+    const sql = `SELECT repo_cod, repo_nome, repo_data_inicio, repo_data_fim FROM cad_repositor WHERE repo_cod = ? LIMIT 1`;
+    const result = await this.execute(sql, [repId]);
+    return result.rows?.[0] || null;
+  }
+
   async buscarClientesDoRepositor(repId) {
     const sql = `
       SELECT DISTINCT rc.rot_cliente_codigo, rci.rot_cidade as cidade
@@ -4009,17 +4015,22 @@ class TursoService {
   }
 
   /**
-   * Listar repositores ativos
+   * Listar repositores que possuem roteiro cadastrado (com info de período)
    */
   async listarRepositoresAtivos() {
     const sql = `
-      SELECT repo_cod, repo_nome
-      FROM cad_repositor
-      WHERE repo_data_fim IS NULL OR repo_data_fim >= date('now')
-      ORDER BY repo_nome
+      SELECT DISTINCT r.repo_cod, r.repo_nome, r.repo_data_inicio, r.repo_data_fim
+      FROM rot_roteiro_cidade rc
+      JOIN cad_repositor r ON r.repo_cod = rc.rot_repositor_id
+      ORDER BY r.repo_nome
     `;
     const result = await this.execute(sql, []);
-    return result.rows || [];
+    return (result.rows || []).map(r => ({
+      rep_id: r.repo_cod,
+      rep_name: r.repo_nome,
+      data_inicio: r.repo_data_inicio || null,
+      data_fim: r.repo_data_fim || null
+    }));
   }
 }
 
