@@ -7,8 +7,9 @@ const router = express.Router();
 /**
  * GET /api/performance/faturamento
  *
- * Busca faturamento dos últimos 6 meses por repositor, agrupado por cidade → cliente.
- * Dados vêm da tabela `vendas` no banco comercial.
+ * Busca faturamento por repositor, agrupado por cidade → cliente.
+ * Considera o período de competência do repositor (repo_data_inicio / repo_data_fim).
+ * Dados de vendas vêm da tabela `vendas` no banco comercial.
  *
  * Query params:
  *   rep_id  - ID do repositor (obrigatório)
@@ -26,57 +27,103 @@ router.get('/faturamento', optionalAuth, async (req, res) => {
     }
 
     const numMeses = Math.min(Math.max(parseInt(meses) || 6, 1), 12);
+    const repIdNum = Number(rep_id);
 
-    // 1. Buscar clientes do roteiro desse repositor (banco principal)
-    const clientesRoteiro = await tursoService.buscarClientesDoRepositor(Number(rep_id));
+    // 1. Buscar info do repositor (nome, período de competência)
+    const repoInfo = await tursoService.buscarRepositorInfo(repIdNum);
+    if (!repoInfo) {
+      return res.status(404).json({
+        ok: false,
+        message: 'Repositor não encontrado'
+      });
+    }
+
+    // 2. Buscar clientes do roteiro desse repositor (banco principal)
+    const clientesRoteiro = await tursoService.buscarClientesDoRepositor(repIdNum);
 
     if (!clientesRoteiro || clientesRoteiro.length === 0) {
       return res.json({
         ok: true,
-        rep_id: Number(rep_id),
+        rep_id: repIdNum,
+        rep_nome: repoInfo.repo_nome,
         meses: numMeses,
         periodos: [],
         cidades: [],
-        totais: { valor_financeiro: 0, peso_liq: 0 }
+        totais: { valor_financeiro: 0, peso_liq: 0, media_mensal: 0 }
       });
     }
 
-    // 2. Extrair códigos de clientes
-    const codigosClientes = clientesRoteiro.map(c => c.rot_cliente_codigo);
-
-    // 3. Calcular período (últimos N meses)
+    // 3. Calcular período solicitado (últimos N meses)
     const hoje = new Date();
-    const dataFim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0); // último dia do mês atual
-    const dataInicio = new Date(hoje.getFullYear(), hoje.getMonth() - numMeses + 1, 1); // primeiro dia do mês (N meses atrás)
+    const periodoFim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0); // último dia do mês atual
+    const periodoInicio = new Date(hoje.getFullYear(), hoje.getMonth() - numMeses + 1, 1); // primeiro dia, N meses atrás
 
-    const dataInicioStr = dataInicio.toISOString().split('T')[0];
-    const dataFimStr = dataFim.toISOString().split('T')[0];
+    // 4. Ajustar período pela competência do repositor
+    const repoInicio = repoInfo.repo_data_inicio ? new Date(repoInfo.repo_data_inicio + 'T00:00:00') : null;
+    const repoFim = repoInfo.repo_data_fim ? new Date(repoInfo.repo_data_fim + 'T00:00:00') : null;
 
-    // Gerar lista de períodos (MM_AA)
+    // Data efetiva de início: a mais recente entre o período solicitado e o início do repositor
+    const dataEfetInicio = repoInicio && repoInicio > periodoInicio ? repoInicio : periodoInicio;
+    // Data efetiva de fim: a mais antiga entre o período solicitado e o fim do repositor
+    const dataEfetFim = repoFim && repoFim < periodoFim ? repoFim : periodoFim;
+
+    if (dataEfetInicio > dataEfetFim) {
+      return res.json({
+        ok: true,
+        rep_id: repIdNum,
+        rep_nome: repoInfo.repo_nome,
+        competencia: {
+          repo_inicio: repoInfo.repo_data_inicio,
+          repo_fim: repoInfo.repo_data_fim
+        },
+        meses: numMeses,
+        periodos: [],
+        cidades: [],
+        totais: { valor_financeiro: 0, peso_liq: 0, media_mensal: 0 },
+        aviso: 'Repositor fora do período solicitado'
+      });
+    }
+
+    const dataInicioStr = dataEfetInicio.toISOString().split('T')[0];
+    const dataFimStr = dataEfetFim.toISOString().split('T')[0];
+
+    // 5. Gerar lista de períodos (MM_AA) — todos os meses solicitados
+    //    mas marcar quais estão dentro da competência
     const periodos = [];
     for (let i = 0; i < numMeses; i++) {
       const d = new Date(hoje.getFullYear(), hoje.getMonth() - numMeses + 1 + i, 1);
+      const ultimoDia = new Date(d.getFullYear(), d.getMonth() + 1, 0);
       const mm = String(d.getMonth() + 1).padStart(2, '0');
       const aa = String(d.getFullYear()).slice(-2);
+
+      // Mês está na competência se se sobrepõe ao período ativo do repositor
+      const mesInicio = d;
+      const mesFim = ultimoDia;
+      const dentroCompetencia = mesInicio <= dataEfetFim && mesFim >= dataEfetInicio;
+
       periodos.push({
         key: `${mm}_${aa}`,
         label: `${mm}/${aa}`,
         ano: d.getFullYear(),
-        mes: d.getMonth() + 1
+        mes: d.getMonth() + 1,
+        ativo: dentroCompetencia
       });
     }
 
-    // 4. Buscar vendas do banco comercial
+    // 6. Extrair códigos de clientes
+    const codigosClientes = clientesRoteiro.map(c => c.rot_cliente_codigo);
+
+    // 7. Buscar vendas do banco comercial (dentro do período efetivo)
     const vendas = await tursoService.buscarVendasPorClientes(codigosClientes, dataInicioStr, dataFimStr);
 
-    // 5. Buscar info dos clientes (cidade, nome) do banco comercial
+    // 8. Buscar info dos clientes (cidade, nome) do banco comercial
     const clientesInfo = await tursoService.buscarInfoClientesComercial(codigosClientes);
     const clientesMap = {};
     clientesInfo.forEach(c => {
       clientesMap[String(c.cliente)] = c;
     });
 
-    // 6. Montar mapa de cidade → clientes do roteiro
+    // 9. Montar mapa de cidade → clientes do roteiro
     const cidadeClienteMap = {};
     clientesRoteiro.forEach(cr => {
       const cod = String(cr.rot_cliente_codigo);
@@ -101,7 +148,7 @@ router.get('/faturamento', optionalAuth, async (req, res) => {
       }
     });
 
-    // 7. Preencher vendas nos meses
+    // 10. Preencher vendas nos meses
     vendas.forEach(v => {
       const cod = String(v.Cliente);
       const emissao = v.emissao; // AAAA-MM-DD
@@ -126,7 +173,9 @@ router.get('/faturamento', optionalAuth, async (req, res) => {
       }
     });
 
-    // 8. Montar resposta agrupada
+    // 11. Montar resposta agrupada
+    const mesesAtivos = periodos.filter(p => p.ativo).length || 1;
+
     const cidades = Object.keys(cidadeClienteMap)
       .sort()
       .map(cidade => {
@@ -143,7 +192,7 @@ router.get('/faturamento', optionalAuth, async (req, res) => {
           clientes,
           total_valor: totalCidade.valor,
           total_peso: totalCidade.peso,
-          media_mensal: totalCidade.valor / numMeses
+          media_mensal: totalCidade.valor / mesesAtivos
         };
       });
 
@@ -154,14 +203,22 @@ router.get('/faturamento', optionalAuth, async (req, res) => {
 
     return res.json({
       ok: true,
-      rep_id: Number(rep_id),
+      rep_id: repIdNum,
+      rep_nome: repoInfo.repo_nome,
+      competencia: {
+        repo_inicio: repoInfo.repo_data_inicio,
+        repo_fim: repoInfo.repo_data_fim,
+        efetivo_inicio: dataInicioStr,
+        efetivo_fim: dataFimStr
+      },
       meses: numMeses,
+      meses_ativos: mesesAtivos,
       periodos,
       cidades,
       totais: {
         valor_financeiro: totaisGeral.valor,
         peso_liq: totaisGeral.peso,
-        media_mensal: totaisGeral.valor / numMeses
+        media_mensal: totaisGeral.valor / mesesAtivos
       }
     });
 
@@ -176,7 +233,7 @@ router.get('/faturamento', optionalAuth, async (req, res) => {
 
 /**
  * GET /api/performance/repositores
- * Lista repositores disponíveis para seleção
+ * Lista repositores que possuem roteiro cadastrado
  */
 router.get('/repositores', optionalAuth, async (req, res) => {
   try {
