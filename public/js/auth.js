@@ -14,6 +14,8 @@ class AuthManager {
     this.apiBaseUrl = window.API_BASE_URL || 'https://repositor-backend.onrender.com';
     this.isPWA = this.detectarPWA();
     this.modoLoginWeb = false; // Flag para indicar se está no modo de login web obrigatório
+    this.servidorPronto = false; // Flag para indicar se o servidor está respondendo
+    this._preWarmPromise = null; // Promise do pre-warm em andamento
   }
 
   /**
@@ -38,18 +40,23 @@ class AuthManager {
    * Carregar sessão do localStorage
    */
   carregarSessao() {
-    const token = localStorage.getItem('auth_token');
-    const usuario = localStorage.getItem('auth_usuario');
-    const permissoes = localStorage.getItem('auth_permissoes');
-    const telas = localStorage.getItem('auth_telas');
-    const deveTrocarSenha = localStorage.getItem('auth_deve_trocar_senha');
+    try {
+      const token = localStorage.getItem('auth_token');
+      const usuario = localStorage.getItem('auth_usuario');
+      const permissoes = localStorage.getItem('auth_permissoes');
+      const telas = localStorage.getItem('auth_telas');
+      const deveTrocarSenha = localStorage.getItem('auth_deve_trocar_senha');
 
-    if (token && usuario) {
-      this.token = token;
-      this.usuario = JSON.parse(usuario);
-      this.permissoes = permissoes ? JSON.parse(permissoes) : [];
-      this.telas = telas ? JSON.parse(telas) : [];
-      this.deveTrocarSenha = deveTrocarSenha === 'true';
+      if (token && usuario) {
+        this.token = token;
+        this.usuario = JSON.parse(usuario);
+        this.permissoes = permissoes ? JSON.parse(permissoes) : [];
+        this.telas = telas ? JSON.parse(telas) : [];
+        this.deveTrocarSenha = deveTrocarSenha === 'true';
+      }
+    } catch (error) {
+      console.error('[AUTH] Erro ao carregar sessão, limpando dados:', error);
+      this.limparSessao();
     }
   }
 
@@ -166,7 +173,9 @@ class AuthManager {
         throw new Error(data.message || 'Credenciais inválidas');
       }
 
-      this.salvarSessao(data.token, data.usuario, data.permissoes || []);
+      // Salvar sessão (permissoes pode estar no top-level ou dentro de usuario)
+      const permissoes = data.permissoes || data.usuario?.permissoes || [];
+      this.salvarSessao(data.token, data.usuario, permissoes);
       console.log('[AUTH] Login PWA bem-sucedido!', { usuario: data.usuario.username });
 
       return { success: true, usuario: data.usuario };
@@ -352,9 +361,87 @@ class AuthManager {
   }
 
   /**
+   * Pre-warm do servidor - acorda o backend do Render antes do login
+   * Isso elimina a espera de cold start durante o login
+   */
+  async preWarmServer() {
+    if (this.servidorPronto) return true;
+    if (this._preWarmPromise) return this._preWarmPromise;
+
+    this._preWarmPromise = (async () => {
+      const inicio = performance.now();
+      console.log('[AUTH] Pre-warm: acordando servidor...');
+
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 120000); // 2min timeout
+
+        const response = await fetch(`${this.apiBaseUrl}/api/health`, {
+          signal: controller.signal
+        });
+        clearTimeout(timeout);
+
+        const duracao = ((performance.now() - inicio) / 1000).toFixed(1);
+
+        if (response.ok) {
+          this.servidorPronto = true;
+          console.log(`[AUTH] Pre-warm: servidor pronto em ${duracao}s`);
+          return true;
+        }
+
+        console.warn(`[AUTH] Pre-warm: servidor respondeu com status ${response.status} em ${duracao}s`);
+        return false;
+      } catch (error) {
+        const duracao = ((performance.now() - inicio) / 1000).toFixed(1);
+        console.warn(`[AUTH] Pre-warm: falha após ${duracao}s -`, error.message);
+        return false;
+      } finally {
+        this._preWarmPromise = null;
+      }
+    })();
+
+    return this._preWarmPromise;
+  }
+
+  /**
+   * Atualizar indicador de status do servidor na tela de login
+   */
+  atualizarStatusServidor(status) {
+    const statusEl = document.getElementById('loginServerStatus');
+    if (!statusEl) return;
+
+    switch (status) {
+      case 'connecting':
+        statusEl.className = 'server-status connecting';
+        statusEl.innerHTML = '<span class="status-dot"></span> Conectando ao servidor...';
+        break;
+      case 'ready':
+        statusEl.className = 'server-status ready';
+        statusEl.innerHTML = '<span class="status-dot"></span> Servidor conectado';
+        // Esconder após 3 segundos
+        setTimeout(() => {
+          if (statusEl.classList.contains('ready')) {
+            statusEl.style.opacity = '0';
+          }
+        }, 3000);
+        break;
+      case 'error':
+        statusEl.className = 'server-status error';
+        statusEl.innerHTML = '<span class="status-dot"></span> Servidor indisponível - tente novamente';
+        break;
+    }
+  }
+
+  /**
    * Mostrar página de login Web
    */
   mostrarTelaLoginWeb() {
+    // Garantir que appScreen e pwaScreen fiquem ocultos
+    const appScreen = document.getElementById('appScreen');
+    const pwaScreen = document.getElementById('pwaScreen');
+    if (appScreen) appScreen.classList.add('hidden');
+    if (pwaScreen) pwaScreen.classList.add('hidden');
+
     // Criar página de login se não existir
     let loginPage = document.getElementById('loginPageWeb');
     if (!loginPage) {
@@ -371,6 +458,9 @@ class AuthManager {
 
             <div class="login-page-form">
               <h2>Acesso ao Sistema</h2>
+              <div id="loginServerStatus" class="server-status connecting">
+                <span class="status-dot"></span> Conectando ao servidor...
+              </div>
               <form id="formLoginWeb">
                 <div class="form-group">
                   <label for="loginWebUsuario">Usuário</label>
@@ -449,6 +539,60 @@ class AuthManager {
             font-size: 18px;
             color: #1f2937;
             text-align: center;
+          }
+
+          .server-status {
+            text-align: center;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: opacity 0.5s ease;
+          }
+
+          .server-status .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            flex-shrink: 0;
+          }
+
+          .server-status.connecting {
+            background: #fef3c7;
+            color: #92400e;
+          }
+
+          .server-status.connecting .status-dot {
+            background: #f59e0b;
+            animation: pulse-dot 1.5s infinite;
+          }
+
+          .server-status.ready {
+            background: #d1fae5;
+            color: #065f46;
+          }
+
+          .server-status.ready .status-dot {
+            background: #10b981;
+          }
+
+          .server-status.error {
+            background: #fef2f2;
+            color: #991b1b;
+          }
+
+          .server-status.error .status-dot {
+            background: #ef4444;
+          }
+
+          @keyframes pulse-dot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
           }
 
           .login-page-form .form-group {
@@ -530,6 +674,11 @@ class AuthManager {
         await this.processarLoginWeb();
       });
     }
+
+    // Iniciar pre-warm do servidor em background enquanto o usuário digita
+    this.preWarmServer().then(pronto => {
+      this.atualizarStatusServidor(pronto ? 'ready' : 'error');
+    });
   }
 
   /**
@@ -543,9 +692,21 @@ class AuthManager {
 
     try {
       btnEntrar.disabled = true;
-      btnEntrar.textContent = 'Entrando...';
       erroEl.classList.remove('show');
 
+      // Se o servidor ainda não respondeu ao pre-warm, aguardar
+      if (!this.servidorPronto) {
+        btnEntrar.textContent = 'Aguardando servidor...';
+        this.atualizarStatusServidor('connecting');
+        const pronto = await this.preWarmServer();
+        if (!pronto) {
+          this.atualizarStatusServidor('error');
+          throw new Error('Servidor indisponível. Tente novamente em alguns instantes.');
+        }
+        this.atualizarStatusServidor('ready');
+      }
+
+      btnEntrar.textContent = 'Entrando...';
       const result = await this.loginWeb(usuario, senha);
 
       // Remover página de login
