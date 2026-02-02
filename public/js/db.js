@@ -3568,6 +3568,55 @@ class TursoDatabase {
         }
     }
 
+    async getCustosRepositorPorMes(repId, periodoInicio, periodoFim) {
+        // periodoInicio/periodoFim no formato 'YYYY-MM'
+        const custosMap = {}; // chave: 'MM_YY' → valor total do custo
+        try {
+            // 1. Despesas (cc_despesa_valores): SUM(dv_valor) por mês
+            const despesas = await this.mainClient.execute({
+                sql: `
+                    SELECT substr(dv_data_ref, 1, 7) as mes_ref, SUM(dv_valor) as total
+                    FROM cc_despesa_valores
+                    WHERE dv_repositor_id = ?
+                      AND dv_data_ref >= ?
+                      AND dv_data_ref <= ?
+                    GROUP BY substr(dv_data_ref, 1, 7)
+                `,
+                args: [repId, periodoInicio + '-01', periodoFim + '-31']
+            });
+            despesas.rows.forEach(row => {
+                const [ano, mes] = row.mes_ref.split('-');
+                const key = `${mes}_${ano.slice(-2)}`;
+                custosMap[key] = (custosMap[key] || 0) + (parseFloat(row.total) || 0);
+            });
+        } catch (e) {
+            console.warn('Aviso: cc_despesa_valores indisponível:', e.message);
+        }
+        try {
+            // 2. Custos fixo+variável (cc_custos_repositor_mensal)
+            const custos = await this.mainClient.execute({
+                sql: `
+                    SELECT cc_competencia, cc_custo_fixo, cc_custo_variavel
+                    FROM cc_custos_repositor_mensal
+                    WHERE cc_rep_id = ?
+                      AND cc_competencia >= ?
+                      AND cc_competencia <= ?
+                `,
+                args: [repId, periodoInicio, periodoFim]
+            });
+            custos.rows.forEach(row => {
+                const [ano, mes] = row.cc_competencia.split('-');
+                const key = `${mes}_${ano.slice(-2)}`;
+                const fixo = parseFloat(row.cc_custo_fixo) || 0;
+                const variavel = parseFloat(row.cc_custo_variavel) || 0;
+                custosMap[key] = (custosMap[key] || 0) + fixo + variavel;
+            });
+        } catch (e) {
+            console.warn('Aviso: cc_custos_repositor_mensal indisponível:', e.message);
+        }
+        return custosMap;
+    }
+
     // ==================== DADOS DO BANCO COMERCIAL ====================
     async getSupervisoresComercial() {
         try {
