@@ -501,8 +501,11 @@ class App {
         if (!temSessao) return;
         this.marcarPerformance('sessao_pronta');
 
-        // Permissões e config em paralelo
-        await this.carregarPermissoesUsuario();
+        // Atualizar telas da API + permissões locais em paralelo
+        await Promise.all([
+            authManager.refreshTelas().catch(() => {}),
+            this.carregarPermissoesUsuario()
+        ]);
         this.aplicarInformacoesUsuario();
         this.configurarVisibilidadeConfiguracoes();
 

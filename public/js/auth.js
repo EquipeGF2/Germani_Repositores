@@ -110,6 +110,27 @@ class AuthManager {
   }
 
   /**
+   * Atualizar telas do usuário a partir da API (sem precisar re-login)
+   */
+  async refreshTelas() {
+    if (!this.isAuthenticated() || !this.token) return;
+    try {
+      const response = await fetch(`${this.apiBaseUrl}/api/auth/telas`, {
+        headers: { 'Authorization': `Bearer ${this.token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.ok && data.telas) {
+          this.telas = data.telas;
+          localStorage.setItem('auth_telas', JSON.stringify(this.telas));
+        }
+      }
+    } catch (e) {
+      // Silencioso - usa telas cacheadas se API indisponível
+    }
+  }
+
+  /**
    * Verificar se tem permissão para uma tela
    */
   hasPermission(tela) {

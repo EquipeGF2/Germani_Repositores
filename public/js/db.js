@@ -22,6 +22,10 @@ function withTimeout(promise, ms, errorMessage = 'Operação excedeu tempo limit
     ]);
 }
 
+// Incrementar ao alterar schema (CREATE TABLE, ALTER TABLE, etc.)
+const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION_KEY = 'germani_schema_version';
+
 class TursoDatabase {
     constructor() {
         this.mainClient = null;        // Banco principal (leitura/escrita)
@@ -69,6 +73,20 @@ class TursoDatabase {
     async initializeSchema() {
         if (this.schemaInitialized) return true;
 
+        // Verificar se schema já foi inicializado nesta versão
+        const cachedVersion = localStorage.getItem(SCHEMA_VERSION_KEY);
+        if (cachedVersion === String(SCHEMA_VERSION)) {
+            // Schema já atualizado — validar com query leve
+            try {
+                await this.mainClient.execute('SELECT 1 FROM cad_repositor LIMIT 1');
+                this.schemaInitialized = true;
+                return true;
+            } catch (e) {
+                // Tabela não existe — forçar inicialização completa
+                localStorage.removeItem(SCHEMA_VERSION_KEY);
+            }
+        }
+
         try {
             // Criar tabela de repositores
             await this.mainClient.execute(`
@@ -115,10 +133,10 @@ class TursoDatabase {
             await this.ensureHistoricoPerformanceTables();
 
             this.schemaInitialized = true;
-            // Schema inicializado com sucesso
+            localStorage.setItem(SCHEMA_VERSION_KEY, String(SCHEMA_VERSION));
             return true;
         } catch (error) {
-            console.error('❌ Erro ao inicializar schema:', error);
+            console.error('Erro ao inicializar schema:', error);
             throw error;
         }
     }
