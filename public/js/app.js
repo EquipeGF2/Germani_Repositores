@@ -21861,7 +21861,6 @@ class App {
                 if (!dados.temDadosComerciais) continue;
                 const { rep_id, periodos, cidades, custosMap } = dados;
                 for (const p of periodos) {
-                    if (p.ativo === false) continue;
                     let fatMes = 0, pesoMes = 0;
                     cidades.forEach(ci => {
                         ci.clientes.forEach(cl => {
@@ -21896,8 +21895,6 @@ class App {
 
         const [anoIni, mesIni] = periodoInicioVal.split('-').map(Number);
         const [anoFim, mesFim] = periodoFimVal.split('-').map(Number);
-        const repoInicio = repoInfo.repo_data_inicio ? new Date(repoInfo.repo_data_inicio + 'T00:00:00') : null;
-        const repoFim = repoInfo.repo_data_fim ? new Date(repoInfo.repo_data_fim + 'T00:00:00') : null;
 
         const periodos = [];
         let d = new Date(anoIni, mesIni - 1, 1);
@@ -21906,9 +21903,7 @@ class App {
             const mm = String(d.getMonth() + 1).padStart(2, '0');
             const aaaa = String(d.getFullYear());
             const aa = aaaa.slice(-2);
-            const ultimoDia = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-            const dentroCompetencia = (!repoInicio || ultimoDia >= repoInicio) && (!repoFim || d <= repoFim);
-            periodos.push({ key: `${mm}_${aa}`, label: `${mm}/${aa}`, ativo: dentroCompetencia, mes: mm, ano: aaaa });
+            periodos.push({ key: `${mm}_${aa}`, label: `${mm}/${aa}`, mes: mm, ano: aaaa });
             d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
         }
 
@@ -21983,7 +21978,7 @@ class App {
             };
         });
 
-        const mesesAtivos = periodos.filter(p => p.ativo).length || 1;
+        const mesesAtivos = periodos.length || 1;
         const cidades = Object.keys(cidadeClienteMap).sort().map(cidade => {
             const clientes = Object.values(cidadeClienteMap[cidade]).sort((a, b) => a.nome.localeCompare(b.nome));
             const t = clientes.reduce((acc, c) => ({ valor: acc.valor + c.total_valor, peso: acc.peso + c.total_peso }), { valor: 0, peso: 0 });
@@ -22039,8 +22034,7 @@ class App {
             bodyHTML += `<td>${this.escaparHTMLFat(cidade.cidade)}</td><td></td><td></td>`;
             periodos.forEach(p => {
                 let s = 0; cidade.clientes.forEach(cl => { s += (isValor ? cl.meses[p.key]?.valor : cl.meses[p.key]?.peso) || 0; });
-                const st = p.ativo === false ? ' style="background:#eef0f3;"' : '';
-                bodyHTML += `<td${st}>${this.formatarValorFat(s, isValor)}</td>`;
+                bodyHTML += `<td>${this.formatarValorFat(s, isValor)}</td>`;
             });
             bodyHTML += `<td>${this.formatarValorFat(cidadeTotal, isValor)}</td><td>${this.formatarValorFat(cidadeTotal / numAtivos, isValor)}</td></tr>`;
 
@@ -22052,8 +22046,7 @@ class App {
                 bodyHTML += cl.centralizada ? `<td style="text-align:center;color:#7c3aed;font-size:0.75rem;font-weight:600;" title="Comprador: ${this.escaparHTMLFat(cl.centralizada)}">C</td>` : '<td></td>';
                 periodos.forEach(p => {
                     const v = (isValor ? cl.meses[p.key]?.valor : cl.meses[p.key]?.peso) || 0;
-                    const inativo = p.ativo === false;
-                    bodyHTML += `<td${v === 0 || inativo ? ' class="fat-valor-zero"' : ''}${inativo ? ' style="background:#f9fafb;"' : ''}>${this.formatarValorFat(v, isValor)}</td>`;
+                    bodyHTML += `<td${v === 0 ? ' class="fat-valor-zero"' : ''}>${this.formatarValorFat(v, isValor)}</td>`;
                 });
                 bodyHTML += `<td>${this.formatarValorFat(clT, isValor)}</td><td>${this.formatarValorFat(clT / numAtivos, isValor)}</td></tr>`;
             });
@@ -22107,8 +22100,7 @@ class App {
         const periodos = resultados[0].periodos;
         let headerHTML = '<tr><th>Cliente</th><th style="text-align:center;">Rat.</th><th style="text-align:center;">Centr.</th>';
         periodos.forEach(p => {
-            const inativo = p.ativo === false ? ' style="color:#bbb;background:#f3f4f6;"' : '';
-            headerHTML += `<th${inativo}>${p.label}</th>`;
+            headerHTML += `<th>${p.label}</th>`;
         });
         headerHTML += '<th>Total</th><th>Média</th></tr>';
         const totalCols = 3 + periodos.length + 2;
