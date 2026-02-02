@@ -3413,7 +3413,7 @@ class TursoDatabase {
         }
     }
 
-    // ==================== FATURAMENTO (BANCO COMERCIAL) ====================
+    // ==================== FATURAMENTO (BANCO COMERCIAL + PRINCIPAL) ====================
 
     async getVendasPorClientes(codigosClientes, dataInicio, dataFim) {
         await this.connectComercial();
@@ -3479,7 +3479,8 @@ class TursoDatabase {
         try {
             const result = await this.mainClient.execute({
                 sql: `
-                    SELECT DISTINCT rc.rot_cliente_codigo, rci.rot_cidade as cidade
+                    SELECT DISTINCT rc.rot_cliente_codigo, rci.rot_cidade as cidade,
+                           rc.rot_venda_centralizada
                     FROM rot_roteiro_cliente rc
                     JOIN rot_roteiro_cidade rci ON rc.rot_cid_id = rci.rot_cid_id
                     WHERE rci.rot_repositor_id = ?
@@ -3504,6 +3505,63 @@ class TursoDatabase {
         } catch (error) {
             console.error('Erro ao buscar info repositor:', error);
             return null;
+        }
+    }
+
+    async getRateiosDoRepositor(repId) {
+        try {
+            const result = await this.mainClient.execute({
+                sql: `
+                    SELECT rat_cliente_codigo, rat_repositor_id, rat_percentual,
+                           rat_vigencia_inicio, rat_vigencia_fim
+                    FROM rat_cliente_repositor
+                    WHERE rat_repositor_id = ?
+                `,
+                args: [repId]
+            });
+            return result.rows || [];
+        } catch (error) {
+            console.error('Erro ao buscar rateios:', error);
+            return [];
+        }
+    }
+
+    async getAuditoriaRepositor(repId, dataInicio) {
+        try {
+            const result = await this.mainClient.execute({
+                sql: `
+                    SELECT rot_aud_data_hora, rot_aud_repositor_id, rot_aud_cidade,
+                           rot_aud_cliente_codigo, rot_aud_acao, rot_aud_detalhes
+                    FROM rot_roteiro_auditoria
+                    WHERE rot_aud_repositor_id = ?
+                      AND rot_aud_data_hora >= ?
+                    ORDER BY rot_aud_data_hora ASC
+                `,
+                args: [repId, dataInicio]
+            });
+            return result.rows || [];
+        } catch (error) {
+            console.error('Erro ao buscar auditoria:', error);
+            return [];
+        }
+    }
+
+    async getVendasCentralizadas(codigosClientes) {
+        if (!codigosClientes?.length) return [];
+        try {
+            const placeholders = codigosClientes.map(() => '?').join(',');
+            const result = await this.mainClient.execute({
+                sql: `
+                    SELECT vc_cliente_origem, vc_cliente_comprador
+                    FROM venda_centralizada
+                    WHERE vc_cliente_origem IN (${placeholders})
+                `,
+                args: codigosClientes
+            });
+            return result.rows || [];
+        } catch (error) {
+            console.error('Erro ao buscar vendas centralizadas:', error);
+            return [];
         }
     }
 
