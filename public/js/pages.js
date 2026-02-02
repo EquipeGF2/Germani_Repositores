@@ -7267,10 +7267,6 @@ export const pages = {
                                 <option value="peso">Peso Liq. (kg)</option>
                             </select>
                         </div>
-                        <div class="filter-group">
-                            <label for="fatCusto">Custo (R$)</label>
-                            <input type="number" id="fatCusto" placeholder="0,00" step="0.01" min="0">
-                        </div>
                         <div class="filter-group" style="display:flex; gap:8px;">
                             <button id="btnBuscarFaturamento" class="btn btn-primary" style="flex:1;">Buscar</button>
                             <button id="btnExportarFaturamento" class="btn btn-secondary" style="flex:1;" disabled>Exportar</button>

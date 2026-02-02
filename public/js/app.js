@@ -21760,17 +21760,6 @@ class App {
                 };
             }
 
-            // Mudança de custo - re-renderiza resumo
-            const inputCusto = document.getElementById('fatCusto');
-            if (inputCusto) {
-                inputCusto.oninput = () => {
-                    if (this.faturamentoState.dados) {
-                        this.renderizarResumoFaturamento();
-                        this.renderizarTabelaFaturamento();
-                    }
-                };
-            }
-
             // Mostrar estado vazio
             this.mostrarEstadoFaturamento('empty');
         } catch (error) {
@@ -21809,11 +21798,12 @@ class App {
         try {
             const repIdNum = Number(repId);
 
-            // === ETAPA 1: Carregar dados do banco principal (roteiro) ===
-            const [repoInfo, clientesRoteiro, rateios] = await Promise.all([
+            // === ETAPA 1: Carregar dados do banco principal (roteiro + custos) ===
+            const [repoInfo, clientesRoteiro, rateios, custosMap] = await Promise.all([
                 db.getRepositorInfo(repIdNum),
                 db.getClientesDoRepositor(repIdNum),
-                db.getRateiosDoRepositor(repIdNum)
+                db.getRateiosDoRepositor(repIdNum),
+                db.getCustosRepositorPorMes(repIdNum, periodoInicioVal, periodoFimVal)
             ]);
 
             if (!repoInfo) throw new Error('Repositor não encontrado');
@@ -21995,7 +21985,7 @@ class App {
                 competencia: { repo_inicio: repoInfo.repo_data_inicio, repo_fim: repoInfo.repo_data_fim },
                 meses: periodos.length,
                 meses_ativos: mesesAtivos,
-                periodos, cidades,
+                periodos, cidades, custosMap,
                 temDadosComerciais,
                 totais: {
                     valor_financeiro: totaisGeral.valor,
@@ -22026,11 +22016,15 @@ class App {
         const resumoEl = document.getElementById('fatResumo');
         if (!resumoEl || !this.faturamentoState.dados) return;
 
-        const { totais, cidades, meses_ativos, rep_nome, competencia, temDadosComerciais, periodos } = this.faturamentoState.dados;
+        const { totais, cidades, meses_ativos, rep_nome, competencia, temDadosComerciais, periodos, custosMap } = this.faturamentoState.dados;
         const totalClientes = cidades.reduce((sum, c) => sum + c.clientes.length, 0);
-        const custo = parseFloat(document.getElementById('fatCusto')?.value) || 0;
         const mediaPeso = totais.peso_liq / (meses_ativos || 1);
         const mediaValor = totais.media_mensal;
+
+        // Calcular custo total e médio a partir do custosMap
+        const custoTotal = Object.values(custosMap || {}).reduce((s, v) => s + v, 0);
+        const custoMedio = meses_ativos > 0 ? custoTotal / meses_ativos : 0;
+        const temCustos = custoTotal > 0;
 
         let compLabel = '';
         if (competencia) {
@@ -22047,11 +22041,15 @@ class App {
             ? `${periodos[0].label} a ${periodos[periodos.length - 1].label}`
             : '';
 
-        let custoCard = '';
-        if (custo > 0 && temDadosComerciais) {
-            const pctCusto = mediaValor > 0 ? (custo / mediaValor * 100) : 0;
-            const custoPorKg = mediaPeso > 0 ? (custo / mediaPeso) : 0;
-            custoCard = `
+        let custoCards = '';
+        if (temCustos && temDadosComerciais) {
+            const pctCusto = mediaValor > 0 ? (custoMedio / mediaValor * 100) : 0;
+            const custoPorKg = mediaPeso > 0 ? (custoMedio / mediaPeso) : 0;
+            custoCards = `
+            <div class="fat-resumo-card">
+                <div class="fat-resumo-label">Custo Médio</div>
+                <div class="fat-resumo-valor">${this.formatarMoeda(custoMedio)}</div>
+            </div>
             <div class="fat-resumo-card">
                 <div class="fat-resumo-label">Custo / Faturamento</div>
                 <div class="fat-resumo-valor">${pctCusto.toFixed(2)}%</div>
@@ -22086,7 +22084,7 @@ class App {
                 <div class="fat-resumo-valor">${this.formatarMoeda(mediaValor)}</div>
                 <div class="fat-resumo-valor" style="font-size:1rem;margin-top:2px;">${this.formatarPeso(mediaPeso)}</div>
             </div>
-            ${custoCard}
+            ${custoCards}
             ` : `
             <div class="fat-resumo-card">
                 <div class="fat-resumo-label">Faturamento</div>
@@ -22198,44 +22196,50 @@ class App {
         bodyHTML += `<td>${this.formatarValorFat(mediaGeral, isValor)}</td>`;
         bodyHTML += '</tr>';
 
-        // Linha de custo (se informado)
-        const custo = parseFloat(document.getElementById('fatCusto')?.value) || 0;
-        if (custo > 0 && mediaGeral > 0) {
+        // Linha CUSTO (valores do banco por mês)
+        const custos = dados.custosMap || {};
+        const temCustos = Object.values(custos).some(v => v > 0);
+        if (temCustos) {
+            // Linha com valor do custo
+            let custoTotal = 0;
+            bodyHTML += '<tr class="fat-row-custo">';
+            bodyHTML += '<td>CUSTO</td><td></td><td></td>';
+            periodos.forEach(p => {
+                const c = custos[p.key] || 0;
+                custoTotal += c;
+                bodyHTML += `<td>${c > 0 ? this.formatarValorFat(c, true) : '-'}</td>`;
+            });
+            const custoMedio = custoTotal / numAtivos;
+            bodyHTML += `<td>${this.formatarValorFat(custoTotal, true)}</td>`;
+            bodyHTML += `<td>${this.formatarValorFat(custoMedio, true)}</td>`;
+            bodyHTML += '</tr>';
+
+            // Linha % ou R$/kg
             bodyHTML += '<tr class="fat-row-custo">';
             if (isValor) {
-                // Custo / Valor = percentual
                 bodyHTML += '<td>CUSTO %</td><td></td><td></td>';
+                let custoTotalAcum = 0, fatTotalAcum = 0;
                 periodos.forEach(p => {
-                    let somaPerMes = 0;
-                    cidades.forEach(cidade => {
-                        cidade.clientes.forEach(cl => {
-                            const m = cl.meses[p.key];
-                            somaPerMes += m ? m.valor : 0;
-                        });
-                    });
-                    const pct = somaPerMes > 0 ? (custo / somaPerMes * 100).toFixed(2) + '%' : '-';
-                    bodyHTML += `<td>${pct}</td>`;
+                    const c = custos[p.key] || 0;
+                    let fat = 0;
+                    cidades.forEach(cidade => { cidade.clientes.forEach(cl => { fat += cl.meses[p.key]?.valor || 0; }); });
+                    custoTotalAcum += c; fatTotalAcum += fat;
+                    bodyHTML += `<td>${fat > 0 ? (c / fat * 100).toFixed(2) + '%' : '-'}</td>`;
                 });
-                const pctTotal = totalGeral > 0 ? (custo * numAtivos / totalGeral * 100).toFixed(2) + '%' : '-';
-                const pctMedia = mediaGeral > 0 ? (custo / mediaGeral * 100).toFixed(2) + '%' : '-';
-                bodyHTML += `<td>${pctTotal}</td><td>${pctMedia}</td>`;
+                bodyHTML += `<td>${fatTotalAcum > 0 ? (custoTotalAcum / fatTotalAcum * 100).toFixed(2) + '%' : '-'}</td>`;
+                bodyHTML += `<td>${mediaGeral > 0 ? (custoMedio / mediaGeral * 100).toFixed(2) + '%' : '-'}</td>`;
             } else {
-                // Custo / Peso = R$/kg
                 bodyHTML += '<td>CUSTO / KG</td><td></td><td></td>';
+                let custoTotalAcum = 0, pesoTotalAcum = 0;
                 periodos.forEach(p => {
-                    let somaPerMes = 0;
-                    cidades.forEach(cidade => {
-                        cidade.clientes.forEach(cl => {
-                            const m = cl.meses[p.key];
-                            somaPerMes += m ? m.peso : 0;
-                        });
-                    });
-                    const custKg = somaPerMes > 0 ? 'R$ ' + (custo / somaPerMes).toFixed(2) : '-';
-                    bodyHTML += `<td>${custKg}</td>`;
+                    const c = custos[p.key] || 0;
+                    let peso = 0;
+                    cidades.forEach(cidade => { cidade.clientes.forEach(cl => { peso += cl.meses[p.key]?.peso || 0; }); });
+                    custoTotalAcum += c; pesoTotalAcum += peso;
+                    bodyHTML += `<td>${peso > 0 ? 'R$ ' + (c / peso).toFixed(2) : '-'}</td>`;
                 });
-                const custKgTotal = totalGeral > 0 ? 'R$ ' + (custo * numAtivos / totalGeral).toFixed(2) : '-';
-                const custKgMedia = mediaGeral > 0 ? 'R$ ' + (custo / mediaGeral).toFixed(2) : '-';
-                bodyHTML += `<td>${custKgTotal}</td><td>${custKgMedia}</td>`;
+                bodyHTML += `<td>${pesoTotalAcum > 0 ? 'R$ ' + (custoTotalAcum / pesoTotalAcum).toFixed(2) : '-'}</td>`;
+                bodyHTML += `<td>${mediaGeral > 0 ? 'R$ ' + (custoMedio / mediaGeral).toFixed(2) : '-'}</td>`;
             }
             bodyHTML += '</tr>';
         }
