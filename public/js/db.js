@@ -43,6 +43,14 @@ class TursoDatabase {
             });
         }
 
+        // Schema já existe no banco — só rodar migrações quando a versão mudar
+        const cachedVersion = localStorage.getItem(SCHEMA_VERSION_KEY);
+        if (cachedVersion === String(SCHEMA_VERSION)) {
+            this.schemaInitialized = true;
+            return true;
+        }
+
+        // Primeira vez ou versão nova — rodar schema completo
         await withTimeout(
             this.initializeSchema(),
             this.connectionTimeout,
@@ -72,20 +80,6 @@ class TursoDatabase {
 
     async initializeSchema() {
         if (this.schemaInitialized) return true;
-
-        // Verificar se schema já foi inicializado nesta versão
-        const cachedVersion = localStorage.getItem(SCHEMA_VERSION_KEY);
-        if (cachedVersion === String(SCHEMA_VERSION)) {
-            // Schema já atualizado — validar com query leve
-            try {
-                await this.mainClient.execute('SELECT 1 FROM cad_repositor LIMIT 1');
-                this.schemaInitialized = true;
-                return true;
-            } catch (e) {
-                // Tabela não existe — forçar inicialização completa
-                localStorage.removeItem(SCHEMA_VERSION_KEY);
-            }
-        }
 
         try {
             // Criar tabela de repositores
