@@ -1004,11 +1004,8 @@ class App {
 
     async initializeDatabase() {
         try {
-            // Conecta ao banco principal (já inclui initializeSchema internamente)
             await db.connect();
-
-            // Banco comercial em background - não bloqueia
-            db.connectComercial().catch(e => console.warn('Banco comercial indisponível:', e.message));
+            db.connectComercial().catch(() => {});
 
             console.log('✅ Sistema inicializado com sucesso');
         } catch (error) {
