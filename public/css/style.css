@@ -438,6 +438,7 @@ input[type="text"],
 input[type="password"],
 input[type="email"],
 input[type="date"],
+input[type="month"],
 input[type="number"],
 select,
 textarea {

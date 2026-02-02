@@ -3461,11 +3461,14 @@ class TursoDatabase {
                 const lote = codigosClientes.slice(i, i + LOTE);
                 const placeholders = lote.map(() => '?').join(',');
                 const result = await this.comercialClient.execute({
-                    sql: `SELECT cliente, nome, cidade, uf FROM tab_cliente WHERE cliente IN (${placeholders})`,
+                    sql: `SELECT cliente, nome, fantasia, cidade FROM tab_cliente WHERE cliente IN (${placeholders})`,
                     args: lote
                 });
                 if (result.rows) {
-                    todosResultados.push(...result.rows);
+                    todosResultados.push(...result.rows.map(r => ({
+                        ...r,
+                        nome_display: r.nome || r.fantasia || ''
+                    })));
                 }
             }
             return todosResultados;

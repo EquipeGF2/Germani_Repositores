@@ -21945,13 +21945,14 @@ class App {
                     totalPeso += peso;
                 });
 
-                let sufixo = '';
-                if (ehCentralizada) sufixo = ' [C]';
-                if (temRateio) sufixo += ` [R:${temRateio[0].percentual}%]`;
+                // Nome: usar nome_display do banco comercial (nome || fantasia)
+                const nomeCliente = info?.nome_display || info?.nome || info?.fantasia || '';
 
                 cidadeClienteMap[cidade][cod] = {
                     codigo: cod,
-                    nome: (info?.nome || cod) + sufixo,
+                    nome: nomeCliente,
+                    rateio: temRateio ? `${temRateio[0].percentual}%` : '',
+                    centralizada: ehCentralizada ? comprador : '',
                     meses,
                     total_valor: totalValor,
                     total_peso: totalPeso
@@ -22053,6 +22054,7 @@ class App {
             <div class="fat-resumo-card">
                 <div class="fat-resumo-label">Média Mensal</div>
                 <div class="fat-resumo-valor">${this.formatarMoeda(totais.media_mensal)}</div>
+                <div style="font-size:0.75rem;color:var(--gray-500);margin-top:2px;">${this.formatarPeso(totais.peso_liq / (meses_ativos || 1))}</div>
             </div>
             ` : `
             <div class="fat-resumo-card">
@@ -22078,25 +22080,26 @@ class App {
 
         const numAtivos = meses_ativos || periodos.length || 1;
 
-        // Header - meses inativos em cinza
-        let headerHTML = '<tr><th>Cliente</th>';
+        // Header
+        let headerHTML = '<tr><th>Cliente</th><th style="text-align:center;">Rat.</th><th style="text-align:center;">Centr.</th>';
         periodos.forEach(p => {
             const inativo = p.ativo === false ? ' style="color:#bbb;background:#f3f4f6;"' : '';
             headerHTML += `<th${inativo}>${p.label}</th>`;
         });
-        headerHTML += '<th>Total</th><th>Media</th></tr>';
+        headerHTML += '<th>Total</th><th>Média</th></tr>';
         thead.innerHTML = headerHTML;
 
         // Body
         let bodyHTML = '';
+        const colSpanExtra = 2; // colunas Rat. e Centr.
 
         cidades.forEach(cidade => {
-            // Linha da cidade
             const cidadeTotal = isValor ? cidade.total_valor : cidade.total_peso;
             const cidadeMedia = cidadeTotal / numAtivos;
 
             bodyHTML += '<tr class="fat-row-cidade">';
             bodyHTML += `<td>${this.escaparHTMLFat(cidade.cidade)}</td>`;
+            bodyHTML += '<td></td><td></td>';
             periodos.forEach(p => {
                 let somaPerMes = 0;
                 cidade.clientes.forEach(cl => {
@@ -22117,6 +22120,18 @@ class App {
 
                 bodyHTML += '<tr class="fat-row-cliente">';
                 bodyHTML += `<td>${this.escaparHTMLFat(cl.codigo)} - ${this.escaparHTMLFat(cl.nome)}</td>`;
+                // Coluna Rateio
+                if (cl.rateio) {
+                    bodyHTML += `<td style="text-align:center;color:#b45309;font-size:0.75rem;font-weight:600;">${this.escaparHTMLFat(cl.rateio)}</td>`;
+                } else {
+                    bodyHTML += '<td></td>';
+                }
+                // Coluna Centralização
+                if (cl.centralizada) {
+                    bodyHTML += `<td style="text-align:center;color:#7c3aed;font-size:0.75rem;font-weight:600;" title="Comprador: ${this.escaparHTMLFat(cl.centralizada)}">C</td>`;
+                } else {
+                    bodyHTML += '<td></td>';
+                }
                 periodos.forEach(p => {
                     const m = cl.meses[p.key];
                     const val = m ? (isValor ? m.valor : m.peso) : 0;
@@ -22137,6 +22152,7 @@ class App {
 
         bodyHTML += '<tr class="fat-row-total">';
         bodyHTML += '<td>TOTAL GERAL</td>';
+        bodyHTML += '<td></td><td></td>';
         periodos.forEach(p => {
             let somaPerMes = 0;
             cidades.forEach(cidade => {
@@ -22191,14 +22207,14 @@ class App {
             const rows = [];
 
             // Header
-            const header = ['Cliente'];
+            const header = ['Cliente', 'Rateio', 'Centralização'];
             periodos.forEach(p => header.push(p.label));
-            header.push('Total', 'Media');
+            header.push('Total', 'Média');
             rows.push(header);
 
             cidades.forEach(cidade => {
                 // Linha cidade
-                const cidadeRow = [cidade.cidade];
+                const cidadeRow = [cidade.cidade, '', ''];
                 periodos.forEach(p => {
                     let soma = 0;
                     cidade.clientes.forEach(cl => {
@@ -22213,7 +22229,7 @@ class App {
 
                 // Linhas clientes
                 cidade.clientes.forEach(cl => {
-                    const row = [`  ${cl.codigo} - ${cl.nome}`];
+                    const row = [`  ${cl.codigo} - ${cl.nome}`, cl.rateio || '', cl.centralizada ? 'Sim' : ''];
                     periodos.forEach(p => {
                         const m = cl.meses[p.key];
                         row.push(m ? (isValor ? m.valor : m.peso) : 0);
@@ -22225,7 +22241,7 @@ class App {
             });
 
             // Total geral
-            const totalRow = ['TOTAL GERAL'];
+            const totalRow = ['TOTAL GERAL', '', ''];
             periodos.forEach(p => {
                 let soma = 0;
                 cidades.forEach(cidade => {
