@@ -21780,10 +21780,15 @@ class App {
 
     async buscarFaturamento() {
         const repId = document.getElementById('fatRepositor')?.value;
-        const numMeses = parseInt(document.getElementById('fatMeses')?.value) || 6;
+        const periodoInicioVal = document.getElementById('fatPeriodoInicio')?.value; // YYYY-MM
+        const periodoFimVal = document.getElementById('fatPeriodoFim')?.value; // YYYY-MM
 
         if (!repId) {
             this.showNotification('Selecione um repositor', 'error');
+            return;
+        }
+        if (!periodoInicioVal || !periodoFimVal) {
+            this.showNotification('Selecione o período', 'error');
             return;
         }
 
@@ -21792,12 +21797,11 @@ class App {
         try {
             const repIdNum = Number(repId);
 
-            // === ETAPA 1: Carregar todos os dados do banco principal em paralelo ===
-            const [repoInfo, clientesRoteiro, rateios, vendasCentralizadasRaw] = await Promise.all([
+            // === ETAPA 1: Carregar dados do banco principal (roteiro) ===
+            const [repoInfo, clientesRoteiro, rateios] = await Promise.all([
                 db.getRepositorInfo(repIdNum),
                 db.getClientesDoRepositor(repIdNum),
-                db.getRateiosDoRepositor(repIdNum),
-                db.getVendasCentralizadas([]) // carrega tudo, filtra depois
+                db.getRateiosDoRepositor(repIdNum)
             ]);
 
             if (!repoInfo) throw new Error('Repositor não encontrado');
@@ -21809,35 +21813,34 @@ class App {
                 };
                 this.renderizarResumoFaturamento();
                 this.mostrarEstadoFaturamento('empty');
+                this.showNotification('Nenhum cliente encontrado no roteiro deste repositor', 'info');
                 return;
             }
 
-            // === ETAPA 2: Calcular período e competência ===
-            const hoje = new Date();
-            const periodoFim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
-            const periodoInicio = new Date(hoje.getFullYear(), hoje.getMonth() - numMeses + 1, 1);
+            // === ETAPA 2: Gerar períodos a partir das datas selecionadas ===
+            const [anoIni, mesIni] = periodoInicioVal.split('-').map(Number);
+            const [anoFim, mesFim] = periodoFimVal.split('-').map(Number);
 
             const repoInicio = repoInfo.repo_data_inicio ? new Date(repoInfo.repo_data_inicio + 'T00:00:00') : null;
             const repoFim = repoInfo.repo_data_fim ? new Date(repoInfo.repo_data_fim + 'T00:00:00') : null;
-            const dataEfetInicio = repoInicio && repoInicio > periodoInicio ? repoInicio : periodoInicio;
-            const dataEfetFim = repoFim && repoFim < periodoFim ? repoFim : periodoFim;
-
-            const dataInicioStr = dataEfetInicio.toISOString().split('T')[0];
-            const dataFimStr = dataEfetFim.toISOString().split('T')[0];
 
             const periodos = [];
-            for (let i = 0; i < numMeses; i++) {
-                const d = new Date(hoje.getFullYear(), hoje.getMonth() - numMeses + 1 + i, 1);
-                const ultimoDia = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+            let d = new Date(anoIni, mesIni - 1, 1);
+            const limFim = new Date(anoFim, mesFim - 1, 1);
+            while (d <= limFim) {
                 const mm = String(d.getMonth() + 1).padStart(2, '0');
-                const aa = String(d.getFullYear()).slice(-2);
                 const aaaa = String(d.getFullYear());
-                const dentroCompetencia = d <= dataEfetFim && ultimoDia >= dataEfetInicio;
+                const aa = aaaa.slice(-2);
+                const ultimoDia = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+                const dentroCompetencia = (!repoInicio || ultimoDia >= repoInicio) && (!repoFim || d <= repoFim);
                 periodos.push({ key: `${mm}_${aa}`, label: `${mm}/${aa}`, ativo: dentroCompetencia, mes: mm, ano: aaaa });
+                d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
             }
 
+            const dataInicioStr = `${periodoInicioVal}-01`;
+            const dataFimStr = `${periodoFimVal}-31`;
+
             // === ETAPA 3: Montar mapas de rateio e venda centralizada ===
-            // Rateio: cliente → { percentual, vigencia_inicio, vigencia_fim }
             const rateioMap = {};
             rateios.forEach(r => {
                 const cod = String(r.rat_cliente_codigo);
@@ -21849,61 +21852,58 @@ class App {
                 });
             });
 
-            // Venda centralizada: clienteOrigem → clienteComprador
             const codigosRoteiro = clientesRoteiro.map(c => String(c.rot_cliente_codigo));
-            const vcDados = await db.getVendasCentralizadas(codigosRoteiro);
-            const centralizadaMap = {};
-            vcDados.forEach(vc => {
-                centralizadaMap[String(vc.vc_cliente_origem)] = String(vc.vc_cliente_comprador);
-            });
 
-            // Também verificar flag rot_venda_centralizada nos clientes do roteiro
-            clientesRoteiro.forEach(cr => {
-                if (cr.rot_venda_centralizada && !centralizadaMap[String(cr.rot_cliente_codigo)]) {
-                    // Flag marcada mas sem registro na tabela - manter sem mapeamento
-                }
-            });
+            // Venda centralizada
+            let centralizadaMap = {};
+            try {
+                const vcDados = await db.getVendasCentralizadas(codigosRoteiro);
+                vcDados.forEach(vc => {
+                    centralizadaMap[String(vc.vc_cliente_origem)] = String(vc.vc_cliente_comprador);
+                });
+            } catch (e) {
+                console.warn('Aviso: não foi possível carregar vendas centralizadas:', e.message);
+            }
 
-            // === ETAPA 4: Determinar todos os clientes cujo faturamento buscar ===
-            // Inclui clientes diretos E clientes compradores (centralizados)
+            // === ETAPA 4: Buscar dados do banco comercial (graceful) ===
             const clientesBuscarFat = new Set();
             codigosRoteiro.forEach(cod => {
                 const comprador = centralizadaMap[cod];
-                if (comprador) {
-                    clientesBuscarFat.add(comprador); // buscar fat. do comprador
-                } else {
-                    clientesBuscarFat.add(cod); // buscar fat. direto
-                }
+                clientesBuscarFat.add(comprador || cod);
             });
 
-            // === ETAPA 5: Buscar dados do banco comercial em paralelo ===
-            const todosClientesBusca = [...clientesBuscarFat, ...codigosRoteiro];
-            const clientesUnicos = [...new Set(todosClientesBusca)];
+            const clientesUnicos = [...new Set([...clientesBuscarFat, ...codigosRoteiro])];
 
-            const [vendas, clientesInfo] = await Promise.all([
-                db.getVendasPorClientes([...clientesBuscarFat], dataInicioStr, dataFimStr),
-                db.getInfoClientesComercial(clientesUnicos)
-            ]);
+            let vendasIndex = {};
+            let clientesInfoMap = {};
+            let temDadosComerciais = false;
 
-            const clientesInfoMap = {};
-            clientesInfo.forEach(c => { clientesInfoMap[String(c.cliente)] = c; });
+            try {
+                const [vendas, clientesInfo] = await Promise.all([
+                    db.getVendasPorClientes([...clientesBuscarFat], dataInicioStr, dataFimStr),
+                    db.getInfoClientesComercial(clientesUnicos)
+                ]);
 
-            // Indexar vendas: cliente → mesKey → { valor, peso }
-            const vendasIndex = {};
-            vendas.forEach(v => {
-                const cod = String(v.cliente);
-                const emissao = v.emissao;
-                if (!emissao) return;
-                const [ano, mes] = emissao.split('-');
-                const key = `${mes}_${ano.slice(-2)}`;
-                if (!vendasIndex[cod]) vendasIndex[cod] = {};
-                vendasIndex[cod][key] = {
-                    valor: parseFloat(v.valor_financeiro) || 0,
-                    peso: parseFloat(v.peso_liq) || 0
-                };
-            });
+                clientesInfo.forEach(c => { clientesInfoMap[String(c.cliente)] = c; });
 
-            // === ETAPA 6: Montar mapa cidade → clientes com faturamento ===
+                vendas.forEach(v => {
+                    const cod = String(v.cliente);
+                    const emissao = v.emissao;
+                    if (!emissao) return;
+                    const [ano, mes] = emissao.split('-');
+                    const key = `${mes}_${ano.slice(-2)}`;
+                    if (!vendasIndex[cod]) vendasIndex[cod] = {};
+                    vendasIndex[cod][key] = {
+                        valor: parseFloat(v.valor_financeiro) || 0,
+                        peso: parseFloat(v.peso_liq) || 0
+                    };
+                });
+                temDadosComerciais = true;
+            } catch (e) {
+                console.warn('Aviso: banco comercial indisponível, mostrando apenas roteiro:', e.message);
+            }
+
+            // === ETAPA 5: Montar mapa cidade → clientes ===
             const cidadeClienteMap = {};
 
             clientesRoteiro.forEach(cr => {
@@ -21912,15 +21912,13 @@ class App {
                 const cidade = info?.cidade || cr.cidade || 'SEM CIDADE';
 
                 if (!cidadeClienteMap[cidade]) cidadeClienteMap[cidade] = {};
-                if (cidadeClienteMap[cidade][cod]) return; // já processado
+                if (cidadeClienteMap[cidade][cod]) return;
 
-                // Determinar de onde vem o faturamento
                 const comprador = centralizadaMap[cod];
                 const codFat = comprador || cod;
                 const temRateio = rateioMap[cod];
                 const ehCentralizada = !!comprador;
 
-                // Buscar faturamento por mês
                 const meses = {};
                 let totalValor = 0;
                 let totalPeso = 0;
@@ -21930,15 +21928,13 @@ class App {
                     let valor = vendasMes?.valor || 0;
                     let peso = vendasMes?.peso || 0;
 
-                    // Aplicar rateio se existir
                     if (temRateio) {
-                        // Encontrar rateio vigente para este mês
                         const mesRef = `${p.ano}-${p.mes}`;
                         const rateioVigente = temRateio.find(r => {
                             const ini = r.vigenciaInicio ? String(r.vigenciaInicio) : '0';
                             const fim = r.vigenciaFim ? String(r.vigenciaFim) : '9999-99';
                             return mesRef >= ini.substring(0, 7) && mesRef <= fim.substring(0, 7);
-                        }) || temRateio[0]; // fallback: usar primeiro rateio
+                        }) || temRateio[0];
                         const pct = rateioVigente.percentual / 100;
                         valor = valor * pct;
                         peso = peso * pct;
@@ -21955,14 +21951,14 @@ class App {
 
                 cidadeClienteMap[cidade][cod] = {
                     codigo: cod,
-                    nome: (info?.nome || 'Cliente ' + cod) + sufixo,
+                    nome: (info?.nome || cod) + sufixo,
                     meses,
                     total_valor: totalValor,
                     total_peso: totalPeso
                 };
             });
 
-            // === ETAPA 7: Montar resposta final ===
+            // === ETAPA 6: Montar resposta final ===
             const mesesAtivos = periodos.filter(p => p.ativo).length || 1;
             const cidades = Object.keys(cidadeClienteMap).sort().map(cidade => {
                 const clientes = Object.values(cidadeClienteMap[cidade])
@@ -21984,9 +21980,10 @@ class App {
                 rep_id: repIdNum,
                 rep_nome: repoInfo.repo_nome,
                 competencia: { repo_inicio: repoInfo.repo_data_inicio, repo_fim: repoInfo.repo_data_fim },
-                meses: numMeses,
+                meses: periodos.length,
                 meses_ativos: mesesAtivos,
                 periodos, cidades,
+                temDadosComerciais,
                 totais: {
                     valor_financeiro: totaisGeral.valor,
                     peso_liq: totaisGeral.peso,
@@ -22001,6 +21998,10 @@ class App {
             this.renderizarResumoFaturamento();
             this.renderizarTabelaFaturamento();
             this.mostrarEstadoFaturamento('table');
+
+            if (!temDadosComerciais) {
+                this.showNotification('Roteiro carregado. Dados de faturamento indisponíveis (banco comercial).', 'info');
+            }
         } catch (error) {
             console.error('Erro ao buscar faturamento:', error);
             this.showNotification(error.message || 'Erro ao buscar faturamento', 'error');
@@ -22012,7 +22013,7 @@ class App {
         const resumoEl = document.getElementById('fatResumo');
         if (!resumoEl || !this.faturamentoState.dados) return;
 
-        const { totais, cidades, meses_ativos, rep_nome, competencia } = this.faturamentoState.dados;
+        const { totais, cidades, meses_ativos, rep_nome, competencia, temDadosComerciais, periodos } = this.faturamentoState.dados;
         const totalClientes = cidades.reduce((sum, c) => sum + c.clientes.length, 0);
 
         let compLabel = '';
@@ -22020,17 +22021,27 @@ class App {
             const ini = competencia.repo_inicio || '-';
             const fim = competencia.repo_fim || 'atual';
             compLabel = `<div class="fat-resumo-card">
-                <div class="fat-resumo-label">Competencia</div>
+                <div class="fat-resumo-label">Competência</div>
                 <div class="fat-resumo-valor" style="font-size:0.85rem;">${ini} a ${fim}</div>
                 <div style="font-size:0.7rem;color:var(--gray-400);">${meses_ativos || 0} meses ativos</div>
             </div>`;
         }
 
+        const periodoLabel = periodos && periodos.length > 0
+            ? `${periodos[0].label} a ${periodos[periodos.length - 1].label}`
+            : '';
+
         resumoEl.innerHTML = `
             <div class="fat-resumo-card">
                 <div class="fat-resumo-label">Repositor</div>
                 <div class="fat-resumo-valor" style="font-size:1rem;">${this.escaparHTMLFat(rep_nome || '')}</div>
+                <div style="font-size:0.7rem;color:var(--gray-400);">${periodoLabel}</div>
             </div>
+            <div class="fat-resumo-card">
+                <div class="fat-resumo-label">Cidades / Clientes</div>
+                <div class="fat-resumo-valor">${cidades.length} / ${totalClientes}</div>
+            </div>
+            ${temDadosComerciais ? `
             <div class="fat-resumo-card">
                 <div class="fat-resumo-label">Total Faturamento</div>
                 <div class="fat-resumo-valor">${this.formatarMoeda(totais.valor_financeiro)}</div>
@@ -22040,13 +22051,15 @@ class App {
                 <div class="fat-resumo-valor">${this.formatarPeso(totais.peso_liq)}</div>
             </div>
             <div class="fat-resumo-card">
-                <div class="fat-resumo-label">Media Mensal</div>
+                <div class="fat-resumo-label">Média Mensal</div>
                 <div class="fat-resumo-valor">${this.formatarMoeda(totais.media_mensal)}</div>
             </div>
+            ` : `
             <div class="fat-resumo-card">
-                <div class="fat-resumo-label">Cidades / Clientes</div>
-                <div class="fat-resumo-valor">${cidades.length} / ${totalClientes}</div>
+                <div class="fat-resumo-label">Faturamento</div>
+                <div class="fat-resumo-valor" style="font-size:0.85rem;color:var(--gray-400);">Dados comerciais indisponíveis</div>
             </div>
+            `}
             ${compLabel}
         `;
     }
