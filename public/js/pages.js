@@ -7236,10 +7236,15 @@ export const pages = {
             .map(repo => `<option value="${repo.repo_cod}">${repo.repo_cod} - ${repo.repo_nome}</option>`)
             .join('');
 
+        const hoje = new Date();
+        const fimMes = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+        const iniDate = new Date(hoje.getFullYear(), hoje.getMonth() - 5, 1);
+        const iniMes = `${iniDate.getFullYear()}-${String(iniDate.getMonth() + 1).padStart(2, '0')}`;
+
         return `
             <div class="card">
                 <div class="card-body" style="padding-top: 20px;">
-                    <div class="fat-filters" style="margin-bottom: 18px; background:#f9fafb; padding:14px 16px; border:1px solid #e5e7eb; border-radius:12px; display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:10px; align-items:end;">
+                    <div class="fat-filters" style="margin-bottom: 18px; background:#f9fafb; padding:14px 16px; border:1px solid #e5e7eb; border-radius:12px; display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px; align-items:end;">
                         <div class="filter-group">
                             <label for="fatRepositor">Repositor</label>
                             <select id="fatRepositor">
@@ -7248,13 +7253,12 @@ export const pages = {
                             </select>
                         </div>
                         <div class="filter-group">
-                            <label for="fatMeses">Meses</label>
-                            <select id="fatMeses">
-                                <option value="3">3 meses</option>
-                                <option value="6" selected>6 meses</option>
-                                <option value="9">9 meses</option>
-                                <option value="12">12 meses</option>
-                            </select>
+                            <label for="fatPeriodoInicio">Período Início</label>
+                            <input type="month" id="fatPeriodoInicio" value="${iniMes}">
+                        </div>
+                        <div class="filter-group">
+                            <label for="fatPeriodoFim">Período Fim</label>
+                            <input type="month" id="fatPeriodoFim" value="${fimMes}">
                         </div>
                         <div class="filter-group">
                             <label for="fatMetrica">Exibir</label>
