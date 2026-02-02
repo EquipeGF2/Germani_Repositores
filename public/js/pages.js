@@ -7233,7 +7233,12 @@ export const pages = {
     'performance-faturamento': async () => {
         const repositores = await db.getAllRepositors();
         const repositorOptions = repositores
-            .map(repo => `<option value="${repo.repo_cod}">${repo.repo_cod} - ${repo.repo_nome}</option>`)
+            .map(repo => `<option value="${repo.repo_cod}" data-supervisor="${repo.rep_supervisor || ''}">${repo.repo_cod} - ${repo.repo_nome}</option>`)
+            .join('');
+
+        const supervisores = [...new Set(repositores.map(r => r.rep_supervisor).filter(Boolean))].sort();
+        const supervisorOptions = supervisores
+            .map(sup => `<option value="${sup}">${sup}</option>`)
             .join('');
 
         const hoje = new Date();
@@ -7245,6 +7250,13 @@ export const pages = {
             <div class="card">
                 <div class="card-body" style="padding-top: 20px;">
                     <div class="fat-filters" style="margin-bottom: 18px; background:#f9fafb; padding:14px 16px; border:1px solid #e5e7eb; border-radius:12px; display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px; align-items:end;">
+                        <div class="filter-group">
+                            <label for="fatSupervisor">Supervisor</label>
+                            <select id="fatSupervisor">
+                                <option value="">Todos</option>
+                                ${supervisorOptions}
+                            </select>
+                        </div>
                         <div class="filter-group">
                             <label for="fatRepositor">Repositor</label>
                             <select id="fatRepositor">
@@ -7271,9 +7283,6 @@ export const pages = {
                             <button id="btnBuscarFaturamento" class="btn btn-primary" style="flex:1;">Buscar</button>
                             <button id="btnExportarFaturamento" class="btn btn-secondary" style="flex:1;" disabled>Exportar</button>
                         </div>
-                    </div>
-
-                    <div id="fatResumo" style="display:none; margin-bottom:16px; display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px;">
                     </div>
 
                     <div id="fatLoading" style="display:none; text-align:center; padding:3rem;">

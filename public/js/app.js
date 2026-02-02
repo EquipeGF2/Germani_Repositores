@@ -21732,9 +21732,28 @@ class App {
 
     async inicializarFaturamento() {
         try {
-            this.faturamentoState = { dados: null, metrica: 'valor' };
+            this.faturamentoState = { resultados: [], metrica: 'valor' };
 
-            // Repositores já são carregados no pages.js via db.getAllRepositors()
+            // Filtro supervisor → filtra repositores
+            const selectSupervisor = document.getElementById('fatSupervisor');
+            const selectRepositor = document.getElementById('fatRepositor');
+            if (selectSupervisor && selectRepositor) {
+                this._fatAllRepoOptions = [...selectRepositor.querySelectorAll('option[value]')].map(o => ({
+                    value: o.value, text: o.textContent, supervisor: o.dataset.supervisor || ''
+                }));
+                selectSupervisor.onchange = () => {
+                    const sup = selectSupervisor.value;
+                    selectRepositor.innerHTML = '<option value="">Todos do supervisor</option>';
+                    const filtrados = sup
+                        ? this._fatAllRepoOptions.filter(o => o.supervisor === sup)
+                        : this._fatAllRepoOptions;
+                    filtrados.forEach(o => {
+                        const opt = document.createElement('option');
+                        opt.value = o.value; opt.textContent = o.text;
+                        selectRepositor.appendChild(opt);
+                    });
+                };
+            }
 
             // Botão buscar
             const btnBuscar = document.getElementById('btnBuscarFaturamento');
@@ -21753,9 +21772,8 @@ class App {
             if (selectMetrica) {
                 selectMetrica.onchange = () => {
                     this.faturamentoState.metrica = selectMetrica.value;
-                    if (this.faturamentoState.dados) {
-                        this.renderizarResumoFaturamento();
-                        this.renderizarTabelaFaturamento();
+                    if (this.faturamentoState.resultados.length) {
+                        this.renderizarFaturamentoCompleto();
                     }
                 };
             }
@@ -21771,240 +21789,60 @@ class App {
         const loading = document.getElementById('fatLoading');
         const empty = document.getElementById('fatEmpty');
         const table = document.getElementById('fatTableContainer');
-        const resumo = document.getElementById('fatResumo');
 
         if (loading) loading.style.display = estado === 'loading' ? '' : 'none';
         if (empty) empty.style.display = estado === 'empty' ? '' : 'none';
         if (table) table.style.display = estado === 'table' ? '' : 'none';
-        if (resumo) resumo.style.display = estado === 'table' ? 'grid' : 'none';
     }
 
     async buscarFaturamento() {
         const repId = document.getElementById('fatRepositor')?.value;
-        const periodoInicioVal = document.getElementById('fatPeriodoInicio')?.value; // YYYY-MM
-        const periodoFimVal = document.getElementById('fatPeriodoFim')?.value; // YYYY-MM
+        const supId = document.getElementById('fatSupervisor')?.value;
+        const periodoInicioVal = document.getElementById('fatPeriodoInicio')?.value;
+        const periodoFimVal = document.getElementById('fatPeriodoFim')?.value;
 
-        if (!repId) {
-            this.showNotification('Selecione um repositor', 'error');
-            return;
-        }
         if (!periodoInicioVal || !periodoFimVal) {
             this.showNotification('Selecione o período', 'error');
+            return;
+        }
+
+        // Determinar quais repositores buscar
+        let repIds = [];
+        if (repId) {
+            repIds = [Number(repId)];
+        } else if (supId) {
+            // Todos do supervisor
+            const opts = this._fatAllRepoOptions || [];
+            repIds = opts.filter(o => o.supervisor === supId && o.value).map(o => Number(o.value));
+        }
+        if (repIds.length === 0) {
+            this.showNotification('Selecione um repositor ou supervisor', 'error');
             return;
         }
 
         this.mostrarEstadoFaturamento('loading');
 
         try {
-            const repIdNum = Number(repId);
+            const resultados = [];
+            for (const rid of repIds) {
+                const dados = await this._buscarFaturamentoRepositor(rid, periodoInicioVal, periodoFimVal);
+                if (dados) resultados.push(dados);
+            }
 
-            // === ETAPA 1: Carregar dados do banco principal (roteiro + custos) ===
-            const [repoInfo, clientesRoteiro, rateios, custosMap] = await Promise.all([
-                db.getRepositorInfo(repIdNum),
-                db.getClientesDoRepositor(repIdNum),
-                db.getRateiosDoRepositor(repIdNum),
-                db.getCustosRepositorPorMes(repIdNum, periodoInicioVal, periodoFimVal)
-            ]);
-
-            if (!repoInfo) throw new Error('Repositor não encontrado');
-
-            if (!clientesRoteiro || clientesRoteiro.length === 0) {
-                this.faturamentoState.dados = {
-                    rep_nome: repoInfo.repo_nome, periodos: [], cidades: [],
-                    totais: { valor_financeiro: 0, peso_liq: 0, media_mensal: 0 }, meses_ativos: 0
-                };
-                this.renderizarResumoFaturamento();
+            if (resultados.length === 0) {
                 this.mostrarEstadoFaturamento('empty');
-                this.showNotification('Nenhum cliente encontrado no roteiro deste repositor', 'info');
+                this.showNotification('Nenhum dado encontrado', 'info');
                 return;
             }
 
-            // === ETAPA 2: Gerar períodos a partir das datas selecionadas ===
-            const [anoIni, mesIni] = periodoInicioVal.split('-').map(Number);
-            const [anoFim, mesFim] = periodoFimVal.split('-').map(Number);
-
-            const repoInicio = repoInfo.repo_data_inicio ? new Date(repoInfo.repo_data_inicio + 'T00:00:00') : null;
-            const repoFim = repoInfo.repo_data_fim ? new Date(repoInfo.repo_data_fim + 'T00:00:00') : null;
-
-            const periodos = [];
-            let d = new Date(anoIni, mesIni - 1, 1);
-            const limFim = new Date(anoFim, mesFim - 1, 1);
-            while (d <= limFim) {
-                const mm = String(d.getMonth() + 1).padStart(2, '0');
-                const aaaa = String(d.getFullYear());
-                const aa = aaaa.slice(-2);
-                const ultimoDia = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-                const dentroCompetencia = (!repoInicio || ultimoDia >= repoInicio) && (!repoFim || d <= repoFim);
-                periodos.push({ key: `${mm}_${aa}`, label: `${mm}/${aa}`, ativo: dentroCompetencia, mes: mm, ano: aaaa });
-                d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-            }
-
-            const dataInicioStr = `${periodoInicioVal}-01`;
-            const dataFimStr = `${periodoFimVal}-31`;
-
-            // === ETAPA 3: Montar mapas de rateio e venda centralizada ===
-            const rateioMap = {};
-            rateios.forEach(r => {
-                const cod = String(r.rat_cliente_codigo);
-                if (!rateioMap[cod]) rateioMap[cod] = [];
-                rateioMap[cod].push({
-                    percentual: parseFloat(r.rat_percentual) || 100,
-                    vigenciaInicio: r.rat_vigencia_inicio || null,
-                    vigenciaFim: r.rat_vigencia_fim || null
-                });
-            });
-
-            const codigosRoteiro = clientesRoteiro.map(c => String(c.rot_cliente_codigo));
-
-            // Venda centralizada
-            let centralizadaMap = {};
-            try {
-                const vcDados = await db.getVendasCentralizadas(codigosRoteiro);
-                vcDados.forEach(vc => {
-                    centralizadaMap[String(vc.vc_cliente_origem)] = String(vc.vc_cliente_comprador);
-                });
-            } catch (e) {
-                console.warn('Aviso: não foi possível carregar vendas centralizadas:', e.message);
-            }
-
-            // === ETAPA 4: Buscar dados do banco comercial (graceful) ===
-            const clientesBuscarFat = new Set();
-            codigosRoteiro.forEach(cod => {
-                const comprador = centralizadaMap[cod];
-                clientesBuscarFat.add(comprador || cod);
-            });
-
-            const clientesUnicos = [...new Set([...clientesBuscarFat, ...codigosRoteiro])];
-
-            let vendasIndex = {};
-            let clientesInfoMap = {};
-            let temDadosComerciais = false;
-
-            try {
-                const [vendas, clientesInfo] = await Promise.all([
-                    db.getVendasPorClientes([...clientesBuscarFat], dataInicioStr, dataFimStr),
-                    db.getInfoClientesComercial(clientesUnicos)
-                ]);
-
-                clientesInfo.forEach(c => { clientesInfoMap[String(c.cliente)] = c; });
-
-                vendas.forEach(v => {
-                    const cod = String(v.cliente);
-                    const emissao = v.emissao;
-                    if (!emissao) return;
-                    const [ano, mes] = emissao.split('-');
-                    const key = `${mes}_${ano.slice(-2)}`;
-                    if (!vendasIndex[cod]) vendasIndex[cod] = {};
-                    vendasIndex[cod][key] = {
-                        valor: parseFloat(v.valor_financeiro) || 0,
-                        peso: parseFloat(v.peso_liq) || 0
-                    };
-                });
-                temDadosComerciais = true;
-            } catch (e) {
-                console.warn('Aviso: banco comercial indisponível, mostrando apenas roteiro:', e.message);
-            }
-
-            // === ETAPA 5: Montar mapa cidade → clientes ===
-            const cidadeClienteMap = {};
-
-            clientesRoteiro.forEach(cr => {
-                const cod = String(cr.rot_cliente_codigo);
-                const info = clientesInfoMap[cod];
-                const cidade = info?.cidade || cr.cidade || 'SEM CIDADE';
-
-                if (!cidadeClienteMap[cidade]) cidadeClienteMap[cidade] = {};
-                if (cidadeClienteMap[cidade][cod]) return;
-
-                const comprador = centralizadaMap[cod];
-                const codFat = comprador || cod;
-                const temRateio = rateioMap[cod];
-                const ehCentralizada = !!comprador;
-
-                const meses = {};
-                let totalValor = 0;
-                let totalPeso = 0;
-
-                periodos.forEach(p => {
-                    const vendasMes = vendasIndex[codFat]?.[p.key];
-                    let valor = vendasMes?.valor || 0;
-                    let peso = vendasMes?.peso || 0;
-
-                    if (temRateio) {
-                        const mesRef = `${p.ano}-${p.mes}`;
-                        const rateioVigente = temRateio.find(r => {
-                            const ini = r.vigenciaInicio ? String(r.vigenciaInicio) : '0';
-                            const fim = r.vigenciaFim ? String(r.vigenciaFim) : '9999-99';
-                            return mesRef >= ini.substring(0, 7) && mesRef <= fim.substring(0, 7);
-                        }) || temRateio[0];
-                        const pct = rateioVigente.percentual / 100;
-                        valor = valor * pct;
-                        peso = peso * pct;
-                    }
-
-                    meses[p.key] = { valor, peso };
-                    totalValor += valor;
-                    totalPeso += peso;
-                });
-
-                // Nome: usar nome_display do banco comercial (nome || fantasia)
-                const nomeCliente = info?.nome_display || info?.nome || info?.fantasia || '';
-
-                cidadeClienteMap[cidade][cod] = {
-                    codigo: cod,
-                    nome: nomeCliente,
-                    rateio: temRateio ? `${temRateio[0].percentual}%` : '',
-                    centralizada: ehCentralizada ? comprador : '',
-                    meses,
-                    total_valor: totalValor,
-                    total_peso: totalPeso
-                };
-            });
-
-            // === ETAPA 6: Montar resposta final ===
-            const mesesAtivos = periodos.filter(p => p.ativo).length || 1;
-            const cidades = Object.keys(cidadeClienteMap).sort().map(cidade => {
-                const clientes = Object.values(cidadeClienteMap[cidade])
-                    .sort((a, b) => a.nome.localeCompare(b.nome));
-                const totalCidade = clientes.reduce((acc, c) => ({
-                    valor: acc.valor + c.total_valor, peso: acc.peso + c.total_peso
-                }), { valor: 0, peso: 0 });
-                return {
-                    cidade, clientes,
-                    total_valor: totalCidade.valor, total_peso: totalCidade.peso,
-                    media_mensal: totalCidade.valor / mesesAtivos
-                };
-            });
-            const totaisGeral = cidades.reduce((acc, c) => ({
-                valor: acc.valor + c.total_valor, peso: acc.peso + c.total_peso
-            }), { valor: 0, peso: 0 });
-
-            this.faturamentoState.dados = {
-                rep_id: repIdNum,
-                rep_nome: repoInfo.repo_nome,
-                competencia: { repo_inicio: repoInfo.repo_data_inicio, repo_fim: repoInfo.repo_data_fim },
-                meses: periodos.length,
-                meses_ativos: mesesAtivos,
-                periodos, cidades, custosMap,
-                temDadosComerciais,
-                totais: {
-                    valor_financeiro: totaisGeral.valor,
-                    peso_liq: totaisGeral.peso,
-                    media_mensal: totaisGeral.valor / mesesAtivos
-                }
-            };
+            this.faturamentoState.resultados = resultados;
             this.faturamentoState.metrica = document.getElementById('fatMetrica')?.value || 'valor';
 
             const btnExportar = document.getElementById('btnExportarFaturamento');
             if (btnExportar) btnExportar.disabled = false;
 
-            this.renderizarResumoFaturamento();
-            this.renderizarTabelaFaturamento();
+            this.renderizarFaturamentoCompleto();
             this.mostrarEstadoFaturamento('table');
-
-            if (!temDadosComerciais) {
-                this.showNotification('Roteiro carregado. Dados de faturamento indisponíveis (banco comercial).', 'info');
-            }
         } catch (error) {
             console.error('Erro ao buscar faturamento:', error);
             this.showNotification(error.message || 'Erro ao buscar faturamento', 'error');
@@ -22012,227 +21850,252 @@ class App {
         }
     }
 
-    renderizarResumoFaturamento() {
-        const resumoEl = document.getElementById('fatResumo');
-        if (!resumoEl || !this.faturamentoState.dados) return;
+    async _buscarFaturamentoRepositor(repIdNum, periodoInicioVal, periodoFimVal) {
+        const [repoInfo, clientesRoteiro, rateios, custosMap] = await Promise.all([
+            db.getRepositorInfo(repIdNum),
+            db.getClientesDoRepositor(repIdNum),
+            db.getRateiosDoRepositor(repIdNum),
+            db.getCustosRepositorPorMes(repIdNum, periodoInicioVal, periodoFimVal)
+        ]);
 
-        const { totais, cidades, meses_ativos, rep_nome, temDadosComerciais, periodos, custosMap } = this.faturamentoState.dados;
+        if (!repoInfo) return null;
+        if (!clientesRoteiro || clientesRoteiro.length === 0) {
+            return { rep_id: repIdNum, rep_nome: repoInfo.repo_nome, periodos: [], cidades: [],
+                custosMap, temDadosComerciais: false, meses_ativos: 0,
+                totais: { valor_financeiro: 0, peso_liq: 0, media_mensal: 0 } };
+        }
+
+        const [anoIni, mesIni] = periodoInicioVal.split('-').map(Number);
+        const [anoFim, mesFim] = periodoFimVal.split('-').map(Number);
+        const repoInicio = repoInfo.repo_data_inicio ? new Date(repoInfo.repo_data_inicio + 'T00:00:00') : null;
+        const repoFim = repoInfo.repo_data_fim ? new Date(repoInfo.repo_data_fim + 'T00:00:00') : null;
+
+        const periodos = [];
+        let d = new Date(anoIni, mesIni - 1, 1);
+        const limFim = new Date(anoFim, mesFim - 1, 1);
+        while (d <= limFim) {
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const aaaa = String(d.getFullYear());
+            const aa = aaaa.slice(-2);
+            const ultimoDia = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+            const dentroCompetencia = (!repoInicio || ultimoDia >= repoInicio) && (!repoFim || d <= repoFim);
+            periodos.push({ key: `${mm}_${aa}`, label: `${mm}/${aa}`, ativo: dentroCompetencia, mes: mm, ano: aaaa });
+            d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+        }
+
+        const dataInicioStr = `${periodoInicioVal}-01`;
+        const dataFimStr = `${periodoFimVal}-31`;
+
+        const rateioMap = {};
+        rateios.forEach(r => {
+            const cod = String(r.rat_cliente_codigo);
+            if (!rateioMap[cod]) rateioMap[cod] = [];
+            rateioMap[cod].push({ percentual: parseFloat(r.rat_percentual) || 100,
+                vigenciaInicio: r.rat_vigencia_inicio || null, vigenciaFim: r.rat_vigencia_fim || null });
+        });
+
+        const codigosRoteiro = clientesRoteiro.map(c => String(c.rot_cliente_codigo));
+        let centralizadaMap = {};
+        try {
+            const vcDados = await db.getVendasCentralizadas(codigosRoteiro);
+            vcDados.forEach(vc => { centralizadaMap[String(vc.vc_cliente_origem)] = String(vc.vc_cliente_comprador); });
+        } catch (e) { console.warn('Aviso: vendas centralizadas:', e.message); }
+
+        const clientesBuscarFat = new Set();
+        codigosRoteiro.forEach(cod => { clientesBuscarFat.add(centralizadaMap[cod] || cod); });
+        const clientesUnicos = [...new Set([...clientesBuscarFat, ...codigosRoteiro])];
+
+        let vendasIndex = {}, clientesInfoMap = {}, temDadosComerciais = false;
+        try {
+            const [vendas, clientesInfo] = await Promise.all([
+                db.getVendasPorClientes([...clientesBuscarFat], dataInicioStr, dataFimStr),
+                db.getInfoClientesComercial(clientesUnicos)
+            ]);
+            clientesInfo.forEach(c => { clientesInfoMap[String(c.cliente)] = c; });
+            vendas.forEach(v => {
+                const cod = String(v.cliente), emissao = v.emissao;
+                if (!emissao) return;
+                const [ano, mes] = emissao.split('-');
+                const key = `${mes}_${ano.slice(-2)}`;
+                if (!vendasIndex[cod]) vendasIndex[cod] = {};
+                vendasIndex[cod][key] = { valor: parseFloat(v.valor_financeiro) || 0, peso: parseFloat(v.peso_liq) || 0 };
+            });
+            temDadosComerciais = true;
+        } catch (e) { console.warn('Banco comercial indisponível:', e.message); }
+
+        const cidadeClienteMap = {};
+        clientesRoteiro.forEach(cr => {
+            const cod = String(cr.rot_cliente_codigo);
+            const info = clientesInfoMap[cod];
+            const cidade = info?.cidade || cr.cidade || 'SEM CIDADE';
+            if (!cidadeClienteMap[cidade]) cidadeClienteMap[cidade] = {};
+            if (cidadeClienteMap[cidade][cod]) return;
+            const comprador = centralizadaMap[cod], codFat = comprador || cod;
+            const temRateio = rateioMap[cod], ehCentralizada = !!comprador;
+            const meses = {}; let totalValor = 0, totalPeso = 0;
+            periodos.forEach(p => {
+                let valor = vendasIndex[codFat]?.[p.key]?.valor || 0;
+                let peso = vendasIndex[codFat]?.[p.key]?.peso || 0;
+                if (temRateio) {
+                    const mesRef = `${p.ano}-${p.mes}`;
+                    const rv = temRateio.find(r => {
+                        const ini = r.vigenciaInicio ? String(r.vigenciaInicio) : '0';
+                        const fim = r.vigenciaFim ? String(r.vigenciaFim) : '9999-99';
+                        return mesRef >= ini.substring(0, 7) && mesRef <= fim.substring(0, 7);
+                    }) || temRateio[0];
+                    valor *= rv.percentual / 100; peso *= rv.percentual / 100;
+                }
+                meses[p.key] = { valor, peso }; totalValor += valor; totalPeso += peso;
+            });
+            cidadeClienteMap[cidade][cod] = {
+                codigo: cod, nome: info?.nome_display || info?.nome || info?.fantasia || '',
+                rateio: temRateio ? `${temRateio[0].percentual}%` : '',
+                centralizada: ehCentralizada ? comprador : '', meses, total_valor: totalValor, total_peso: totalPeso
+            };
+        });
+
+        const mesesAtivos = periodos.filter(p => p.ativo).length || 1;
+        const cidades = Object.keys(cidadeClienteMap).sort().map(cidade => {
+            const clientes = Object.values(cidadeClienteMap[cidade]).sort((a, b) => a.nome.localeCompare(b.nome));
+            const t = clientes.reduce((acc, c) => ({ valor: acc.valor + c.total_valor, peso: acc.peso + c.total_peso }), { valor: 0, peso: 0 });
+            return { cidade, clientes, total_valor: t.valor, total_peso: t.peso, media_mensal: t.valor / mesesAtivos };
+        });
+        const totaisGeral = cidades.reduce((acc, c) => ({ valor: acc.valor + c.total_valor, peso: acc.peso + c.total_peso }), { valor: 0, peso: 0 });
+
+        return {
+            rep_id: repIdNum, rep_nome: repoInfo.repo_nome, meses: periodos.length,
+            meses_ativos: mesesAtivos, periodos, cidades, custosMap, temDadosComerciais,
+            totais: { valor_financeiro: totaisGeral.valor, peso_liq: totaisGeral.peso, media_mensal: totaisGeral.valor / mesesAtivos }
+        };
+    }
+
+    _gerarResumoHTML(dados) {
+        const { totais, cidades, meses_ativos, rep_nome, temDadosComerciais, periodos, custosMap } = dados;
         const totalClientes = cidades.reduce((sum, c) => sum + c.clientes.length, 0);
         const mediaPeso = totais.peso_liq / (meses_ativos || 1);
         const mediaValor = totais.media_mensal;
-
-        // Calcular custo total e médio a partir do custosMap
         const custoTotal = Object.values(custosMap || {}).reduce((s, v) => s + v, 0);
         const custoMedio = meses_ativos > 0 ? custoTotal / meses_ativos : 0;
-        const temCustos = custoTotal > 0;
-
-        const periodoLabel = periodos && periodos.length > 0
-            ? `${periodos[0].label} a ${periodos[periodos.length - 1].label}`
-            : '';
+        const periodoLabel = periodos?.length > 0 ? `${periodos[0].label} a ${periodos[periodos.length - 1].label}` : '';
 
         let custoCards = '';
-        if (temCustos && temDadosComerciais) {
+        if (custoTotal > 0 && temDadosComerciais) {
             const pctCusto = mediaValor > 0 ? (custoMedio / mediaValor * 100) : 0;
             const custoPorKg = mediaPeso > 0 ? (custoMedio / mediaPeso) : 0;
             custoCards = `
-            <div class="fat-resumo-card">
-                <div class="fat-resumo-label">Custo Médio</div>
-                <div class="fat-resumo-valor">${this.formatarMoeda(custoMedio)}</div>
-            </div>
-            <div class="fat-resumo-card">
-                <div class="fat-resumo-label">Custo / Faturamento</div>
-                <div class="fat-resumo-valor">${pctCusto.toFixed(2)}%</div>
-            </div>
-            <div class="fat-resumo-card">
-                <div class="fat-resumo-label">Custo / Peso</div>
-                <div class="fat-resumo-valor">R$ ${custoPorKg.toFixed(2)}/kg</div>
-            </div>`;
+            <div class="fat-resumo-card"><div class="fat-resumo-label">Custo Médio</div><div class="fat-resumo-valor">${this.formatarMoeda(custoMedio)}</div></div>
+            <div class="fat-resumo-card"><div class="fat-resumo-label">Custo / Faturamento</div><div class="fat-resumo-valor">${pctCusto.toFixed(2)}%</div></div>
+            <div class="fat-resumo-card"><div class="fat-resumo-label">Custo / Peso</div><div class="fat-resumo-valor">R$ ${custoPorKg.toFixed(2)}/kg</div></div>`;
         }
 
-        resumoEl.innerHTML = `
-            <div class="fat-resumo-card">
-                <div class="fat-resumo-label">Repositor</div>
-                <div class="fat-resumo-valor" style="font-size:1rem;">${this.escaparHTMLFat(rep_nome || '')}</div>
-                <div style="font-size:0.7rem;color:var(--gray-400);">${periodoLabel}</div>
-            </div>
-            <div class="fat-resumo-card">
-                <div class="fat-resumo-label">Cidades / Clientes</div>
-                <div class="fat-resumo-valor">${cidades.length} / ${totalClientes}</div>
-            </div>
+        return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:16px 0 8px;">
+            <div class="fat-resumo-card"><div class="fat-resumo-label">Repositor</div><div class="fat-resumo-valor" style="font-size:1rem;">${this.escaparHTMLFat(rep_nome || '')}</div><div style="font-size:0.7rem;color:var(--gray-400);">${periodoLabel}</div></div>
+            <div class="fat-resumo-card"><div class="fat-resumo-label">Cidades / Clientes</div><div class="fat-resumo-valor">${cidades.length} / ${totalClientes}</div></div>
             ${temDadosComerciais ? `
-            <div class="fat-resumo-card">
-                <div class="fat-resumo-label">Total Faturamento</div>
-                <div class="fat-resumo-valor">${this.formatarMoeda(totais.valor_financeiro)}</div>
-            </div>
-            <div class="fat-resumo-card">
-                <div class="fat-resumo-label">Peso Liq. Total</div>
-                <div class="fat-resumo-valor">${this.formatarPeso(totais.peso_liq)}</div>
-            </div>
-            <div class="fat-resumo-card">
-                <div class="fat-resumo-label">Média Mensal</div>
-                <div class="fat-resumo-valor">${this.formatarMoeda(mediaValor)}</div>
-                <div class="fat-resumo-valor" style="font-size:1rem;margin-top:2px;">${this.formatarPeso(mediaPeso)}</div>
-            </div>
-            ${custoCards}
-            ` : `
-            <div class="fat-resumo-card">
-                <div class="fat-resumo-label">Faturamento</div>
-                <div class="fat-resumo-valor" style="font-size:0.85rem;color:var(--gray-400);">Dados comerciais indisponíveis</div>
-            </div>
-            `}
-        `;
+            <div class="fat-resumo-card"><div class="fat-resumo-label">Total Faturamento</div><div class="fat-resumo-valor">${this.formatarMoeda(totais.valor_financeiro)}</div></div>
+            <div class="fat-resumo-card"><div class="fat-resumo-label">Peso Liq. Total</div><div class="fat-resumo-valor">${this.formatarPeso(totais.peso_liq)}</div></div>
+            <div class="fat-resumo-card"><div class="fat-resumo-label">Média Mensal</div><div class="fat-resumo-valor">${this.formatarMoeda(mediaValor)}</div><div class="fat-resumo-valor" style="font-size:1rem;margin-top:2px;">${this.formatarPeso(mediaPeso)}</div></div>
+            ${custoCards}` : ''}
+        </div>`;
     }
 
-    renderizarTabelaFaturamento() {
-        const dados = this.faturamentoState.dados;
-        if (!dados) return;
+    _gerarTabelaBodyHTML(dados, isValor) {
+        const { periodos, cidades, totais, meses_ativos, custosMap } = dados;
+        const numAtivos = meses_ativos || periodos.length || 1;
+        let bodyHTML = '';
 
-        const { periodos, cidades, totais, meses_ativos } = dados;
+        cidades.forEach(cidade => {
+            const cidadeTotal = isValor ? cidade.total_valor : cidade.total_peso;
+            bodyHTML += '<tr class="fat-row-cidade">';
+            bodyHTML += `<td>${this.escaparHTMLFat(cidade.cidade)}</td><td></td><td></td>`;
+            periodos.forEach(p => {
+                let s = 0; cidade.clientes.forEach(cl => { s += (isValor ? cl.meses[p.key]?.valor : cl.meses[p.key]?.peso) || 0; });
+                const st = p.ativo === false ? ' style="background:#eef0f3;"' : '';
+                bodyHTML += `<td${st}>${this.formatarValorFat(s, isValor)}</td>`;
+            });
+            bodyHTML += `<td>${this.formatarValorFat(cidadeTotal, isValor)}</td><td>${this.formatarValorFat(cidadeTotal / numAtivos, isValor)}</td></tr>`;
+
+            cidade.clientes.forEach(cl => {
+                const clT = isValor ? cl.total_valor : cl.total_peso;
+                bodyHTML += '<tr class="fat-row-cliente">';
+                bodyHTML += `<td>${this.escaparHTMLFat(cl.codigo)} - ${this.escaparHTMLFat(cl.nome)}</td>`;
+                bodyHTML += cl.rateio ? `<td style="text-align:center;color:#b45309;font-size:0.75rem;font-weight:600;">${this.escaparHTMLFat(cl.rateio)}</td>` : '<td></td>';
+                bodyHTML += cl.centralizada ? `<td style="text-align:center;color:#7c3aed;font-size:0.75rem;font-weight:600;" title="Comprador: ${this.escaparHTMLFat(cl.centralizada)}">C</td>` : '<td></td>';
+                periodos.forEach(p => {
+                    const v = (isValor ? cl.meses[p.key]?.valor : cl.meses[p.key]?.peso) || 0;
+                    const inativo = p.ativo === false;
+                    bodyHTML += `<td${v === 0 || inativo ? ' class="fat-valor-zero"' : ''}${inativo ? ' style="background:#f9fafb;"' : ''}>${this.formatarValorFat(v, isValor)}</td>`;
+                });
+                bodyHTML += `<td>${this.formatarValorFat(clT, isValor)}</td><td>${this.formatarValorFat(clT / numAtivos, isValor)}</td></tr>`;
+            });
+        });
+
+        const totalGeral = isValor ? totais.valor_financeiro : totais.peso_liq;
+        const mediaGeral = totalGeral / numAtivos;
+        bodyHTML += '<tr class="fat-row-total"><td>TOTAL</td><td></td><td></td>';
+        periodos.forEach(p => {
+            let s = 0; cidades.forEach(ci => { ci.clientes.forEach(cl => { s += (isValor ? cl.meses[p.key]?.valor : cl.meses[p.key]?.peso) || 0; }); });
+            bodyHTML += `<td>${this.formatarValorFat(s, isValor)}</td>`;
+        });
+        bodyHTML += `<td>${this.formatarValorFat(totalGeral, isValor)}</td><td>${this.formatarValorFat(mediaGeral, isValor)}</td></tr>`;
+
+        // Custos
+        const custos = custosMap || {};
+        if (Object.values(custos).some(v => v > 0)) {
+            let ct = 0;
+            bodyHTML += '<tr class="fat-row-custo"><td>CUSTO</td><td></td><td></td>';
+            periodos.forEach(p => { const c = custos[p.key] || 0; ct += c; bodyHTML += `<td>${c > 0 ? this.formatarValorFat(c, true) : '-'}</td>`; });
+            const cm = ct / numAtivos;
+            bodyHTML += `<td>${this.formatarValorFat(ct, true)}</td><td>${this.formatarValorFat(cm, true)}</td></tr>`;
+
+            bodyHTML += '<tr class="fat-row-custo">';
+            if (isValor) {
+                bodyHTML += '<td>CUSTO %</td><td></td><td></td>';
+                let ctA = 0, fA = 0;
+                periodos.forEach(p => { const c = custos[p.key] || 0; let f = 0; cidades.forEach(ci => { ci.clientes.forEach(cl => { f += cl.meses[p.key]?.valor || 0; }); }); ctA += c; fA += f; bodyHTML += `<td>${f > 0 ? (c / f * 100).toFixed(2) + '%' : '-'}</td>`; });
+                bodyHTML += `<td>${fA > 0 ? (ctA / fA * 100).toFixed(2) + '%' : '-'}</td><td>${mediaGeral > 0 ? (cm / mediaGeral * 100).toFixed(2) + '%' : '-'}</td>`;
+            } else {
+                bodyHTML += '<td>CUSTO / KG</td><td></td><td></td>';
+                let ctA = 0, pA = 0;
+                periodos.forEach(p => { const c = custos[p.key] || 0; let pe = 0; cidades.forEach(ci => { ci.clientes.forEach(cl => { pe += cl.meses[p.key]?.peso || 0; }); }); ctA += c; pA += pe; bodyHTML += `<td>${pe > 0 ? 'R$ ' + (c / pe).toFixed(2) : '-'}</td>`; });
+                bodyHTML += `<td>${pA > 0 ? 'R$ ' + (ctA / pA).toFixed(2) : '-'}</td><td>${mediaGeral > 0 ? 'R$ ' + (cm / mediaGeral).toFixed(2) : '-'}</td>`;
+            }
+            bodyHTML += '</tr>';
+        }
+        return bodyHTML;
+    }
+
+    renderizarFaturamentoCompleto() {
+        const resultados = this.faturamentoState.resultados;
+        if (!resultados?.length) return;
+
         const metrica = this.faturamentoState.metrica;
         const isValor = metrica === 'valor';
+        const container = document.getElementById('fatTableContainer');
+        if (!container) return;
 
-        const thead = document.getElementById('fatTableHead');
-        const tbody = document.getElementById('fatTableBody');
-        if (!thead || !tbody) return;
-
-        const numAtivos = meses_ativos || periodos.length || 1;
-
-        // Header
+        // Usar períodos do primeiro resultado para o header
+        const periodos = resultados[0].periodos;
         let headerHTML = '<tr><th>Cliente</th><th style="text-align:center;">Rat.</th><th style="text-align:center;">Centr.</th>';
         periodos.forEach(p => {
             const inativo = p.ativo === false ? ' style="color:#bbb;background:#f3f4f6;"' : '';
             headerHTML += `<th${inativo}>${p.label}</th>`;
         });
         headerHTML += '<th>Total</th><th>Média</th></tr>';
-        thead.innerHTML = headerHTML;
+        const totalCols = 3 + periodos.length + 2;
 
-        // Body
-        let bodyHTML = '';
-        const colSpanExtra = 2; // colunas Rat. e Centr.
-
-        cidades.forEach(cidade => {
-            const cidadeTotal = isValor ? cidade.total_valor : cidade.total_peso;
-            const cidadeMedia = cidadeTotal / numAtivos;
-
-            bodyHTML += '<tr class="fat-row-cidade">';
-            bodyHTML += `<td>${this.escaparHTMLFat(cidade.cidade)}</td>`;
-            bodyHTML += '<td></td><td></td>';
-            periodos.forEach(p => {
-                let somaPerMes = 0;
-                cidade.clientes.forEach(cl => {
-                    const m = cl.meses[p.key];
-                    somaPerMes += m ? (isValor ? m.valor : m.peso) : 0;
-                });
-                const inativo = p.ativo === false ? ' style="background:#eef0f3;"' : '';
-                bodyHTML += `<td${inativo}>${this.formatarValorFat(somaPerMes, isValor)}</td>`;
-            });
-            bodyHTML += `<td>${this.formatarValorFat(cidadeTotal, isValor)}</td>`;
-            bodyHTML += `<td>${this.formatarValorFat(cidadeMedia, isValor)}</td>`;
-            bodyHTML += '</tr>';
-
-            // Linhas dos clientes
-            cidade.clientes.forEach(cl => {
-                const clTotal = isValor ? cl.total_valor : cl.total_peso;
-                const clMedia = clTotal / numAtivos;
-
-                bodyHTML += '<tr class="fat-row-cliente">';
-                bodyHTML += `<td>${this.escaparHTMLFat(cl.codigo)} - ${this.escaparHTMLFat(cl.nome)}</td>`;
-                // Coluna Rateio
-                if (cl.rateio) {
-                    bodyHTML += `<td style="text-align:center;color:#b45309;font-size:0.75rem;font-weight:600;">${this.escaparHTMLFat(cl.rateio)}</td>`;
-                } else {
-                    bodyHTML += '<td></td>';
-                }
-                // Coluna Centralização
-                if (cl.centralizada) {
-                    bodyHTML += `<td style="text-align:center;color:#7c3aed;font-size:0.75rem;font-weight:600;" title="Comprador: ${this.escaparHTMLFat(cl.centralizada)}">C</td>`;
-                } else {
-                    bodyHTML += '<td></td>';
-                }
-                periodos.forEach(p => {
-                    const m = cl.meses[p.key];
-                    const val = m ? (isValor ? m.valor : m.peso) : 0;
-                    const inativo = p.ativo === false;
-                    const cls = (val === 0 || inativo) ? ' class="fat-valor-zero"' : '';
-                    const sty = inativo ? ' style="background:#f9fafb;"' : '';
-                    bodyHTML += `<td${cls}${sty}>${this.formatarValorFat(val, isValor)}</td>`;
-                });
-                bodyHTML += `<td>${this.formatarValorFat(clTotal, isValor)}</td>`;
-                bodyHTML += `<td>${this.formatarValorFat(clMedia, isValor)}</td>`;
-                bodyHTML += '</tr>';
-            });
+        let html = '';
+        resultados.forEach(dados => {
+            // Cards de resumo como separador
+            html += this._gerarResumoHTML(dados);
+            // Tabela do repositor
+            html += `<div style="overflow-x:auto;margin-bottom:8px;"><table id="fatTable" class="data-table" style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                <thead>${headerHTML}</thead>
+                <tbody>${this._gerarTabelaBodyHTML(dados, isValor)}</tbody>
+            </table></div>`;
         });
 
-        // Linha total geral
-        const totalGeral = isValor ? totais.valor_financeiro : totais.peso_liq;
-        const mediaGeral = totalGeral / numAtivos;
-
-        bodyHTML += '<tr class="fat-row-total">';
-        bodyHTML += '<td>TOTAL GERAL</td>';
-        bodyHTML += '<td></td><td></td>';
-        periodos.forEach(p => {
-            let somaPerMes = 0;
-            cidades.forEach(cidade => {
-                cidade.clientes.forEach(cl => {
-                    const m = cl.meses[p.key];
-                    somaPerMes += m ? (isValor ? m.valor : m.peso) : 0;
-                });
-            });
-            bodyHTML += `<td>${this.formatarValorFat(somaPerMes, isValor)}</td>`;
-        });
-        bodyHTML += `<td>${this.formatarValorFat(totalGeral, isValor)}</td>`;
-        bodyHTML += `<td>${this.formatarValorFat(mediaGeral, isValor)}</td>`;
-        bodyHTML += '</tr>';
-
-        // Linha CUSTO (valores do banco por mês)
-        const custos = dados.custosMap || {};
-        const temCustos = Object.values(custos).some(v => v > 0);
-        if (temCustos) {
-            // Linha com valor do custo
-            let custoTotal = 0;
-            bodyHTML += '<tr class="fat-row-custo">';
-            bodyHTML += '<td>CUSTO</td><td></td><td></td>';
-            periodos.forEach(p => {
-                const c = custos[p.key] || 0;
-                custoTotal += c;
-                bodyHTML += `<td>${c > 0 ? this.formatarValorFat(c, true) : '-'}</td>`;
-            });
-            const custoMedio = custoTotal / numAtivos;
-            bodyHTML += `<td>${this.formatarValorFat(custoTotal, true)}</td>`;
-            bodyHTML += `<td>${this.formatarValorFat(custoMedio, true)}</td>`;
-            bodyHTML += '</tr>';
-
-            // Linha % ou R$/kg
-            bodyHTML += '<tr class="fat-row-custo">';
-            if (isValor) {
-                bodyHTML += '<td>CUSTO %</td><td></td><td></td>';
-                let custoTotalAcum = 0, fatTotalAcum = 0;
-                periodos.forEach(p => {
-                    const c = custos[p.key] || 0;
-                    let fat = 0;
-                    cidades.forEach(cidade => { cidade.clientes.forEach(cl => { fat += cl.meses[p.key]?.valor || 0; }); });
-                    custoTotalAcum += c; fatTotalAcum += fat;
-                    bodyHTML += `<td>${fat > 0 ? (c / fat * 100).toFixed(2) + '%' : '-'}</td>`;
-                });
-                bodyHTML += `<td>${fatTotalAcum > 0 ? (custoTotalAcum / fatTotalAcum * 100).toFixed(2) + '%' : '-'}</td>`;
-                bodyHTML += `<td>${mediaGeral > 0 ? (custoMedio / mediaGeral * 100).toFixed(2) + '%' : '-'}</td>`;
-            } else {
-                bodyHTML += '<td>CUSTO / KG</td><td></td><td></td>';
-                let custoTotalAcum = 0, pesoTotalAcum = 0;
-                periodos.forEach(p => {
-                    const c = custos[p.key] || 0;
-                    let peso = 0;
-                    cidades.forEach(cidade => { cidade.clientes.forEach(cl => { peso += cl.meses[p.key]?.peso || 0; }); });
-                    custoTotalAcum += c; pesoTotalAcum += peso;
-                    bodyHTML += `<td>${peso > 0 ? 'R$ ' + (c / peso).toFixed(2) : '-'}</td>`;
-                });
-                bodyHTML += `<td>${pesoTotalAcum > 0 ? 'R$ ' + (custoTotalAcum / pesoTotalAcum).toFixed(2) : '-'}</td>`;
-                bodyHTML += `<td>${mediaGeral > 0 ? 'R$ ' + (custoMedio / mediaGeral).toFixed(2) : '-'}</td>`;
-            }
-            bodyHTML += '</tr>';
-        }
-
-        tbody.innerHTML = bodyHTML;
+        container.innerHTML = html;
     }
 
     formatarValorFat(val, isValor) {
@@ -22259,83 +22122,91 @@ class App {
     }
 
     exportarFaturamento() {
-        const dados = this.faturamentoState?.dados;
-        if (!dados) return;
+        const resultados = this.faturamentoState?.resultados;
+        if (!resultados?.length) return;
 
         try {
-            const { periodos, cidades, totais } = dados;
             const metrica = this.faturamentoState.metrica;
             const isValor = metrica === 'valor';
-            const numMeses = periodos.length;
-
-            // Construir dados para XLSX
             const rows = [];
 
-            // Header
-            const header = ['Cliente', 'Rateio', 'Centralização'];
-            periodos.forEach(p => header.push(p.label));
-            header.push('Total', 'Média');
-            rows.push(header);
+            resultados.forEach((dados, idx) => {
+                const { periodos, cidades, totais, rep_nome, rep_id, meses_ativos, custosMap } = dados;
+                const numAtivos = meses_ativos || periodos.length || 1;
 
-            cidades.forEach(cidade => {
-                // Linha cidade
-                const cidadeRow = [cidade.cidade, '', ''];
+                // Separador entre repositores
+                if (idx > 0) rows.push([]);
+
+                // Header do repositor
+                rows.push([`Repositor: ${rep_nome || rep_id}`]);
+                const header = ['Cliente', 'Rateio', 'Centralização'];
+                periodos.forEach(p => header.push(p.label));
+                header.push('Total', 'Média');
+                rows.push(header);
+
+                cidades.forEach(cidade => {
+                    const cidadeRow = [cidade.cidade, '', ''];
+                    periodos.forEach(p => {
+                        let soma = 0;
+                        cidade.clientes.forEach(cl => {
+                            const m = cl.meses[p.key];
+                            soma += m ? (isValor ? m.valor : m.peso) : 0;
+                        });
+                        cidadeRow.push(soma);
+                    });
+                    const cidadeTotal = isValor ? cidade.total_valor : cidade.total_peso;
+                    cidadeRow.push(cidadeTotal, cidadeTotal / numAtivos);
+                    rows.push(cidadeRow);
+
+                    cidade.clientes.forEach(cl => {
+                        const row = [`  ${cl.codigo} - ${cl.nome}`, cl.rateio || '', cl.centralizada ? 'Sim' : ''];
+                        periodos.forEach(p => {
+                            const m = cl.meses[p.key];
+                            row.push(m ? (isValor ? m.valor : m.peso) : 0);
+                        });
+                        const clTotal = isValor ? cl.total_valor : cl.total_peso;
+                        row.push(clTotal, clTotal / numAtivos);
+                        rows.push(row);
+                    });
+                });
+
+                // Total do repositor
+                const totalGeral = isValor ? totais.valor_financeiro : totais.peso_liq;
+                const totalRow = ['TOTAL', '', ''];
                 periodos.forEach(p => {
                     let soma = 0;
-                    cidade.clientes.forEach(cl => {
-                        const m = cl.meses[p.key];
-                        soma += m ? (isValor ? m.valor : m.peso) : 0;
-                    });
-                    cidadeRow.push(soma);
+                    cidades.forEach(ci => { ci.clientes.forEach(cl => { soma += (isValor ? cl.meses[p.key]?.valor : cl.meses[p.key]?.peso) || 0; }); });
+                    totalRow.push(soma);
                 });
-                const cidadeTotal = isValor ? cidade.total_valor : cidade.total_peso;
-                cidadeRow.push(cidadeTotal, cidadeTotal / numMeses);
-                rows.push(cidadeRow);
+                totalRow.push(totalGeral, totalGeral / numAtivos);
+                rows.push(totalRow);
 
-                // Linhas clientes
-                cidade.clientes.forEach(cl => {
-                    const row = [`  ${cl.codigo} - ${cl.nome}`, cl.rateio || '', cl.centralizada ? 'Sim' : ''];
-                    periodos.forEach(p => {
-                        const m = cl.meses[p.key];
-                        row.push(m ? (isValor ? m.valor : m.peso) : 0);
-                    });
-                    const clTotal = isValor ? cl.total_valor : cl.total_peso;
-                    row.push(clTotal, clTotal / numMeses);
-                    rows.push(row);
-                });
+                // Custos
+                const custos = custosMap || {};
+                if (Object.values(custos).some(v => v > 0)) {
+                    let ct = 0;
+                    const custoRow = ['CUSTO', '', ''];
+                    periodos.forEach(p => { const c = custos[p.key] || 0; ct += c; custoRow.push(c); });
+                    custoRow.push(ct, ct / numAtivos);
+                    rows.push(custoRow);
+                }
             });
 
-            // Total geral
-            const totalRow = ['TOTAL GERAL', '', ''];
-            periodos.forEach(p => {
-                let soma = 0;
-                cidades.forEach(cidade => {
-                    cidade.clientes.forEach(cl => {
-                        const m = cl.meses[p.key];
-                        soma += m ? (isValor ? m.valor : m.peso) : 0;
-                    });
-                });
-                totalRow.push(soma);
-            });
-            const totalGeral = isValor ? totais.valor_financeiro : totais.peso_liq;
-            totalRow.push(totalGeral, totalGeral / numMeses);
-            rows.push(totalRow);
-
-            // Gerar XLSX se disponível
+            // Gerar arquivo
+            const fileLabel = resultados.length === 1 ? `rep${resultados[0].rep_id}` : 'supervisor';
             if (typeof XLSX !== 'undefined') {
                 const ws = XLSX.utils.aoa_to_sheet(rows);
                 const wb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb, ws, 'Faturamento');
-                XLSX.writeFile(wb, `faturamento_rep${dados.rep_id}_${numMeses}meses.xlsx`);
+                XLSX.writeFile(wb, `faturamento_${fileLabel}.xlsx`);
                 this.showNotification('Exportado com sucesso!', 'success');
             } else {
-                // Fallback CSV
                 const csv = rows.map(r => r.map(c => typeof c === 'string' ? `"${c}"` : c).join(';')).join('\n');
                 const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `faturamento_rep${dados.rep_id}_${numMeses}meses.csv`;
+                a.download = `faturamento_${fileLabel}.csv`;
                 a.click();
                 URL.revokeObjectURL(url);
                 this.showNotification('Exportado como CSV!', 'success');
