@@ -3555,6 +3555,7 @@ class TursoService {
       // Análises
       { id: 'analise-performance', titulo: 'Análise de Visitas', categoria: 'analises', icone: '📊', ordem: 40 },
       { id: 'performance-faturamento', titulo: 'Faturamento', categoria: 'analises', icone: '💰', ordem: 41 },
+      { id: 'performance-historico', titulo: 'Histórico', categoria: 'analises', icone: '📋', ordem: 42 },
       // Custos
       { id: 'custos-grid', titulo: 'Grid de Custos', categoria: 'custos', icone: '💲', ordem: 50 },
       // Configurações

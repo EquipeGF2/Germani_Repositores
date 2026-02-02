@@ -7249,6 +7249,9 @@ export const pages = {
         return `
             <div class="card">
                 <div class="card-body" style="padding-top: 20px;">
+                    <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:10px 14px; margin-bottom:14px; font-size:0.82rem; color:#1e40af; line-height:1.4;">
+                        Os dados de faturamento são calculados com base no <strong>roteiro atual</strong> do repositor. Para consultar o histórico consolidado, acesse <a href="#" onclick="event.preventDefault(); app.navigateTo('performance-historico');" style="color:#1d4ed8; text-decoration:underline; font-weight:600;">Performance Histórico</a>.
+                    </div>
                     <div class="fat-filters" style="margin-bottom: 18px; background:#f9fafb; padding:14px 16px; border:1px solid #e5e7eb; border-radius:12px; display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px; align-items:end;">
                         <div class="filter-group">
                             <label for="fatSupervisor">Supervisor</label>
@@ -7383,6 +7386,146 @@ export const pages = {
                 }
             </style>
         `;
+    },
+
+    'performance-historico': async () => {
+        const repositores = await db.getAllRepositors();
+        const repositorOptions = repositores
+            .map(repo => `<option value="${repo.repo_cod}" data-supervisor="${repo.rep_supervisor || ''}">${repo.repo_cod} - ${repo.repo_nome}</option>`)
+            .join('');
+
+        const supervisores = [...new Set(repositores.map(r => r.rep_supervisor).filter(Boolean))].sort();
+        const supervisorOptions = supervisores
+            .map(sup => `<option value="${sup}">${sup}</option>`)
+            .join('');
+
+        const hoje = new Date();
+        const fimMes = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+        const iniDate = new Date(hoje.getFullYear() - 1, hoje.getMonth(), 1);
+        const iniMes = `${iniDate.getFullYear()}-${String(iniDate.getMonth() + 1).padStart(2, '0')}`;
+
+        return `
+            <div class="card">
+                <div class="card-body" style="padding-top: 20px;">
+                    <div style="background:#fef3c7; border:1px solid #fbbf24; border-radius:8px; padding:10px 14px; margin-bottom:14px; font-size:0.82rem; color:#92400e; line-height:1.4;">
+                        Dados consolidados do <strong>histórico real</strong> de cada repositor. Os totais são registrados automaticamente ao consultar o faturamento e refletem o retrato fiel de cada competência.
+                    </div>
+                    <div class="hist-filters" style="margin-bottom: 18px; background:#f9fafb; padding:14px 16px; border:1px solid #e5e7eb; border-radius:12px; display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px; align-items:end;">
+                        <div class="filter-group">
+                            <label for="histSupervisor">Supervisor</label>
+                            <select id="histSupervisor">
+                                <option value="">Todos</option>
+                                ${supervisorOptions}
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="histRepositor">Repositor</label>
+                            <select id="histRepositor">
+                                <option value="">Todos do supervisor</option>
+                                ${repositorOptions}
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="histPeriodoInicio">Período Início</label>
+                            <input type="month" id="histPeriodoInicio" value="${iniMes}">
+                        </div>
+                        <div class="filter-group">
+                            <label for="histPeriodoFim">Período Fim</label>
+                            <input type="month" id="histPeriodoFim" value="${fimMes}">
+                        </div>
+                        <div class="filter-group" style="display:flex; gap:8px;">
+                            <button id="btnBuscarHistorico" class="btn btn-primary" style="flex:1;">Buscar</button>
+                            <button id="btnExportarHistorico" class="btn btn-secondary" style="flex:1;" disabled>Exportar</button>
+                        </div>
+                    </div>
+
+                    <div id="histLoading" style="display:none; text-align:center; padding:3rem;">
+                        <div style="font-size:2rem;">Carregando...</div>
+                        <p style="color:var(--gray-500);">Buscando dados históricos...</p>
+                    </div>
+
+                    <div id="histEmpty" style="display:none; text-align:center; padding:3rem; color:var(--gray-500);">
+                        <div style="font-size:2rem;">Sem dados</div>
+                        <p>Selecione um repositor ou supervisor e clique em Buscar.</p>
+                    </div>
+
+                    <div id="histTableContainer" style="display:none; overflow-x:auto;">
+                    </div>
+                </div>
+            </div>
+
+            <style>
+                .hist-table th, .hist-table td {
+                    padding: 6px 10px;
+                    text-align: right;
+                    border-bottom: 1px solid #e5e7eb;
+                    white-space: nowrap;
+                }
+                .hist-table th {
+                    background: #f9fafb;
+                    font-weight: 600;
+                    position: sticky;
+                    top: 0;
+                    z-index: 2;
+                }
+                .hist-table td:first-child,
+                .hist-table th:first-child {
+                    text-align: left;
+                    position: sticky;
+                    left: 0;
+                    background: white;
+                    z-index: 1;
+                    min-width: 200px;
+                }
+                .hist-table th:first-child {
+                    background: #f9fafb;
+                    z-index: 3;
+                }
+                .hist-row-repo td {
+                    background: #eef2ff !important;
+                    font-weight: 700;
+                    color: #3730a3;
+                    border-top: 2px solid #c7d2fe;
+                }
+                .hist-row-repo td:first-child {
+                    background: #eef2ff !important;
+                }
+                .hist-row-total td {
+                    background: #f0fdf4 !important;
+                    font-weight: 700;
+                    color: #166534;
+                    border-top: 2px solid #86efac;
+                }
+                .hist-row-total td:first-child {
+                    background: #f0fdf4 !important;
+                }
+                .hist-row-custo td {
+                    background: #fef3c7 !important;
+                    font-weight: 600;
+                    color: #92400e;
+                }
+                .hist-row-custo td:first-child {
+                    background: #fef3c7 !important;
+                }
+                .hist-resumo-card {
+                    background: white;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 10px;
+                    padding: 14px 16px;
+                    text-align: center;
+                }
+                .hist-resumo-card .hist-resumo-label {
+                    font-size: 0.75rem;
+                    color: var(--gray-500);
+                    margin-bottom: 4px;
+                }
+                .hist-resumo-card .hist-resumo-valor {
+                    font-size: 1.3rem;
+                    font-weight: 700;
+                    color: var(--gray-800);
+                }
+            </style>
+        `;
     }
 };
 
@@ -7418,6 +7561,7 @@ export const pageTitles = {
     'consulta-despesas': 'Consulta de Despesas',
     'analise-performance': 'Visitas',
     'performance-faturamento': 'Faturamento',
+    'performance-historico': 'Histórico',
     'cadastro-espacos': 'Compra de Espaço',
     'consulta-espacos': 'Consulta de Espaços'
 };
