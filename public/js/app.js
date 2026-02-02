@@ -21754,6 +21754,18 @@ class App {
                 selectMetrica.onchange = () => {
                     this.faturamentoState.metrica = selectMetrica.value;
                     if (this.faturamentoState.dados) {
+                        this.renderizarResumoFaturamento();
+                        this.renderizarTabelaFaturamento();
+                    }
+                };
+            }
+
+            // Mudança de custo - re-renderiza resumo
+            const inputCusto = document.getElementById('fatCusto');
+            if (inputCusto) {
+                inputCusto.oninput = () => {
+                    if (this.faturamentoState.dados) {
+                        this.renderizarResumoFaturamento();
                         this.renderizarTabelaFaturamento();
                     }
                 };
@@ -22016,6 +22028,9 @@ class App {
 
         const { totais, cidades, meses_ativos, rep_nome, competencia, temDadosComerciais, periodos } = this.faturamentoState.dados;
         const totalClientes = cidades.reduce((sum, c) => sum + c.clientes.length, 0);
+        const custo = parseFloat(document.getElementById('fatCusto')?.value) || 0;
+        const mediaPeso = totais.peso_liq / (meses_ativos || 1);
+        const mediaValor = totais.media_mensal;
 
         let compLabel = '';
         if (competencia) {
@@ -22031,6 +22046,21 @@ class App {
         const periodoLabel = periodos && periodos.length > 0
             ? `${periodos[0].label} a ${periodos[periodos.length - 1].label}`
             : '';
+
+        let custoCard = '';
+        if (custo > 0 && temDadosComerciais) {
+            const pctCusto = mediaValor > 0 ? (custo / mediaValor * 100) : 0;
+            const custoPorKg = mediaPeso > 0 ? (custo / mediaPeso) : 0;
+            custoCard = `
+            <div class="fat-resumo-card">
+                <div class="fat-resumo-label">Custo / Faturamento</div>
+                <div class="fat-resumo-valor">${pctCusto.toFixed(2)}%</div>
+            </div>
+            <div class="fat-resumo-card">
+                <div class="fat-resumo-label">Custo / Peso</div>
+                <div class="fat-resumo-valor">R$ ${custoPorKg.toFixed(2)}/kg</div>
+            </div>`;
+        }
 
         resumoEl.innerHTML = `
             <div class="fat-resumo-card">
@@ -22053,9 +22083,10 @@ class App {
             </div>
             <div class="fat-resumo-card">
                 <div class="fat-resumo-label">Média Mensal</div>
-                <div class="fat-resumo-valor">${this.formatarMoeda(totais.media_mensal)}</div>
-                <div style="font-size:0.75rem;color:var(--gray-500);margin-top:2px;">${this.formatarPeso(totais.peso_liq / (meses_ativos || 1))}</div>
+                <div class="fat-resumo-valor">${this.formatarMoeda(mediaValor)}</div>
+                <div class="fat-resumo-valor" style="font-size:1rem;margin-top:2px;">${this.formatarPeso(mediaPeso)}</div>
             </div>
+            ${custoCard}
             ` : `
             <div class="fat-resumo-card">
                 <div class="fat-resumo-label">Faturamento</div>
@@ -22166,6 +22197,48 @@ class App {
         bodyHTML += `<td>${this.formatarValorFat(totalGeral, isValor)}</td>`;
         bodyHTML += `<td>${this.formatarValorFat(mediaGeral, isValor)}</td>`;
         bodyHTML += '</tr>';
+
+        // Linha de custo (se informado)
+        const custo = parseFloat(document.getElementById('fatCusto')?.value) || 0;
+        if (custo > 0 && mediaGeral > 0) {
+            bodyHTML += '<tr class="fat-row-custo">';
+            if (isValor) {
+                // Custo / Valor = percentual
+                bodyHTML += '<td>CUSTO %</td><td></td><td></td>';
+                periodos.forEach(p => {
+                    let somaPerMes = 0;
+                    cidades.forEach(cidade => {
+                        cidade.clientes.forEach(cl => {
+                            const m = cl.meses[p.key];
+                            somaPerMes += m ? m.valor : 0;
+                        });
+                    });
+                    const pct = somaPerMes > 0 ? (custo / somaPerMes * 100).toFixed(2) + '%' : '-';
+                    bodyHTML += `<td>${pct}</td>`;
+                });
+                const pctTotal = totalGeral > 0 ? (custo * numAtivos / totalGeral * 100).toFixed(2) + '%' : '-';
+                const pctMedia = mediaGeral > 0 ? (custo / mediaGeral * 100).toFixed(2) + '%' : '-';
+                bodyHTML += `<td>${pctTotal}</td><td>${pctMedia}</td>`;
+            } else {
+                // Custo / Peso = R$/kg
+                bodyHTML += '<td>CUSTO / KG</td><td></td><td></td>';
+                periodos.forEach(p => {
+                    let somaPerMes = 0;
+                    cidades.forEach(cidade => {
+                        cidade.clientes.forEach(cl => {
+                            const m = cl.meses[p.key];
+                            somaPerMes += m ? m.peso : 0;
+                        });
+                    });
+                    const custKg = somaPerMes > 0 ? 'R$ ' + (custo / somaPerMes).toFixed(2) : '-';
+                    bodyHTML += `<td>${custKg}</td>`;
+                });
+                const custKgTotal = totalGeral > 0 ? 'R$ ' + (custo * numAtivos / totalGeral).toFixed(2) : '-';
+                const custKgMedia = mediaGeral > 0 ? 'R$ ' + (custo / mediaGeral).toFixed(2) : '-';
+                bodyHTML += `<td>${custKgTotal}</td><td>${custKgMedia}</td>`;
+            }
+            bodyHTML += '</tr>';
+        }
 
         tbody.innerHTML = bodyHTML;
     }
