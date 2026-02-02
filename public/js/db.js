@@ -3648,6 +3648,16 @@ class TursoDatabase {
             console.error('Erro ao criar tabela de histórico de performance:', error);
             throw error;
         }
+
+        // Garantir que a tela existe em cc_web_telas para o sistema de permissões
+        try {
+            await this.mainClient.execute({
+                sql: `INSERT OR IGNORE INTO cc_web_telas (tela_id, tela_titulo, tela_categoria, tela_icone, ordem) VALUES (?, ?, ?, ?, ?)`,
+                args: ['performance-historico', 'Histórico', 'analises', '📋', 42]
+            });
+        } catch (e) {
+            // Tabela cc_web_telas pode não existir ainda (criada pelo backend)
+        }
     }
 
     async salvarHistoricoPerformance(repId, competencia, faturamento, pesoLiq, custo) {
