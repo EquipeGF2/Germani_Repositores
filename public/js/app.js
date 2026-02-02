@@ -21786,7 +21786,7 @@ class App {
 
     async buscarFaturamento() {
         const repId = document.getElementById('fatRepositor')?.value;
-        const meses = document.getElementById('fatMeses')?.value || 6;
+        const numMeses = parseInt(document.getElementById('fatMeses')?.value) || 6;
 
         if (!repId) {
             this.showNotification('Selecione um repositor', 'error');
@@ -21796,19 +21796,211 @@ class App {
         this.mostrarEstadoFaturamento('loading');
 
         try {
-            const resp = await authManager.fetch(
-                `${API_BASE_URL}/api/performance/faturamento?rep_id=${repId}&meses=${meses}`
-            );
-            const data = await resp.json();
+            const repIdNum = Number(repId);
 
-            if (!data.ok) {
-                throw new Error(data.message || 'Erro ao buscar faturamento');
+            // === ETAPA 1: Carregar todos os dados do banco principal em paralelo ===
+            const [repoInfo, clientesRoteiro, rateios, vendasCentralizadasRaw] = await Promise.all([
+                db.getRepositorInfo(repIdNum),
+                db.getClientesDoRepositor(repIdNum),
+                db.getRateiosDoRepositor(repIdNum),
+                db.getVendasCentralizadas([]) // carrega tudo, filtra depois
+            ]);
+
+            if (!repoInfo) throw new Error('Repositor não encontrado');
+
+            if (!clientesRoteiro || clientesRoteiro.length === 0) {
+                this.faturamentoState.dados = {
+                    rep_nome: repoInfo.repo_nome, periodos: [], cidades: [],
+                    totais: { valor_financeiro: 0, peso_liq: 0, media_mensal: 0 }, meses_ativos: 0
+                };
+                this.renderizarResumoFaturamento();
+                this.mostrarEstadoFaturamento('empty');
+                return;
             }
 
-            this.faturamentoState.dados = data;
+            // === ETAPA 2: Calcular período e competência ===
+            const hoje = new Date();
+            const periodoFim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
+            const periodoInicio = new Date(hoje.getFullYear(), hoje.getMonth() - numMeses + 1, 1);
+
+            const repoInicio = repoInfo.repo_data_inicio ? new Date(repoInfo.repo_data_inicio + 'T00:00:00') : null;
+            const repoFim = repoInfo.repo_data_fim ? new Date(repoInfo.repo_data_fim + 'T00:00:00') : null;
+            const dataEfetInicio = repoInicio && repoInicio > periodoInicio ? repoInicio : periodoInicio;
+            const dataEfetFim = repoFim && repoFim < periodoFim ? repoFim : periodoFim;
+
+            const dataInicioStr = dataEfetInicio.toISOString().split('T')[0];
+            const dataFimStr = dataEfetFim.toISOString().split('T')[0];
+
+            const periodos = [];
+            for (let i = 0; i < numMeses; i++) {
+                const d = new Date(hoje.getFullYear(), hoje.getMonth() - numMeses + 1 + i, 1);
+                const ultimoDia = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const aa = String(d.getFullYear()).slice(-2);
+                const aaaa = String(d.getFullYear());
+                const dentroCompetencia = d <= dataEfetFim && ultimoDia >= dataEfetInicio;
+                periodos.push({ key: `${mm}_${aa}`, label: `${mm}/${aa}`, ativo: dentroCompetencia, mes: mm, ano: aaaa });
+            }
+
+            // === ETAPA 3: Montar mapas de rateio e venda centralizada ===
+            // Rateio: cliente → { percentual, vigencia_inicio, vigencia_fim }
+            const rateioMap = {};
+            rateios.forEach(r => {
+                const cod = String(r.rat_cliente_codigo);
+                if (!rateioMap[cod]) rateioMap[cod] = [];
+                rateioMap[cod].push({
+                    percentual: parseFloat(r.rat_percentual) || 100,
+                    vigenciaInicio: r.rat_vigencia_inicio || null,
+                    vigenciaFim: r.rat_vigencia_fim || null
+                });
+            });
+
+            // Venda centralizada: clienteOrigem → clienteComprador
+            const codigosRoteiro = clientesRoteiro.map(c => String(c.rot_cliente_codigo));
+            const vcDados = await db.getVendasCentralizadas(codigosRoteiro);
+            const centralizadaMap = {};
+            vcDados.forEach(vc => {
+                centralizadaMap[String(vc.vc_cliente_origem)] = String(vc.vc_cliente_comprador);
+            });
+
+            // Também verificar flag rot_venda_centralizada nos clientes do roteiro
+            clientesRoteiro.forEach(cr => {
+                if (cr.rot_venda_centralizada && !centralizadaMap[String(cr.rot_cliente_codigo)]) {
+                    // Flag marcada mas sem registro na tabela - manter sem mapeamento
+                }
+            });
+
+            // === ETAPA 4: Determinar todos os clientes cujo faturamento buscar ===
+            // Inclui clientes diretos E clientes compradores (centralizados)
+            const clientesBuscarFat = new Set();
+            codigosRoteiro.forEach(cod => {
+                const comprador = centralizadaMap[cod];
+                if (comprador) {
+                    clientesBuscarFat.add(comprador); // buscar fat. do comprador
+                } else {
+                    clientesBuscarFat.add(cod); // buscar fat. direto
+                }
+            });
+
+            // === ETAPA 5: Buscar dados do banco comercial em paralelo ===
+            const todosClientesBusca = [...clientesBuscarFat, ...codigosRoteiro];
+            const clientesUnicos = [...new Set(todosClientesBusca)];
+
+            const [vendas, clientesInfo] = await Promise.all([
+                db.getVendasPorClientes([...clientesBuscarFat], dataInicioStr, dataFimStr),
+                db.getInfoClientesComercial(clientesUnicos)
+            ]);
+
+            const clientesInfoMap = {};
+            clientesInfo.forEach(c => { clientesInfoMap[String(c.cliente)] = c; });
+
+            // Indexar vendas: cliente → mesKey → { valor, peso }
+            const vendasIndex = {};
+            vendas.forEach(v => {
+                const cod = String(v.cliente);
+                const emissao = v.emissao;
+                if (!emissao) return;
+                const [ano, mes] = emissao.split('-');
+                const key = `${mes}_${ano.slice(-2)}`;
+                if (!vendasIndex[cod]) vendasIndex[cod] = {};
+                vendasIndex[cod][key] = {
+                    valor: parseFloat(v.valor_financeiro) || 0,
+                    peso: parseFloat(v.peso_liq) || 0
+                };
+            });
+
+            // === ETAPA 6: Montar mapa cidade → clientes com faturamento ===
+            const cidadeClienteMap = {};
+
+            clientesRoteiro.forEach(cr => {
+                const cod = String(cr.rot_cliente_codigo);
+                const info = clientesInfoMap[cod];
+                const cidade = info?.cidade || cr.cidade || 'SEM CIDADE';
+
+                if (!cidadeClienteMap[cidade]) cidadeClienteMap[cidade] = {};
+                if (cidadeClienteMap[cidade][cod]) return; // já processado
+
+                // Determinar de onde vem o faturamento
+                const comprador = centralizadaMap[cod];
+                const codFat = comprador || cod;
+                const temRateio = rateioMap[cod];
+                const ehCentralizada = !!comprador;
+
+                // Buscar faturamento por mês
+                const meses = {};
+                let totalValor = 0;
+                let totalPeso = 0;
+
+                periodos.forEach(p => {
+                    const vendasMes = vendasIndex[codFat]?.[p.key];
+                    let valor = vendasMes?.valor || 0;
+                    let peso = vendasMes?.peso || 0;
+
+                    // Aplicar rateio se existir
+                    if (temRateio) {
+                        // Encontrar rateio vigente para este mês
+                        const mesRef = `${p.ano}-${p.mes}`;
+                        const rateioVigente = temRateio.find(r => {
+                            const ini = r.vigenciaInicio ? String(r.vigenciaInicio) : '0';
+                            const fim = r.vigenciaFim ? String(r.vigenciaFim) : '9999-99';
+                            return mesRef >= ini.substring(0, 7) && mesRef <= fim.substring(0, 7);
+                        }) || temRateio[0]; // fallback: usar primeiro rateio
+                        const pct = rateioVigente.percentual / 100;
+                        valor = valor * pct;
+                        peso = peso * pct;
+                    }
+
+                    meses[p.key] = { valor, peso };
+                    totalValor += valor;
+                    totalPeso += peso;
+                });
+
+                let sufixo = '';
+                if (ehCentralizada) sufixo = ' [C]';
+                if (temRateio) sufixo += ` [R:${temRateio[0].percentual}%]`;
+
+                cidadeClienteMap[cidade][cod] = {
+                    codigo: cod,
+                    nome: (info?.nome || 'Cliente ' + cod) + sufixo,
+                    meses,
+                    total_valor: totalValor,
+                    total_peso: totalPeso
+                };
+            });
+
+            // === ETAPA 7: Montar resposta final ===
+            const mesesAtivos = periodos.filter(p => p.ativo).length || 1;
+            const cidades = Object.keys(cidadeClienteMap).sort().map(cidade => {
+                const clientes = Object.values(cidadeClienteMap[cidade])
+                    .sort((a, b) => a.nome.localeCompare(b.nome));
+                const totalCidade = clientes.reduce((acc, c) => ({
+                    valor: acc.valor + c.total_valor, peso: acc.peso + c.total_peso
+                }), { valor: 0, peso: 0 });
+                return {
+                    cidade, clientes,
+                    total_valor: totalCidade.valor, total_peso: totalCidade.peso,
+                    media_mensal: totalCidade.valor / mesesAtivos
+                };
+            });
+            const totaisGeral = cidades.reduce((acc, c) => ({
+                valor: acc.valor + c.total_valor, peso: acc.peso + c.total_peso
+            }), { valor: 0, peso: 0 });
+
+            this.faturamentoState.dados = {
+                rep_id: repIdNum,
+                rep_nome: repoInfo.repo_nome,
+                competencia: { repo_inicio: repoInfo.repo_data_inicio, repo_fim: repoInfo.repo_data_fim },
+                meses: numMeses,
+                meses_ativos: mesesAtivos,
+                periodos, cidades,
+                totais: {
+                    valor_financeiro: totaisGeral.valor,
+                    peso_liq: totaisGeral.peso,
+                    media_mensal: totaisGeral.valor / mesesAtivos
+                }
+            };
             this.faturamentoState.metrica = document.getElementById('fatMetrica')?.value || 'valor';
 
-            // Habilitar exportação
             const btnExportar = document.getElementById('btnExportarFaturamento');
             if (btnExportar) btnExportar.disabled = false;
 
