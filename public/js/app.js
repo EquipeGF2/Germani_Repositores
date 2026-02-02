@@ -3428,6 +3428,8 @@ class App {
                 await this.inicializarAnalisePerformance();
             } else if (pageName === 'performance-faturamento') {
                 await this.inicializarFaturamento();
+            } else if (pageName === 'performance-historico') {
+                await this.inicializarHistorico();
             } else if (pageName === 'consulta-campanha') {
                 await this.inicializarConsultaCampanha();
             } else if (pageName === 'cadastro-pesquisa') {
@@ -21844,6 +21846,9 @@ class App {
             this.faturamentoState.resultados = resultados;
             this.faturamentoState.metrica = document.getElementById('fatMetrica')?.value || 'valor';
 
+            // Salvar totais no histórico de performance (em background)
+            this._salvarHistoricoPerformance(resultados);
+
             const btnExportar = document.getElementById('btnExportarFaturamento');
             if (btnExportar) btnExportar.disabled = false;
 
@@ -21853,6 +21858,30 @@ class App {
             console.error('Erro ao buscar faturamento:', error);
             this.showNotification(error.message || 'Erro ao buscar faturamento', 'error');
             this.mostrarEstadoFaturamento('empty');
+        }
+    }
+
+    async _salvarHistoricoPerformance(resultados) {
+        try {
+            for (const dados of resultados) {
+                if (!dados.temDadosComerciais) continue;
+                const { rep_id, periodos, cidades, custosMap } = dados;
+                for (const p of periodos) {
+                    if (p.ativo === false) continue;
+                    let fatMes = 0, pesoMes = 0;
+                    cidades.forEach(ci => {
+                        ci.clientes.forEach(cl => {
+                            fatMes += cl.meses[p.key]?.valor || 0;
+                            pesoMes += cl.meses[p.key]?.peso || 0;
+                        });
+                    });
+                    const custoMes = custosMap?.[p.key] || 0;
+                    const competencia = `${p.ano}-${p.mes}`;
+                    await db.salvarHistoricoPerformance(rep_id, competencia, fatMes, pesoMes, custoMes);
+                }
+            }
+        } catch (e) {
+            console.warn('Erro ao salvar histórico:', e.message);
         }
     }
 
@@ -22219,6 +22248,254 @@ class App {
             }
         } catch (error) {
             console.error('Erro ao exportar:', error);
+            this.showNotification('Erro ao exportar dados', 'error');
+        }
+    }
+
+    // ==================== HISTÓRICO DE PERFORMANCE ====================
+
+    async inicializarHistorico() {
+        try {
+            this.historicoState = { resultados: [] };
+
+            const selectSupervisor = document.getElementById('histSupervisor');
+            const selectRepositor = document.getElementById('histRepositor');
+            if (selectSupervisor && selectRepositor) {
+                this._histAllRepoOptions = [...selectRepositor.querySelectorAll('option[value]')].map(o => ({
+                    value: o.value, text: o.textContent, supervisor: o.dataset.supervisor || ''
+                }));
+                selectSupervisor.onchange = () => {
+                    const sup = selectSupervisor.value;
+                    selectRepositor.innerHTML = '<option value="">Todos do supervisor</option>';
+                    const filtrados = sup
+                        ? this._histAllRepoOptions.filter(o => o.supervisor === sup)
+                        : this._histAllRepoOptions;
+                    filtrados.forEach(o => {
+                        const opt = document.createElement('option');
+                        opt.value = o.value; opt.textContent = o.text;
+                        selectRepositor.appendChild(opt);
+                    });
+                };
+            }
+
+            const btnBuscar = document.getElementById('btnBuscarHistorico');
+            if (btnBuscar) btnBuscar.onclick = () => this.buscarHistorico();
+
+            const btnExportar = document.getElementById('btnExportarHistorico');
+            if (btnExportar) btnExportar.onclick = () => this.exportarHistorico();
+
+            this.mostrarEstadoHistorico('empty');
+        } catch (error) {
+            console.error('Erro ao inicializar histórico:', error);
+        }
+    }
+
+    mostrarEstadoHistorico(estado) {
+        const loading = document.getElementById('histLoading');
+        const empty = document.getElementById('histEmpty');
+        const table = document.getElementById('histTableContainer');
+        if (loading) loading.style.display = estado === 'loading' ? '' : 'none';
+        if (empty) empty.style.display = estado === 'empty' ? '' : 'none';
+        if (table) table.style.display = estado === 'table' ? '' : 'none';
+    }
+
+    async buscarHistorico() {
+        const repId = document.getElementById('histRepositor')?.value;
+        const supId = document.getElementById('histSupervisor')?.value;
+        const periodoInicio = document.getElementById('histPeriodoInicio')?.value;
+        const periodoFim = document.getElementById('histPeriodoFim')?.value;
+
+        if (!periodoInicio || !periodoFim) {
+            this.showNotification('Selecione o período', 'error');
+            return;
+        }
+
+        let repIds = [];
+        if (repId) {
+            repIds = [Number(repId)];
+        } else if (supId) {
+            const opts = this._histAllRepoOptions || [];
+            repIds = opts.filter(o => o.supervisor === supId && o.value).map(o => Number(o.value));
+        }
+        if (repIds.length === 0) {
+            this.showNotification('Selecione um repositor ou supervisor', 'error');
+            return;
+        }
+
+        this.mostrarEstadoHistorico('loading');
+
+        try {
+            const dados = await db.getHistoricoPerformanceMultiplos(repIds, periodoInicio, periodoFim);
+
+            if (!dados.length) {
+                this.mostrarEstadoHistorico('empty');
+                this.showNotification('Nenhum dado histórico encontrado. Consulte o Faturamento para gerar os registros.', 'info');
+                return;
+            }
+
+            // Agrupar por repositor
+            const porRepositor = {};
+            dados.forEach(row => {
+                const rid = row.ph_rep_id;
+                if (!porRepositor[rid]) {
+                    porRepositor[rid] = { rep_id: rid, rep_nome: row.repo_nome || `Repositor ${rid}`, meses: [] };
+                }
+                porRepositor[rid].meses.push({
+                    competencia: row.ph_competencia,
+                    faturamento: parseFloat(row.ph_total_faturamento) || 0,
+                    peso: parseFloat(row.ph_total_peso_liq) || 0,
+                    custo: parseFloat(row.ph_total_custo) || 0
+                });
+            });
+
+            this.historicoState.resultados = Object.values(porRepositor);
+            this.renderizarHistorico();
+
+            const btnExportar = document.getElementById('btnExportarHistorico');
+            if (btnExportar) btnExportar.disabled = false;
+
+            this.mostrarEstadoHistorico('table');
+        } catch (error) {
+            console.error('Erro ao buscar histórico:', error);
+            this.showNotification(error.message || 'Erro ao buscar histórico', 'error');
+            this.mostrarEstadoHistorico('empty');
+        }
+    }
+
+    renderizarHistorico() {
+        const container = document.getElementById('histTableContainer');
+        if (!container) return;
+
+        const resultados = this.historicoState.resultados;
+        if (!resultados?.length) return;
+
+        let html = '';
+
+        resultados.forEach(repo => {
+            const meses = repo.meses;
+            let totalFat = 0, totalPeso = 0, totalCusto = 0;
+            meses.forEach(m => { totalFat += m.faturamento; totalPeso += m.peso; totalCusto += m.custo; });
+            const numMeses = meses.length || 1;
+            const mediaFat = totalFat / numMeses;
+            const mediaPeso = totalPeso / numMeses;
+            const mediaCusto = totalCusto / numMeses;
+            const pctCusto = totalFat > 0 ? (totalCusto / totalFat * 100) : 0;
+            const custoPorKg = totalPeso > 0 ? (totalCusto / totalPeso) : 0;
+
+            // Cards de resumo
+            html += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:16px 0 8px;">
+                <div class="hist-resumo-card"><div class="hist-resumo-label">Repositor</div><div class="hist-resumo-valor" style="font-size:1rem;">${this.escaparHTMLFat(repo.rep_nome)}</div><div style="font-size:0.7rem;color:var(--gray-400);">${numMeses} meses</div></div>
+                <div class="hist-resumo-card"><div class="hist-resumo-label">Total Faturamento</div><div class="hist-resumo-valor">${this.formatarMoeda(totalFat)}</div></div>
+                <div class="hist-resumo-card"><div class="hist-resumo-label">Peso Liq. Total</div><div class="hist-resumo-valor">${this.formatarPeso(totalPeso)}</div></div>
+                <div class="hist-resumo-card"><div class="hist-resumo-label">Média Mensal</div><div class="hist-resumo-valor">${this.formatarMoeda(mediaFat)}</div><div class="hist-resumo-valor" style="font-size:1rem;margin-top:2px;">${this.formatarPeso(mediaPeso)}</div></div>
+                ${totalCusto > 0 ? `
+                <div class="hist-resumo-card"><div class="hist-resumo-label">Custo Médio</div><div class="hist-resumo-valor">${this.formatarMoeda(mediaCusto)}</div></div>
+                <div class="hist-resumo-card"><div class="hist-resumo-label">Custo / Faturamento</div><div class="hist-resumo-valor">${pctCusto.toFixed(2)}%</div></div>
+                <div class="hist-resumo-card"><div class="hist-resumo-label">Custo / Peso</div><div class="hist-resumo-valor">R$ ${custoPorKg.toFixed(2)}/kg</div></div>
+                ` : ''}
+            </div>`;
+
+            // Tabela de meses
+            html += `<div style="overflow-x:auto;margin-bottom:8px;"><table class="hist-table" style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                <thead><tr>
+                    <th>Competência</th>
+                    <th>Faturamento (R$)</th>
+                    <th>Peso Liq. (kg)</th>
+                    <th>Custo (R$)</th>
+                    <th>Custo %</th>
+                    <th>Custo/kg</th>
+                </tr></thead><tbody>`;
+
+            meses.forEach(m => {
+                const pct = m.faturamento > 0 ? (m.custo / m.faturamento * 100) : 0;
+                const cpk = m.peso > 0 ? (m.custo / m.peso) : 0;
+                const [ano, mes] = m.competencia.split('-');
+                const label = `${mes}/${ano.slice(-2)}`;
+                html += `<tr>
+                    <td style="text-align:left;">${label}</td>
+                    <td>${this.formatarValorFat(m.faturamento, true)}</td>
+                    <td>${this.formatarValorFat(m.peso, false)}</td>
+                    <td>${m.custo > 0 ? this.formatarValorFat(m.custo, true) : '-'}</td>
+                    <td>${m.custo > 0 ? pct.toFixed(2) + '%' : '-'}</td>
+                    <td>${m.custo > 0 ? 'R$ ' + cpk.toFixed(2) : '-'}</td>
+                </tr>`;
+            });
+
+            // Linha de total
+            const pctTotal = totalFat > 0 ? (totalCusto / totalFat * 100) : 0;
+            const cpkTotal = totalPeso > 0 ? (totalCusto / totalPeso) : 0;
+            html += `<tr class="hist-row-total">
+                <td style="text-align:left;">TOTAL</td>
+                <td>${this.formatarValorFat(totalFat, true)}</td>
+                <td>${this.formatarValorFat(totalPeso, false)}</td>
+                <td>${totalCusto > 0 ? this.formatarValorFat(totalCusto, true) : '-'}</td>
+                <td>${totalCusto > 0 ? pctTotal.toFixed(2) + '%' : '-'}</td>
+                <td>${totalCusto > 0 ? 'R$ ' + cpkTotal.toFixed(2) : '-'}</td>
+            </tr>`;
+
+            // Linha de média
+            html += `<tr style="font-style:italic;color:var(--gray-500);">
+                <td style="text-align:left;">MÉDIA</td>
+                <td>${this.formatarValorFat(mediaFat, true)}</td>
+                <td>${this.formatarValorFat(mediaPeso, false)}</td>
+                <td>${mediaCusto > 0 ? this.formatarValorFat(mediaCusto, true) : '-'}</td>
+                <td>${mediaCusto > 0 ? (totalFat > 0 ? (mediaCusto / mediaFat * 100).toFixed(2) + '%' : '-') : '-'}</td>
+                <td>${mediaCusto > 0 ? 'R$ ' + (mediaPeso > 0 ? (mediaCusto / mediaPeso).toFixed(2) : '0.00') : '-'}</td>
+            </tr>`;
+
+            html += '</tbody></table></div>';
+        });
+
+        container.innerHTML = html;
+    }
+
+    exportarHistorico() {
+        const resultados = this.historicoState?.resultados;
+        if (!resultados?.length) return;
+
+        try {
+            const rows = [];
+
+            resultados.forEach((repo, idx) => {
+                if (idx > 0) rows.push([]);
+                rows.push([`Repositor: ${repo.rep_nome}`]);
+                rows.push(['Competência', 'Faturamento (R$)', 'Peso Liq. (kg)', 'Custo (R$)', 'Custo %', 'Custo/kg']);
+
+                let totalFat = 0, totalPeso = 0, totalCusto = 0;
+                repo.meses.forEach(m => {
+                    totalFat += m.faturamento;
+                    totalPeso += m.peso;
+                    totalCusto += m.custo;
+                    const pct = m.faturamento > 0 ? (m.custo / m.faturamento * 100) : 0;
+                    const cpk = m.peso > 0 ? (m.custo / m.peso) : 0;
+                    rows.push([m.competencia, m.faturamento, m.peso, m.custo, pct, cpk]);
+                });
+
+                const pctT = totalFat > 0 ? (totalCusto / totalFat * 100) : 0;
+                const cpkT = totalPeso > 0 ? (totalCusto / totalPeso) : 0;
+                rows.push(['TOTAL', totalFat, totalPeso, totalCusto, pctT, cpkT]);
+            });
+
+            const fileLabel = resultados.length === 1 ? `rep${resultados[0].rep_id}` : 'supervisor';
+            if (typeof XLSX !== 'undefined') {
+                const ws = XLSX.utils.aoa_to_sheet(rows);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Histórico');
+                XLSX.writeFile(wb, `historico_${fileLabel}.xlsx`);
+                this.showNotification('Exportado com sucesso!', 'success');
+            } else {
+                const csv = rows.map(r => r.map(c => typeof c === 'string' ? `"${c}"` : c).join(';')).join('\n');
+                const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `historico_${fileLabel}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+                this.showNotification('Exportado como CSV!', 'success');
+            }
+        } catch (error) {
+            console.error('Erro ao exportar histórico:', error);
             this.showNotification('Erro ao exportar dados', 'error');
         }
     }

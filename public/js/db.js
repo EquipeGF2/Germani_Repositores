@@ -111,6 +111,9 @@ class TursoDatabase {
             // Configurar tabelas de controles e custos
             await this.ensureCustosTables();
 
+            // Configurar tabela de histórico de performance
+            await this.ensureHistoricoPerformanceTables();
+
             this.schemaInitialized = true;
             // Schema inicializado com sucesso
             return true;
@@ -3615,6 +3618,90 @@ class TursoDatabase {
             console.warn('Aviso: cc_custos_repositor_mensal indisponível:', e.message);
         }
         return custosMap;
+    }
+
+    // ==================== HISTÓRICO DE PERFORMANCE ====================
+
+    async ensureHistoricoPerformanceTables() {
+        try {
+            await this.mainClient.execute(`
+                CREATE TABLE IF NOT EXISTS cc_performance_historico (
+                    ph_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ph_rep_id INTEGER NOT NULL,
+                    ph_competencia TEXT NOT NULL,
+                    ph_total_faturamento REAL DEFAULT 0,
+                    ph_total_peso_liq REAL DEFAULT 0,
+                    ph_total_custo REAL DEFAULT 0,
+                    ph_criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    ph_atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (ph_rep_id) REFERENCES cad_repositor(repo_cod),
+                    UNIQUE (ph_rep_id, ph_competencia)
+                )
+            `);
+            await this.mainClient.execute(`
+                CREATE INDEX IF NOT EXISTS idx_ph_rep_id ON cc_performance_historico (ph_rep_id)
+            `);
+            await this.mainClient.execute(`
+                CREATE INDEX IF NOT EXISTS idx_ph_competencia ON cc_performance_historico (ph_competencia)
+            `);
+        } catch (error) {
+            console.error('Erro ao criar tabela de histórico de performance:', error);
+            throw error;
+        }
+    }
+
+    async salvarHistoricoPerformance(repId, competencia, faturamento, pesoLiq, custo) {
+        try {
+            await this.mainClient.execute({
+                sql: `INSERT INTO cc_performance_historico (ph_rep_id, ph_competencia, ph_total_faturamento, ph_total_peso_liq, ph_total_custo)
+                      VALUES (?, ?, ?, ?, ?)
+                      ON CONFLICT(ph_rep_id, ph_competencia)
+                      DO UPDATE SET ph_total_faturamento = excluded.ph_total_faturamento,
+                                    ph_total_peso_liq = excluded.ph_total_peso_liq,
+                                    ph_total_custo = excluded.ph_total_custo,
+                                    ph_atualizado_em = CURRENT_TIMESTAMP`,
+                args: [repId, competencia, faturamento, pesoLiq, custo]
+            });
+        } catch (error) {
+            console.warn('Erro ao salvar histórico performance:', error.message);
+        }
+    }
+
+    async getHistoricoPerformance(repId, periodoInicio, periodoFim) {
+        try {
+            const result = await this.mainClient.execute({
+                sql: `SELECT ph_rep_id, ph_competencia, ph_total_faturamento, ph_total_peso_liq, ph_total_custo
+                      FROM cc_performance_historico
+                      WHERE ph_rep_id = ? AND ph_competencia >= ? AND ph_competencia <= ?
+                      ORDER BY ph_competencia`,
+                args: [repId, periodoInicio, periodoFim]
+            });
+            return result.rows;
+        } catch (error) {
+            console.error('Erro ao buscar histórico:', error);
+            return [];
+        }
+    }
+
+    async getHistoricoPerformanceMultiplos(repIds, periodoInicio, periodoFim) {
+        if (!repIds.length) return [];
+        try {
+            const placeholders = repIds.map(() => '?').join(',');
+            const result = await this.mainClient.execute({
+                sql: `SELECT h.ph_rep_id, h.ph_competencia, h.ph_total_faturamento, h.ph_total_peso_liq, h.ph_total_custo,
+                             r.repo_nome
+                      FROM cc_performance_historico h
+                      LEFT JOIN cad_repositor r ON r.repo_cod = h.ph_rep_id
+                      WHERE h.ph_rep_id IN (${placeholders})
+                        AND h.ph_competencia >= ? AND h.ph_competencia <= ?
+                      ORDER BY r.repo_nome, h.ph_competencia`,
+                args: [...repIds, periodoInicio, periodoFim]
+            });
+            return result.rows;
+        } catch (error) {
+            console.error('Erro ao buscar histórico múltiplos:', error);
+            return [];
+        }
     }
 
     // ==================== DADOS DO BANCO COMERCIAL ====================
