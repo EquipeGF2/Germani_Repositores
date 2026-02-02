@@ -22016,7 +22016,7 @@ class App {
         const resumoEl = document.getElementById('fatResumo');
         if (!resumoEl || !this.faturamentoState.dados) return;
 
-        const { totais, cidades, meses_ativos, rep_nome, competencia, temDadosComerciais, periodos, custosMap } = this.faturamentoState.dados;
+        const { totais, cidades, meses_ativos, rep_nome, temDadosComerciais, periodos, custosMap } = this.faturamentoState.dados;
         const totalClientes = cidades.reduce((sum, c) => sum + c.clientes.length, 0);
         const mediaPeso = totais.peso_liq / (meses_ativos || 1);
         const mediaValor = totais.media_mensal;
@@ -22025,17 +22025,6 @@ class App {
         const custoTotal = Object.values(custosMap || {}).reduce((s, v) => s + v, 0);
         const custoMedio = meses_ativos > 0 ? custoTotal / meses_ativos : 0;
         const temCustos = custoTotal > 0;
-
-        let compLabel = '';
-        if (competencia) {
-            const ini = competencia.repo_inicio || '-';
-            const fim = competencia.repo_fim || 'atual';
-            compLabel = `<div class="fat-resumo-card">
-                <div class="fat-resumo-label">Competência</div>
-                <div class="fat-resumo-valor" style="font-size:0.85rem;">${ini} a ${fim}</div>
-                <div style="font-size:0.7rem;color:var(--gray-400);">${meses_ativos || 0} meses ativos</div>
-            </div>`;
-        }
 
         const periodoLabel = periodos && periodos.length > 0
             ? `${periodos[0].label} a ${periodos[periodos.length - 1].label}`
@@ -22091,7 +22080,6 @@ class App {
                 <div class="fat-resumo-valor" style="font-size:0.85rem;color:var(--gray-400);">Dados comerciais indisponíveis</div>
             </div>
             `}
-            ${compLabel}
         `;
     }
 
