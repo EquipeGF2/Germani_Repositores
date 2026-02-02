@@ -363,7 +363,6 @@ class App {
         this.ultimaConsultaRepositores = [];
         this.resultadosValidacao = [];
         this.usuarioLogado = null;
-        this.permissoes = {};
         this.permissoesEdicaoUsuario = {};
         this.usuarioSelecionadoAcl = null;
         this.contextoRoteiro = null;
@@ -501,11 +500,8 @@ class App {
         if (!temSessao) return;
         this.marcarPerformance('sessao_pronta');
 
-        // Atualizar telas da API + permissões locais em paralelo
-        await Promise.all([
-            authManager.refreshTelas().catch(() => {}),
-            this.carregarPermissoesUsuario()
-        ]);
+        // Atualizar telas do usuário a partir da API (único bloqueante para o menu)
+        await authManager.refreshTelas().catch(() => {});
         this.aplicarInformacoesUsuario();
         this.configurarVisibilidadeConfiguracoes();
 
@@ -1134,22 +1130,6 @@ class App {
         // #userStatus exibe apenas o status de conexão
     }
 
-    async carregarPermissoesUsuario() {
-        const mapa = {};
-        ACL_RECURSOS.forEach(recurso => {
-            mapa[recurso.codigo] = true;
-        });
-
-        if (this.usuarioLogado?.user_id) {
-            const permissoes = await db.getPermissoesUsuario(this.usuarioLogado.user_id);
-            permissoes.forEach(permissao => {
-                mapa[permissao.recurso] = !!permissao.pode_acessar;
-            });
-        }
-
-        this.permissoes = mapa;
-    }
-
     usuarioTemPermissao(tela) {
         // Verificar usando o sistema de telas do authManager
         if (typeof authManager !== 'undefined' && authManager.isAuthenticated()) {
@@ -1160,44 +1140,42 @@ class App {
     }
 
     configurarVisibilidadeConfiguracoes() {
-        // Configurar visibilidade de todas as telas do menu baseado nas permissões
-        document.querySelectorAll('[data-page]').forEach(link => {
+        // Configurar visibilidade dos itens do menu lateral baseado nas permissões
+        const sidebar = document.querySelector('.sidebar-nav');
+        if (!sidebar) return;
+
+        sidebar.querySelectorAll('a[data-page]').forEach(link => {
             const pageName = link.getAttribute('data-page');
             const temPermissao = this.usuarioTemPermissao(pageName);
+            const li = link.closest('li');
 
             if (temPermissao) {
                 link.classList.remove('hidden');
-                link.parentElement?.classList.remove('hidden');
+                if (li) li.classList.remove('hidden');
             } else {
                 link.classList.add('hidden');
-                link.parentElement?.classList.add('hidden');
+                if (li) li.classList.add('hidden');
             }
         });
 
-        // Esconder categorias vazias (onde todos os itens estão ocultos)
-        document.querySelectorAll('.nav-links__group').forEach(group => {
-            const visibleLinks = group.querySelectorAll('[data-page]:not(.hidden)');
+        // Esconder seções vazias (onde todos os itens estão ocultos)
+        sidebar.querySelectorAll('.nav-section').forEach(section => {
+            const visibleLinks = section.querySelectorAll('a[data-page]:not(.hidden)');
             if (visibleLinks.length === 0) {
-                group.classList.add('hidden');
+                section.classList.add('hidden');
             } else {
-                group.classList.remove('hidden');
+                section.classList.remove('hidden');
             }
         });
 
         // Manter compatibilidade com links de controle/gestão
-        const linkControle = document.querySelector('[data-page="controle-acessos"]');
-        const linkGestaoUsuarios = document.querySelector('[data-page="gestao-usuarios"]');
-
         if (this.usuarioTemPermissao('configuracoes-sistema')) {
+            const linkControle = sidebar.querySelector('[data-page="controle-acessos"]');
+            const linkGestaoUsuarios = sidebar.querySelector('[data-page="gestao-usuarios"]');
             linkControle?.classList.remove('hidden');
-            linkControle?.parentElement?.classList.remove('hidden');
+            linkControle?.closest('li')?.classList.remove('hidden');
             linkGestaoUsuarios?.classList.remove('hidden');
-            linkGestaoUsuarios?.parentElement?.classList.remove('hidden');
-        } else {
-            linkControle?.classList.add('hidden');
-            linkControle?.parentElement?.classList.add('hidden');
-            linkGestaoUsuarios?.classList.add('hidden');
-            linkGestaoUsuarios?.parentElement?.classList.add('hidden');
+            linkGestaoUsuarios?.closest('li')?.classList.remove('hidden');
         }
     }
 
@@ -2816,7 +2794,7 @@ class App {
         this.showNotification('Permissões atualizadas com sucesso!', 'success');
 
         if (this.usuarioLogado?.user_id === this.usuarioSelecionadoAcl.user_id) {
-            await this.carregarPermissoesUsuario();
+            await authManager.refreshTelas().catch(() => {});
             this.configurarVisibilidadeConfiguracoes();
         }
     }
