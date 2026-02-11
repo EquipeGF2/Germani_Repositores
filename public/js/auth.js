@@ -50,6 +50,7 @@ class AuthManager {
       this.permissoes = permissoes ? JSON.parse(permissoes) : [];
       this.telas = telas ? JSON.parse(telas) : [];
       this.deveTrocarSenha = deveTrocarSenha === 'true';
+      console.log('[AUTH] Sessão carregada:', { perfil: this.usuario?.perfil, isAdmin: this.usuario?.perfil === 'admin', telasCount: this.telas?.length });
     }
   }
 
@@ -150,9 +151,12 @@ class AuthManager {
    */
   hasPermission(tela) {
     // Admin tem acesso a tudo
-    if (this.isAdmin()) return true;
+    const isAdm = this.isAdmin();
+    const temNasTelas = this.telas.some(t => t.id === tela);
+    console.log('[AUTH] hasPermission:', { tela, isAdmin: isAdm, perfil: this.usuario?.perfil, temNasTelas, telasCount: this.telas?.length });
+    if (isAdm) return true;
     // Verificar nas telas permitidas
-    return this.telas.some(t => t.id === tela);
+    return temNasTelas;
   }
 
   /**
