@@ -112,12 +112,13 @@ router.post('/login-web', async (req, res) => {
     console.log(`[LOGIN-WEB] Login bem-sucedido: ${username} (ID: ${usuarioLogin.id})`);
 
     // Criar objeto de usuário para o token
+    // Usuários web têm perfil 'admin' para consistência com o middleware de autenticação
     const usuario = {
       usuario_id: usuarioLogin.id,
       username: usuarioLogin.username,
       nome_completo: usuarioLogin.full_name || usuarioLogin.username,
       email: null,
-      perfil: 'usuario',
+      perfil: 'admin',
       permissions: usuarioLogin.permissions,
       rep_id: null,
       repo_nome: null,
