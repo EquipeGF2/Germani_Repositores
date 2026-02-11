@@ -8,6 +8,7 @@ class OfflineDB {
     this.dbName = 'GermaniPWA';
     this.dbVersion = 1;
     this.db = null;
+    this.MAX_RETRY_ATTEMPTS = 5;  // Limite de tentativas antes de marcar como dead_letter
   }
 
   /**
@@ -316,10 +317,59 @@ class OfflineDB {
   }
 
   /**
-   * Obter itens pendentes de envio
+   * Obter itens pendentes de envio (status pending)
    */
   async getPendentes(storeName) {
     return await this.getByIndex(storeName, 'status', 'pending');
+  }
+
+  /**
+   * Obter itens para retry (pending + error, exceto dead_letter)
+   */
+  async getParaEnvio(storeName) {
+    const todos = await this.getAll(storeName);
+    return todos.filter(item =>
+      item.syncStatus === 'pending' ||
+      (item.syncStatus === 'error' && (item.attempts || 0) < this.MAX_RETRY_ATTEMPTS)
+    );
+  }
+
+  /**
+   * Obter itens em dead_letter (falhas permanentes)
+   */
+  async getDeadLetters(storeName) {
+    return await this.getByIndex(storeName, 'status', 'dead_letter');
+  }
+
+  /**
+   * Contar dead letters
+   */
+  async contarDeadLetters() {
+    let total = 0;
+    for (const storeName of ['filaSessoes', 'filaRegistros', 'filaFotos', 'filaRota']) {
+      const items = await this.getDeadLetters(storeName);
+      total += items.length;
+    }
+    return total;
+  }
+
+  /**
+   * Resetar item dead_letter para tentar novamente
+   */
+  async resetarDeadLetter(storeName, localId) {
+    const item = await this.get(storeName, localId);
+    if (item && item.syncStatus === 'dead_letter') {
+      await this.put(storeName, {
+        ...item,
+        syncStatus: 'pending',
+        attempts: 0,
+        lastError: null,
+        deadLetterAt: null,
+        resetAt: new Date().toISOString()
+      });
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -339,53 +389,84 @@ class OfflineDB {
 
   /**
    * Marcar item com erro de envio
+   * Se exceder MAX_RETRY_ATTEMPTS, marca como dead_letter
    */
   async marcarErro(storeName, localId, error) {
     const item = await this.get(storeName, localId);
     if (item) {
+      const novoAttempts = (item.attempts || 0) + 1;
+      const isDeadLetter = novoAttempts >= this.MAX_RETRY_ATTEMPTS;
+
       await this.put(storeName, {
         ...item,
-        syncStatus: 'error',
+        syncStatus: isDeadLetter ? 'dead_letter' : 'error',
         lastError: error,
-        attempts: (item.attempts || 0) + 1
+        attempts: novoAttempts,
+        deadLetterAt: isDeadLetter ? new Date().toISOString() : item.deadLetterAt
       });
+
+      if (isDeadLetter) {
+        console.warn(`[OfflineDB] Item ${localId} em ${storeName} movido para dead_letter após ${novoAttempts} tentativas`);
+      }
     }
   }
 
   /**
-   * Contar itens pendentes de envio
+   * Contar itens pendentes de envio (inclui erros para retry)
    */
   async contarPendentes() {
-    const sessoes = await this.getPendentes('filaSessoes');
-    const registros = await this.getPendentes('filaRegistros');
-    const fotos = await this.getPendentes('filaFotos');
-    const rotas = await this.getPendentes('filaRota');
+    const sessoes = await this.getParaEnvio('filaSessoes');
+    const registros = await this.getParaEnvio('filaRegistros');
+    const fotos = await this.getParaEnvio('filaFotos');
+    const rotas = await this.getParaEnvio('filaRota');
+    const deadLetters = await this.contarDeadLetters();
 
     return {
       sessoes: sessoes.length,
       registros: registros.length,
       fotos: fotos.length,
       rotas: rotas.length,
-      total: sessoes.length + registros.length + fotos.length + rotas.length
+      total: sessoes.length + registros.length + fotos.length + rotas.length,
+      deadLetters
     };
   }
 
   /**
    * Limpar itens já sincronizados (manter apenas últimos 7 dias)
+   * Também limpa dead_letters com mais de 30 dias
    */
   async limparSincronizados() {
     const seteDiasAtras = new Date();
     seteDiasAtras.setDate(seteDiasAtras.getDate() - 7);
-    const limite = seteDiasAtras.toISOString();
+    const limiteSynced = seteDiasAtras.toISOString();
+
+    const trintaDiasAtras = new Date();
+    trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
+    const limiteDeadLetter = trintaDiasAtras.toISOString();
+
+    let removidos = 0;
 
     for (const storeName of ['filaSessoes', 'filaRegistros', 'filaFotos', 'filaRota']) {
       const todos = await this.getAll(storeName);
       for (const item of todos) {
-        if (item.syncStatus === 'synced' && item.syncedAt < limite) {
+        // Remover sincronizados com mais de 7 dias
+        if (item.syncStatus === 'synced' && item.syncedAt < limiteSynced) {
           await this.delete(storeName, item.localId);
+          removidos++;
+        }
+        // Remover dead_letters com mais de 30 dias
+        if (item.syncStatus === 'dead_letter' && item.deadLetterAt < limiteDeadLetter) {
+          await this.delete(storeName, item.localId);
+          removidos++;
         }
       }
     }
+
+    if (removidos > 0) {
+      console.log(`[OfflineDB] Limpeza: ${removidos} itens antigos removidos`);
+    }
+
+    return removidos;
   }
 
   // ==================== METADADOS DE SINCRONIZAÇÃO ====================
