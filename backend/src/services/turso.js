@@ -2571,6 +2571,8 @@ class TursoService {
         rep.repo_nome as repositor_nome,
         COALESCE(
           (SELECT ces_cliente_nome FROM cc_clientes_espacos WHERE ces_cliente_id = reg.reg_cliente_id AND ces_cliente_nome IS NOT NULL AND ces_cliente_nome != '' LIMIT 1),
+          (SELECT cliente_nome FROM cc_visita_sessao WHERE cliente_id = reg.reg_cliente_id AND cliente_nome IS NOT NULL AND cliente_nome != '' LIMIT 1),
+          (SELECT rv_cliente_nome FROM cc_registro_visita WHERE cliente_id = reg.reg_cliente_id AND rv_cliente_nome IS NOT NULL AND rv_cliente_nome != '' LIMIT 1),
           ''
         ) as cliente_nome
       FROM cc_registro_espacos reg
