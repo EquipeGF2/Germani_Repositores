@@ -990,6 +990,10 @@ class AuthManager {
 // Instância global
 const authManager = new AuthManager();
 
+// Inicializar imediatamente (carrega sessão do localStorage)
+// Isso garante que as permissões estejam disponíveis antes do app.js verificar
+authManager.init();
+
 // Exportar para uso em outros módulos
 if (typeof window !== 'undefined') {
   window.authManager = authManager;
