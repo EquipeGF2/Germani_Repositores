@@ -15,6 +15,26 @@ class SyncService {
     this.isSyncing = false;
     this.syncTimers = [];
     this.listeners = [];
+    this.REQUEST_TIMEOUT = 30000;  // 30 segundos de timeout por request
+    this.UPLOAD_BATCH_SIZE = 5;    // Quantidade de uploads em paralelo
+  }
+
+  /**
+   * Fetch com timeout
+   */
+  async fetchWithTimeout(url, options = {}, timeout = this.REQUEST_TIMEOUT) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+      return response;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   /**
@@ -176,7 +196,7 @@ class SyncService {
 
       console.log('[SyncService] Baixando dados do servidor...');
 
-      // Buscar dados em paralelo
+      // Buscar dados em paralelo com timeout
       const [
         roteiroRes,
         clientesRes,
@@ -184,11 +204,11 @@ class SyncService {
         tiposDocRes,
         tiposGastoRes
       ] = await Promise.all([
-        fetch(`${this.apiBaseUrl}/api/sync/roteiro`, { headers }).then(r => r.json()),
-        fetch(`${this.apiBaseUrl}/api/sync/clientes`, { headers }).then(r => r.json()),
-        fetch(`${this.apiBaseUrl}/api/sync/coordenadas`, { headers }).then(r => r.json()),
-        fetch(`${this.apiBaseUrl}/api/sync/tipos-documento`, { headers }).then(r => r.json()),
-        fetch(`${this.apiBaseUrl}/api/sync/tipos-gasto`, { headers }).then(r => r.json())
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/roteiro`, { headers }).then(r => r.json()),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/clientes`, { headers }).then(r => r.json()),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/coordenadas`, { headers }).then(r => r.json()),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/tipos-documento`, { headers }).then(r => r.json()),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/tipos-gasto`, { headers }).then(r => r.json())
       ]);
 
       // Salvar no IndexedDB
@@ -218,6 +238,9 @@ class SyncService {
       // Atualizar metadados
       await offlineDB.setUltimaSync();
 
+      // Limpar itens antigos do IndexedDB
+      await offlineDB.limparSincronizados();
+
       // Notificar servidor que sync foi feito
       await this.registrarSyncNoServidor('download');
 
@@ -239,8 +262,42 @@ class SyncService {
   // ==================== UPLOAD DE DADOS ====================
 
   /**
+   * Processar lote de itens em paralelo
+   */
+  async processarLote(itens, storeName, endpoint, headers) {
+    const resultados = await Promise.allSettled(
+      itens.map(async (item) => {
+        try {
+          const response = await this.fetchWithTimeout(endpoint, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(item)
+          });
+          const result = await response.json();
+
+          if (result.ok) {
+            await offlineDB.marcarEnviado(storeName, item.localId, result);
+            return { ok: true, localId: item.localId };
+          } else {
+            await offlineDB.marcarErro(storeName, item.localId, result.message || 'Erro do servidor');
+            return { ok: false, localId: item.localId, error: result.message };
+          }
+        } catch (e) {
+          const errorMsg = e.name === 'AbortError' ? 'Timeout na requisição' : e.message;
+          await offlineDB.marcarErro(storeName, item.localId, errorMsg);
+          return { ok: false, localId: item.localId, error: errorMsg };
+        }
+      })
+    );
+
+    const enviados = resultados.filter(r => r.status === 'fulfilled' && r.value.ok).length;
+    const erros = resultados.length - enviados;
+    return { enviados, erros };
+  }
+
+  /**
    * Enviar dados pendentes para o servidor
-   * Chamado no checkout ou manualmente
+   * Usa uploads em paralelo com batching para melhor performance
    */
   async enviarPendentes() {
     if (!this.isOnline) {
@@ -265,86 +322,48 @@ class SyncService {
         'Content-Type': 'application/json'
       };
 
-      let enviados = 0;
-      let erros = 0;
+      let totalEnviados = 0;
+      let totalErros = 0;
 
-      // Enviar sessões
-      const sessoesPendentes = await offlineDB.getPendentes('filaSessoes');
-      for (const sessao of sessoesPendentes) {
-        try {
-          const response = await fetch(`${this.apiBaseUrl}/api/sync/sessao`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(sessao)
-          });
-          const result = await response.json();
-
-          if (result.ok) {
-            await offlineDB.marcarEnviado('filaSessoes', sessao.localId, result);
-            enviados++;
-          } else {
-            await offlineDB.marcarErro('filaSessoes', sessao.localId, result.message);
-            erros++;
-          }
-        } catch (e) {
-          await offlineDB.marcarErro('filaSessoes', sessao.localId, e.message);
-          erros++;
-        }
+      // Enviar sessões em paralelo (lotes de UPLOAD_BATCH_SIZE)
+      const sessoesPendentes = await offlineDB.getParaEnvio('filaSessoes');
+      for (let i = 0; i < sessoesPendentes.length; i += this.UPLOAD_BATCH_SIZE) {
+        const lote = sessoesPendentes.slice(i, i + this.UPLOAD_BATCH_SIZE);
+        const { enviados, erros } = await this.processarLote(
+          lote, 'filaSessoes', `${this.apiBaseUrl}/api/sync/sessao`, headers
+        );
+        totalEnviados += enviados;
+        totalErros += erros;
       }
 
-      // Enviar registros
-      const registrosPendentes = await offlineDB.getPendentes('filaRegistros');
-      for (const registro of registrosPendentes) {
-        try {
-          const response = await fetch(`${this.apiBaseUrl}/api/sync/registro`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(registro)
-          });
-          const result = await response.json();
-
-          if (result.ok) {
-            await offlineDB.marcarEnviado('filaRegistros', registro.localId, result);
-            enviados++;
-          } else {
-            await offlineDB.marcarErro('filaRegistros', registro.localId, result.message);
-            erros++;
-          }
-        } catch (e) {
-          await offlineDB.marcarErro('filaRegistros', registro.localId, e.message);
-          erros++;
-        }
+      // Enviar registros em paralelo
+      const registrosPendentes = await offlineDB.getParaEnvio('filaRegistros');
+      for (let i = 0; i < registrosPendentes.length; i += this.UPLOAD_BATCH_SIZE) {
+        const lote = registrosPendentes.slice(i, i + this.UPLOAD_BATCH_SIZE);
+        const { enviados, erros } = await this.processarLote(
+          lote, 'filaRegistros', `${this.apiBaseUrl}/api/sync/registro`, headers
+        );
+        totalEnviados += enviados;
+        totalErros += erros;
       }
 
-      // Enviar fotos (em lote menor por causa do tamanho)
-      const fotosPendentes = await offlineDB.getPendentes('filaFotos');
-      for (const foto of fotosPendentes) {
-        try {
-          const response = await fetch(`${this.apiBaseUrl}/api/sync/foto`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(foto)
-          });
-          const result = await response.json();
-
-          if (result.ok) {
-            await offlineDB.marcarEnviado('filaFotos', foto.localId, result);
-            enviados++;
-          } else {
-            await offlineDB.marcarErro('filaFotos', foto.localId, result.message);
-            erros++;
-          }
-        } catch (e) {
-          await offlineDB.marcarErro('filaFotos', foto.localId, e.message);
-          erros++;
-        }
+      // Enviar fotos em paralelo (lotes menores de 2 por causa do tamanho)
+      const fotosPendentes = await offlineDB.getParaEnvio('filaFotos');
+      const FOTO_BATCH_SIZE = 2;  // Menor para fotos grandes
+      for (let i = 0; i < fotosPendentes.length; i += FOTO_BATCH_SIZE) {
+        const lote = fotosPendentes.slice(i, i + FOTO_BATCH_SIZE);
+        const { enviados, erros } = await this.processarLote(
+          lote, 'filaFotos', `${this.apiBaseUrl}/api/sync/foto`, headers
+        );
+        totalEnviados += enviados;
+        totalErros += erros;
       }
 
-      // Enviar rotas em lote
-      const rotasPendentes = await offlineDB.getPendentes('filaRota');
+      // Enviar rotas em lote único (são pequenas)
+      const rotasPendentes = await offlineDB.getParaEnvio('filaRota');
       if (rotasPendentes.length > 0) {
         try {
-          const response = await fetch(`${this.apiBaseUrl}/api/sync/rotas`, {
+          const response = await this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/rotas`, {
             method: 'POST',
             headers,
             body: JSON.stringify({ rotas: rotasPendentes })
@@ -355,20 +374,44 @@ class SyncService {
             for (const rota of rotasPendentes) {
               await offlineDB.marcarEnviado('filaRota', rota.localId, result);
             }
-            enviados += rotasPendentes.length;
+            totalEnviados += rotasPendentes.length;
+          } else {
+            for (const rota of rotasPendentes) {
+              await offlineDB.marcarErro('filaRota', rota.localId, result.message || 'Erro no lote');
+            }
+            totalErros += rotasPendentes.length;
           }
         } catch (e) {
-          erros += rotasPendentes.length;
+          const errorMsg = e.name === 'AbortError' ? 'Timeout na requisição' : e.message;
+          for (const rota of rotasPendentes) {
+            await offlineDB.marcarErro('filaRota', rota.localId, errorMsg);
+          }
+          totalErros += rotasPendentes.length;
         }
       }
+
+      // Limpar itens sincronizados antigos
+      await offlineDB.limparSincronizados();
 
       // Registrar sync no servidor
       await this.registrarSyncNoServidor('upload');
 
-      this.notificar('syncFim', { tipo: 'upload', ok: erros === 0, enviados, erros });
-      console.log(`[SyncService] Upload concluído: ${enviados} enviados, ${erros} erros`);
+      // Verificar dead letters
+      const deadLetters = await offlineDB.contarDeadLetters();
+      if (deadLetters > 0) {
+        console.warn(`[SyncService] ${deadLetters} itens em dead_letter (falhas permanentes)`);
+      }
 
-      return { ok: erros === 0, enviados, erros };
+      this.notificar('syncFim', {
+        tipo: 'upload',
+        ok: totalErros === 0,
+        enviados: totalEnviados,
+        erros: totalErros,
+        deadLetters
+      });
+      console.log(`[SyncService] Upload concluído: ${totalEnviados} enviados, ${totalErros} erros`);
+
+      return { ok: totalErros === 0, enviados: totalEnviados, erros: totalErros, deadLetters };
 
     } catch (error) {
       console.error('[SyncService] Erro no upload:', error);
@@ -434,21 +477,39 @@ class SyncService {
   }
 
   /**
-   * Forçar sincronização manual
+   * Forçar sincronização manual com timeout de segurança
    */
   async sincronizarAgora() {
     console.log('[SyncService] Sincronização manual iniciada');
 
-    // Primeiro enviar pendentes
-    await this.enviarPendentes();
+    // Timeout de segurança para liberar lock se sync travar (2 minutos)
+    const SYNC_TIMEOUT = 120000;
+    const syncTimeout = setTimeout(() => {
+      if (this.isSyncing) {
+        console.warn('[SyncService] Sync timeout - liberando lock');
+        this.isSyncing = false;
+        this.notificar('syncTimeout', { message: 'Sincronização demorou demais e foi cancelada' });
+      }
+    }, SYNC_TIMEOUT);
 
-    // Depois baixar dados atualizados
-    await this.sincronizarDownload();
+    try {
+      // Primeiro enviar pendentes
+      const uploadResult = await this.enviarPendentes();
 
-    // Limpar flags de força sync
-    await this.limparForcaSync();
+      // Depois baixar dados atualizados
+      const downloadResult = await this.sincronizarDownload();
 
-    return { ok: true };
+      // Limpar flags de força sync
+      await this.limparForcaSync();
+
+      return {
+        ok: uploadResult.ok !== false && downloadResult.ok !== false,
+        upload: uploadResult,
+        download: downloadResult
+      };
+    } finally {
+      clearTimeout(syncTimeout);
+    }
   }
 
   /**
@@ -571,6 +632,22 @@ class SyncService {
       pendentes,
       config
     };
+  }
+
+  /**
+   * Resetar todos os dead letters para tentativa novamente
+   */
+  async resetarDeadLetters() {
+    let resetados = 0;
+    for (const storeName of ['filaSessoes', 'filaRegistros', 'filaFotos', 'filaRota']) {
+      const deadLetters = await offlineDB.getDeadLetters(storeName);
+      for (const item of deadLetters) {
+        await offlineDB.resetarDeadLetter(storeName, item.localId);
+        resetados++;
+      }
+    }
+    console.log(`[SyncService] ${resetados} itens dead_letter resetados para retry`);
+    return resetados;
   }
 }
 
