@@ -67,6 +67,7 @@ class AuthManager {
     localStorage.setItem('auth_usuario', JSON.stringify(usuario));
     localStorage.setItem('auth_permissoes', JSON.stringify(this.permissoes));
     localStorage.setItem('auth_telas', JSON.stringify(this.telas));
+    localStorage.setItem('auth_telas_timestamp', Date.now().toString());  // Timestamp para cache
     localStorage.setItem('auth_deve_trocar_senha', String(deveTrocarSenha));
 
     // Manter compatibilidade com sistema antigo
@@ -91,6 +92,7 @@ class AuthManager {
     localStorage.removeItem('auth_usuario');
     localStorage.removeItem('auth_permissoes');
     localStorage.removeItem('auth_telas');
+    localStorage.removeItem('auth_telas_timestamp');
     localStorage.removeItem('auth_deve_trocar_senha');
     localStorage.removeItem('GERMANI_AUTH_USER');
   }
@@ -111,9 +113,21 @@ class AuthManager {
 
   /**
    * Atualizar telas do usuário a partir da API (sem precisar re-login)
+   * Pula atualização se telas foram carregadas há menos de 5 minutos (ex: após login)
    */
-  async refreshTelas() {
+  async refreshTelas(forceRefresh = false) {
     if (!this.isAuthenticated() || !this.token) return;
+
+    // Se já tem telas e foram carregadas recentemente, pular API call
+    const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
+    const telasTimestamp = localStorage.getItem('auth_telas_timestamp');
+    const isFresh = telasTimestamp && (Date.now() - parseInt(telasTimestamp)) < CACHE_DURATION;
+
+    if (!forceRefresh && isFresh && this.telas.length > 0) {
+      console.log('[AUTH] Telas em cache recente, pulando refresh');
+      return;
+    }
+
     try {
       const response = await fetch(`${this.apiBaseUrl}/api/auth/telas`, {
         headers: { 'Authorization': `Bearer ${this.token}` }
@@ -123,6 +137,7 @@ class AuthManager {
         if (data.ok && data.telas) {
           this.telas = data.telas;
           localStorage.setItem('auth_telas', JSON.stringify(this.telas));
+          localStorage.setItem('auth_telas_timestamp', Date.now().toString());
         }
       }
     } catch (e) {
