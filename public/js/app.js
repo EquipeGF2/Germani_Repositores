@@ -21824,8 +21824,8 @@ class App {
             this.faturamentoState.resultados = resultados;
             this.faturamentoState.metrica = document.getElementById('fatMetrica')?.value || 'valor';
 
-            // Salvar totais no histórico de performance (em background)
-            this._salvarHistoricoPerformance(resultados);
+            // NOTA: Histórico é salvo apenas via processo de fechamento mensal,
+            // não mais automaticamente ao consultar faturamento
 
             const btnExportar = document.getElementById('btnExportarFaturamento');
             if (btnExportar) btnExportar.disabled = false;
@@ -22254,9 +22254,67 @@ class App {
             const btnExportar = document.getElementById('btnExportarHistorico');
             if (btnExportar) btnExportar.onclick = () => this.exportarHistorico();
 
+            // Botão de fechamento mensal
+            const btnFechamento = document.getElementById('btnFechamentoMensal');
+            if (btnFechamento) btnFechamento.onclick = () => this.executarFechamentoMensal();
+
             this.mostrarEstadoHistorico('empty');
         } catch (error) {
             console.error('Erro ao inicializar histórico:', error);
+        }
+    }
+
+    async executarFechamentoMensal() {
+        const competencia = document.getElementById('histCompetenciaFechamento')?.value;
+        if (!competencia) {
+            this.showNotification('Selecione a competência para o fechamento', 'error');
+            return;
+        }
+
+        const confirmar = confirm(`Deseja gerar o fechamento mensal para ${competencia}?\n\nIsso irá calcular e salvar os totais de todos os repositores para esta competência.`);
+        if (!confirmar) return;
+
+        const btn = document.getElementById('btnFechamentoMensal');
+        const textoOriginal = btn?.innerHTML;
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '⏳ Processando...';
+        }
+
+        try {
+            const response = await fetch('/api/performance/fechamento-mensal', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ competencia })
+            });
+
+            const data = await response.json();
+
+            if (!data.ok) {
+                throw new Error(data.message || 'Erro ao processar fechamento');
+            }
+
+            const { processados, erros } = data;
+            let mensagem = `✅ Fechamento concluído!\n${processados} repositores processados.`;
+            if (erros > 0) {
+                mensagem += `\n⚠️ ${erros} erros encontrados.`;
+            }
+
+            this.showNotification(mensagem, erros > 0 ? 'warning' : 'success');
+
+            // Atualizar a consulta se já houver filtros selecionados
+            if (document.getElementById('histRepositor')?.value || document.getElementById('histSupervisor')?.value) {
+                await this.buscarHistorico();
+            }
+
+        } catch (error) {
+            console.error('Erro no fechamento mensal:', error);
+            this.showNotification(error.message || 'Erro ao processar fechamento mensal', 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = textoOriginal;
+            }
         }
     }
 

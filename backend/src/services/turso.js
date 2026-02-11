@@ -4167,18 +4167,43 @@ class TursoService {
     await this.execute(sql, [repId, competencia, faturamento, pesoLiq, custo]);
   }
 
-  // Buscar histórico de performance por repositor
-  async buscarHistoricoPerformance(repId, limite = 12) {
+  // Buscar histórico de performance por repositor e período
+  async buscarHistoricoPerformance(repId, periodoInicio = '2020-01', periodoFim = '2099-12') {
     await this.ensurePerformanceHistoricoSchema();
     const sql = `
-      SELECT ph_competencia, ph_total_faturamento, ph_total_peso_liq, ph_total_custo, ph_atualizado_em
+      SELECT ph_rep_id, ph_competencia, ph_total_faturamento, ph_total_peso_liq, ph_total_custo, ph_atualizado_em
       FROM cc_performance_historico
       WHERE ph_rep_id = ?
-      ORDER BY ph_competencia DESC
-      LIMIT ?
+        AND ph_competencia >= ?
+        AND ph_competencia <= ?
+      ORDER BY ph_competencia
     `;
-    const result = await this.execute(sql, [repId, limite]);
+    const result = await this.execute(sql, [repId, periodoInicio, periodoFim]);
     return result?.rows || [];
+  }
+
+  // Buscar custos do repositor por mês (para fechamento mensal)
+  async buscarCustosRepositorMensal(repId, periodoInicio, periodoFim) {
+    const custosMap = {};
+    try {
+      // Buscar da tabela cc_custos_repositor_mensal
+      const result = await this.execute(`
+        SELECT cc_competencia, cc_custo_fixo, cc_custo_variavel
+        FROM cc_custos_repositor_mensal
+        WHERE cc_rep_id = ?
+          AND cc_competencia >= ?
+          AND cc_competencia <= ?
+      `, [repId, periodoInicio, periodoFim]);
+
+      (result?.rows || []).forEach(row => {
+        const fixo = parseFloat(row.cc_custo_fixo) || 0;
+        const variavel = parseFloat(row.cc_custo_variavel) || 0;
+        custosMap[row.cc_competencia] = fixo + variavel;
+      });
+    } catch (e) {
+      console.warn('cc_custos_repositor_mensal não disponível:', e.message);
+    }
+    return custosMap;
   }
 }
 
