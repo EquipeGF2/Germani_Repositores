@@ -19,26 +19,33 @@ router.post('/login', async (req, res) => {
     }
 
     // Buscar usuário
+    console.log(`[LOGIN] Tentativa de login - username: "${username}"`);
     const usuario = await tursoService.buscarUsuarioPorUsername(username);
 
     if (!usuario) {
+      console.log(`[LOGIN] Usuário não encontrado: "${username}"`);
       return res.status(401).json({
         ok: false,
         code: 'INVALID_CREDENTIALS',
         message: 'Usuário ou senha incorretos'
       });
     }
+
+    console.log(`[LOGIN] Usuário encontrado: ID=${usuario.usuario_id}, perfil=${usuario.perfil}, ativo=${usuario.ativo}, tem_hash=${!!usuario.password_hash}`);
 
     // Verificar senha
     const senhaValida = await authService.comparePassword(password, usuario.password_hash);
 
     if (!senhaValida) {
+      console.log(`[LOGIN] Senha inválida para usuário: "${username}"`);
       return res.status(401).json({
         ok: false,
         code: 'INVALID_CREDENTIALS',
         message: 'Usuário ou senha incorretos'
       });
     }
+
+    console.log(`[LOGIN] Login bem-sucedido: "${username}"`);
 
     // Registrar último login
     await tursoService.registrarUltimoLogin(usuario.usuario_id);
@@ -52,6 +59,7 @@ router.post('/login', async (req, res) => {
     return res.json({
       ok: true,
       token,
+      permissoes,
       usuario: {
         usuario_id: usuario.usuario_id,
         username: usuario.username,
@@ -554,6 +562,60 @@ router.post('/force-change-password', requireAuth, async (req, res) => {
       ok: false,
       code: 'PASSWORD_CHANGE_ERROR',
       message: 'Erro ao trocar senha'
+    });
+  }
+});
+
+// POST /api/auth/reset-admin - Resetar senha do admin (uso emergencial)
+router.post('/reset-admin', async (req, res) => {
+  try {
+    const { nova_senha } = req.body;
+
+    if (!nova_senha || nova_senha.length < 6) {
+      return res.status(400).json({
+        ok: false,
+        code: 'INVALID_DATA',
+        message: 'Nova senha é obrigatória e deve ter no mínimo 6 caracteres'
+      });
+    }
+
+    // Buscar usuário admin
+    const admin = await tursoService.buscarUsuarioPorUsername('admin');
+
+    if (!admin) {
+      console.log('[RESET-ADMIN] Usuário admin não encontrado, criando...');
+      const passwordHash = await authService.hashPassword(nova_senha);
+      await tursoService.criarUsuario({
+        username: 'admin',
+        passwordHash,
+        nomeCompleto: 'Administrador',
+        email: 'admin@germani.com.br',
+        repId: null,
+        perfil: 'admin'
+      });
+
+      return res.json({
+        ok: true,
+        message: 'Usuário admin criado com a nova senha'
+      });
+    }
+
+    // Atualizar senha do admin
+    const passwordHash = await authService.hashPassword(nova_senha);
+    await tursoService.atualizarUsuario(admin.usuario_id, { passwordHash });
+
+    console.log(`[RESET-ADMIN] Senha do admin (ID=${admin.usuario_id}) resetada com sucesso`);
+
+    return res.json({
+      ok: true,
+      message: 'Senha do admin resetada com sucesso'
+    });
+  } catch (error) {
+    console.error('Erro ao resetar senha do admin:', error);
+    return res.status(500).json({
+      ok: false,
+      code: 'RESET_ADMIN_ERROR',
+      message: 'Erro ao resetar senha do admin'
     });
   }
 });

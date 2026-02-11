@@ -2024,7 +2024,7 @@ class TursoService {
 
     if (campos.length === 0) return;
 
-    campos.push('atualizado_em = datetime("now")');
+    campos.push('atualizado_em = datetime("now", "-03:00")');
     valores.push(usuarioId);
 
     const sql = `UPDATE cc_usuarios SET ${campos.join(', ')} WHERE usuario_id = ?`;
@@ -2032,12 +2032,12 @@ class TursoService {
   }
 
   async registrarUltimoLogin(usuarioId) {
-    const sql = 'UPDATE cc_usuarios SET ultimo_login = datetime("now") WHERE usuario_id = ?';
+    const sql = 'UPDATE cc_usuarios SET ultimo_login = datetime("now", "-03:00") WHERE usuario_id = ?';
     await this.execute(sql, [usuarioId]);
   }
 
   async desativarUsuario(usuarioId) {
-    const sql = 'UPDATE cc_usuarios SET ativo = 0, atualizado_em = datetime("now") WHERE usuario_id = ?';
+    const sql = 'UPDATE cc_usuarios SET ativo = 0, atualizado_em = datetime("now", "-03:00") WHERE usuario_id = ?';
     await this.execute(sql, [usuarioId]);
   }
 
@@ -3578,14 +3578,26 @@ class TursoService {
       { id: 'estrutura-banco-comercial', titulo: 'Estrutura Banco Comercial', categoria: 'configuracoes', icone: '🗄️', ordem: 92 }
     ];
 
-    for (const tela of telasWeb) {
-      try {
-        await this.execute(
-          `INSERT OR IGNORE INTO cc_web_telas (tela_id, tela_titulo, tela_categoria, tela_icone, ordem) VALUES (?, ?, ?, ?, ?)`,
-          [tela.id, tela.titulo, tela.categoria, tela.icone, tela.ordem]
-        );
-      } catch (e) {
-        // Ignora se já existe
+    // Inserir todas as telas em batch (1 round-trip ao invés de ~28)
+    try {
+      const client = this.getClient();
+      const statements = telasWeb.map(tela => ({
+        sql: `INSERT OR IGNORE INTO cc_web_telas (tela_id, tela_titulo, tela_categoria, tela_icone, ordem) VALUES (?, ?, ?, ?, ?)`,
+        args: [tela.id, tela.titulo, tela.categoria, tela.icone, tela.ordem]
+      }));
+      await client.batch(statements, 'write');
+    } catch (batchError) {
+      // Fallback: inserir uma a uma se batch não funcionar
+      console.warn('[ensureWebLoginSchema] Batch falhou, usando fallback:', batchError.message);
+      for (const tela of telasWeb) {
+        try {
+          await this.execute(
+            `INSERT OR IGNORE INTO cc_web_telas (tela_id, tela_titulo, tela_categoria, tela_icone, ordem) VALUES (?, ?, ?, ?, ?)`,
+            [tela.id, tela.titulo, tela.categoria, tela.icone, tela.ordem]
+          );
+        } catch (e) {
+          // Ignora se já existe
+        }
       }
     }
     console.log('✅ Telas web configuradas');
@@ -3617,13 +3629,25 @@ class TursoService {
     const adminId = Number(result.lastInsertRowid);
     console.log(`✅ Usuário admin criado com ID ${adminId}`);
 
-    // Dar acesso a todas as telas
+    // Dar acesso a todas as telas (batch para reduzir round-trips)
     const telas = await this.listarTelasWeb();
-    for (const tela of telas) {
-      await this.execute(`
-        INSERT OR REPLACE INTO cc_usuario_telas_web (usuario_id, tela_id, pode_visualizar, pode_editar)
-        VALUES (?, ?, 1, 1)
-      `, [adminId, tela.tela_id]);
+    try {
+      const client = this.getClient();
+      const statements = telas.map(tela => ({
+        sql: `INSERT OR REPLACE INTO cc_usuario_telas_web (usuario_id, tela_id, pode_visualizar, pode_editar) VALUES (?, ?, 1, 1)`,
+        args: [adminId, tela.tela_id]
+      }));
+      if (statements.length > 0) {
+        await client.batch(statements, 'write');
+      }
+    } catch (batchError) {
+      console.warn('[criarUsuarioAdmin] Batch falhou, usando fallback:', batchError.message);
+      for (const tela of telas) {
+        await this.execute(`
+          INSERT OR REPLACE INTO cc_usuario_telas_web (usuario_id, tela_id, pode_visualizar, pode_editar)
+          VALUES (?, ?, 1, 1)
+        `, [adminId, tela.tela_id]);
+      }
     }
 
     return { criado: true, usuario_id: adminId };
@@ -3914,13 +3938,26 @@ class TursoService {
       WHERE usuario_id = ?
     `, [usuario.usuario_id]);
 
-    // Dar acesso a todas as telas
+    // Dar acesso a todas as telas (batch para reduzir round-trips)
     const telas = await this.listarTelasWeb();
-    for (const tela of telas) {
-      await this.execute(`
-        INSERT OR REPLACE INTO cc_usuario_telas_web (usuario_id, tela_id, pode_visualizar, pode_editar)
-        VALUES (?, ?, 1, 1)
-      `, [usuario.usuario_id, tela.tela_id]);
+    try {
+      const client = this.getClient();
+      const statements = telas.map(tela => ({
+        sql: `INSERT OR REPLACE INTO cc_usuario_telas_web (usuario_id, tela_id, pode_visualizar, pode_editar) VALUES (?, ?, 1, 1)`,
+        args: [usuario.usuario_id, tela.tela_id]
+      }));
+      if (statements.length > 0) {
+        await client.batch(statements, 'write');
+      }
+    } catch (batchError) {
+      // Fallback sequencial
+      console.warn('[darAcessoWebCompleto] Batch falhou, usando fallback:', batchError.message);
+      for (const tela of telas) {
+        await this.execute(`
+          INSERT OR REPLACE INTO cc_usuario_telas_web (usuario_id, tela_id, pode_visualizar, pode_editar)
+          VALUES (?, ?, 1, 1)
+        `, [usuario.usuario_id, tela.tela_id]);
+      }
     }
 
     console.log(`✅ Acesso web completo dado ao usuário ${username} (ID: ${usuario.usuario_id})`);

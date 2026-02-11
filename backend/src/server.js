@@ -157,42 +157,75 @@ app.use((err, req, res, next) => {
 
 // ==================== INICIALIZAÇÃO ====================
 
+// Self-ping para manter o servidor acordado no Render (evita cold start)
+function iniciarSelfPing() {
+  const INTERVALO_MS = 4 * 60 * 1000; // 4 minutos (Render dorme após ~15min)
+  const selfUrl = `http://localhost:${config.port}/api/health`;
+
+  setInterval(async () => {
+    try {
+      const resp = await fetch(selfUrl);
+      if (resp.ok) {
+        console.log('[KEEP-ALIVE] Self-ping OK');
+      }
+    } catch (error) {
+      // Ignora erros silenciosamente - o servidor pode estar reiniciando
+    }
+  }, INTERVALO_MS);
+
+  console.log(`🏓 Self-ping ativo (a cada ${INTERVALO_MS / 60000} min)`);
+}
+
 async function inicializar() {
   try {
+    const inicioTotal = Date.now();
     console.log('🚀 Inicializando servidor...');
 
     initDbClient();
-    await tursoService.ensureSchemaRegistroRota();
-    await tursoService.ensureSchemaDocumentos();
-    await tursoService.ensureUsuariosSchema();
-    await tursoService.ensureSchemaClientesCoordenadas();
-    await tursoService.ensureSchemaEspacos();
 
-    // Inicializar sistema de login web e telas
+    // Executar schema checks em paralelo para reduzir tempo de startup
+    const inicioSchemas = Date.now();
+    await Promise.all([
+      tursoService.ensureSchemaRegistroRota().catch(e => console.warn('⚠️ Schema registro-rota:', e.message)),
+      tursoService.ensureSchemaDocumentos().catch(e => console.warn('⚠️ Schema documentos:', e.message)),
+      tursoService.ensureUsuariosSchema().catch(e => console.warn('⚠️ Schema usuarios:', e.message)),
+      tursoService.ensureSchemaClientesCoordenadas().catch(e => console.warn('⚠️ Schema coordenadas:', e.message)),
+      tursoService.ensureSchemaEspacos().catch(e => console.warn('⚠️ Schema espacos:', e.message)),
+    ]);
+    console.log(`✅ Schemas base verificados em ${Date.now() - inicioSchemas}ms`);
+
+    // Schema web depende dos schemas base - executar depois
     try {
+      const inicioWeb = Date.now();
       await tursoService.ensureWebLoginSchema();
-      console.log('✅ Schema de login web inicializado');
+      console.log(`✅ Schema de login web inicializado em ${Date.now() - inicioWeb}ms`);
     } catch (webError) {
       console.warn('⚠️  Aviso ao inicializar schema web:', webError.message);
     }
 
-    // Criar usuário administrador web se não existir
-    try {
-      const result = await tursoService.criarUsuarioAdmin();
-      if (result.criado) {
-        console.log('✅ Usuário admin criado com sucesso!');
-        console.log('   Usuário: admin | Senha: troca@123456');
-      }
-    } catch (adminError) {
-      console.warn('⚠️  Aviso ao verificar/criar admin:', adminError.message);
-    }
+    // Admin e acesso web podem rodar em paralelo
+    await Promise.all([
+      (async () => {
+        try {
+          const result = await tursoService.criarUsuarioAdmin();
+          if (result.criado) {
+            console.log('✅ Usuário admin criado com sucesso!');
+            console.log('   Usuário: admin | Senha: troca@123456');
+          }
+        } catch (adminError) {
+          console.warn('⚠️  Aviso ao verificar/criar admin:', adminError.message);
+        }
+      })(),
+      (async () => {
+        try {
+          await tursoService.darAcessoWebCompleto('genaro');
+        } catch (genaroError) {
+          console.log('ℹ️  Usuário genaro não encontrado ou já configurado');
+        }
+      })()
+    ]);
 
-    // Dar acesso web completo ao usuário Genaro
-    try {
-      await tursoService.darAcessoWebCompleto('genaro');
-    } catch (genaroError) {
-      console.log('ℹ️  Usuário genaro não encontrado ou já configurado');
-    }
+    console.log(`⏱️  Inicialização total: ${Date.now() - inicioTotal}ms`);
 
     // Iniciar servidor
     app.listen(config.port, () => {
@@ -204,6 +237,9 @@ async function inicializar() {
       console.log(`🔧 Health check: http://localhost:${config.port}/health`);
       console.log('='.repeat(60));
       console.log('');
+
+      // Iniciar self-ping para manter o servidor acordado
+      iniciarSelfPing();
     });
   } catch (error) {
     console.error('❌ Erro ao inicializar servidor:', error);
