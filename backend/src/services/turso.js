@@ -2552,7 +2552,21 @@ class TursoService {
   async listarRegistrosEspacos(filtros = {}) {
     await this.ensureSchemaEspacos();
     let sql = `
-      SELECT reg.*, te.esp_nome as tipo_nome, rep.repo_nome
+      SELECT
+        reg.reg_id as re_id,
+        reg.reg_visita_id as re_visita_id,
+        reg.reg_repositor_id as re_repositor_id,
+        reg.reg_cliente_id as re_cliente_id,
+        reg.reg_tipo_espaco_id as re_tipo_espaco_id,
+        reg.reg_quantidade_esperada as re_qtd_esperada,
+        reg.reg_quantidade_registrada as re_qtd_registrada,
+        reg.reg_foto_url as re_foto_url,
+        reg.reg_observacao as re_observacao,
+        reg.reg_data_registro as re_data_registro,
+        reg.reg_criado_em as re_criado_em,
+        te.esp_nome as tipo_espaco_nome,
+        rep.repo_nome as repositor_nome,
+        (SELECT ces_cliente_nome FROM cc_clientes_espacos WHERE ces_cliente_id = reg.reg_cliente_id LIMIT 1) as cliente_nome
       FROM cc_registro_espacos reg
       JOIN cc_tipos_espaco te ON te.esp_id = reg.reg_tipo_espaco_id
       LEFT JOIN cad_repositor rep ON rep.repo_cod = reg.reg_repositor_id
