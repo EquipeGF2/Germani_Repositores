@@ -21,6 +21,7 @@ import syncRoutes from './routes/sync.js';
 import atividadesRoutes from './routes/atividades.js';
 import performanceRoutes from './routes/performance.js';
 import { authService } from './services/auth.js';
+import { schedulerService } from './services/scheduler.js';
 
 const app = express();
 
@@ -240,6 +241,9 @@ async function inicializar() {
 
       // Iniciar self-ping para manter o servidor acordado
       iniciarSelfPing();
+
+      // Iniciar agendamentos automáticos (fechamento mensal, etc.)
+      schedulerService.init();
     });
   } catch (error) {
     console.error('❌ Erro ao inicializar servidor:', error);
