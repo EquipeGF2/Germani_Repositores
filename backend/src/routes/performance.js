@@ -245,4 +245,168 @@ router.get('/repositores', optionalAuth, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/performance/fechamento-mensal
+ * Gera snapshot do histórico de performance para uma competência específica.
+ * Este snapshot é IMUTÁVEL e representa a fotografia dos totais naquele momento.
+ *
+ * Body:
+ *   competencia - Competência no formato YYYY-MM (obrigatório)
+ *   rep_id      - ID do repositor (opcional - se omitido, processa todos)
+ */
+router.post('/fechamento-mensal', optionalAuth, async (req, res) => {
+  try {
+    const { competencia, rep_id } = req.body;
+
+    if (!competencia || !/^\d{4}-\d{2}$/.test(competencia)) {
+      return res.status(400).json({
+        ok: false,
+        message: 'Competência inválida. Use o formato YYYY-MM'
+      });
+    }
+
+    // Validar que não é um mês futuro
+    const [ano, mes] = competencia.split('-').map(Number);
+    const hoje = new Date();
+    const mesAtual = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+
+    if (competencia > mesAtual) {
+      return res.status(400).json({
+        ok: false,
+        message: 'Não é possível gerar fechamento para meses futuros'
+      });
+    }
+
+    // Buscar repositores a processar
+    let repositores;
+    if (rep_id) {
+      const repoInfo = await tursoService.buscarRepositorInfo(Number(rep_id));
+      if (!repoInfo) {
+        return res.status(404).json({ ok: false, message: 'Repositor não encontrado' });
+      }
+      repositores = [{ rep_id: Number(rep_id), rep_name: repoInfo.repo_nome }];
+    } else {
+      repositores = await tursoService.listarRepositoresAtivos();
+    }
+
+    const resultados = [];
+    const erros = [];
+
+    for (const repo of repositores) {
+      try {
+        // Buscar clientes do roteiro do repositor
+        const clientesRoteiro = await tursoService.buscarClientesDoRepositor(repo.rep_id);
+
+        if (!clientesRoteiro || clientesRoteiro.length === 0) {
+          resultados.push({
+            rep_id: repo.rep_id,
+            rep_nome: repo.rep_name,
+            status: 'sem_clientes',
+            faturamento: 0,
+            peso: 0,
+            custo: 0
+          });
+          continue;
+        }
+
+        // Calcular período do mês
+        const primeiroDia = `${competencia}-01`;
+        const ultimoDia = new Date(ano, mes, 0).toISOString().split('T')[0];
+
+        // Buscar vendas do banco comercial
+        const clienteIds = clientesRoteiro.map(c => c.cliente_id);
+        const vendas = await tursoService.buscarVendasPorClientes(clienteIds, primeiroDia, ultimoDia);
+
+        // Calcular totais
+        let totalFaturamento = 0;
+        let totalPeso = 0;
+        (vendas || []).forEach(v => {
+          totalFaturamento += parseFloat(v.valor_financeiro) || 0;
+          totalPeso += parseFloat(v.peso_liq) || 0;
+        });
+
+        // Buscar custo do repositor para o mês
+        let totalCusto = 0;
+        try {
+          const custosMap = await tursoService.buscarCustosRepositorMensal(repo.rep_id, competencia, competencia);
+          totalCusto = Object.values(custosMap).reduce((a, b) => a + b, 0);
+        } catch (e) {
+          // Custos podem não existir
+        }
+
+        // Salvar snapshot
+        await tursoService.salvarHistoricoPerformance(
+          repo.rep_id,
+          competencia,
+          totalFaturamento,
+          totalPeso,
+          totalCusto
+        );
+
+        resultados.push({
+          rep_id: repo.rep_id,
+          rep_nome: repo.rep_name,
+          status: 'ok',
+          faturamento: totalFaturamento,
+          peso: totalPeso,
+          custo: totalCusto
+        });
+
+      } catch (error) {
+        erros.push({
+          rep_id: repo.rep_id,
+          rep_nome: repo.rep_name,
+          erro: error.message
+        });
+      }
+    }
+
+    return res.json({
+      ok: true,
+      competencia,
+      processados: resultados.length,
+      erros: erros.length,
+      resultados,
+      erros: erros.length > 0 ? erros : undefined
+    });
+
+  } catch (error) {
+    console.error('Erro no fechamento mensal:', error);
+    return res.status(500).json({
+      ok: false,
+      message: 'Erro ao processar fechamento mensal: ' + error.message
+    });
+  }
+});
+
+/**
+ * GET /api/performance/historico
+ * Busca histórico de performance (snapshots salvos)
+ *
+ * Query params:
+ *   rep_id         - ID do repositor (obrigatório)
+ *   periodo_inicio - Competência inicial YYYY-MM
+ *   periodo_fim    - Competência final YYYY-MM
+ */
+router.get('/historico', optionalAuth, async (req, res) => {
+  try {
+    const { rep_id, periodo_inicio, periodo_fim } = req.query;
+
+    if (!rep_id) {
+      return res.status(400).json({ ok: false, message: 'rep_id é obrigatório' });
+    }
+
+    const historico = await tursoService.buscarHistoricoPerformance(
+      Number(rep_id),
+      periodo_inicio || '2020-01',
+      periodo_fim || '2099-12'
+    );
+
+    return res.json({ ok: true, historico });
+  } catch (error) {
+    console.error('Erro ao buscar histórico:', error);
+    return res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
 export default router;

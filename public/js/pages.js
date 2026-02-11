@@ -7404,12 +7404,31 @@ export const pages = {
         const iniDate = new Date(hoje.getFullYear() - 1, hoje.getMonth(), 1);
         const iniMes = `${iniDate.getFullYear()}-${String(iniDate.getMonth() + 1).padStart(2, '0')}`;
 
+        // Mês anterior para fechamento
+        const mesAnterior = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+        const competenciaFechamento = `${mesAnterior.getFullYear()}-${String(mesAnterior.getMonth() + 1).padStart(2, '0')}`;
+
         return `
             <div class="card">
                 <div class="card-body" style="padding-top: 20px;">
-                    <div style="background:#fef3c7; border:1px solid #fbbf24; border-radius:8px; padding:10px 14px; margin-bottom:14px; font-size:0.82rem; color:#92400e; line-height:1.4;">
-                        Dados consolidados do <strong>histórico real</strong> de cada repositor. Os totais são registrados automaticamente ao consultar o faturamento e refletem o retrato fiel de cada competência.
+                    <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:10px 14px; margin-bottom:14px; font-size:0.82rem; color:#1e40af; line-height:1.4;">
+                        <strong>📸 Histórico de Performance</strong> - Fotografia dos totais de cada repositor ao final de cada mês.
+                        Estes dados são <strong>imutáveis</strong> e não mudam mesmo que o roteiro seja alterado.
+                        Diferente do Faturamento que usa o roteiro atual, aqui você vê os dados <strong>consolidados na época</strong>.
                     </div>
+
+                    <div style="background:#fef3c7; border:1px solid #fbbf24; border-radius:8px; padding:10px 14px; margin-bottom:14px; font-size:0.82rem; color:#92400e; line-height:1.4; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                        <div style="flex:1; min-width:200px;">
+                            <strong>⚠️ Fechamento Mensal</strong> - Execute ao final de cada mês para registrar a fotografia dos totais.
+                        </div>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <input type="month" id="histCompetenciaFechamento" value="${competenciaFechamento}" style="padding:6px 10px; border:1px solid #d1d5db; border-radius:6px;">
+                            <button id="btnFechamentoMensal" class="btn btn-warning" style="white-space:nowrap;">
+                                📸 Gerar Fechamento
+                            </button>
+                        </div>
+                    </div>
+
                     <div class="hist-filters" style="margin-bottom: 18px; background:#f9fafb; padding:14px 16px; border:1px solid #e5e7eb; border-radius:12px; display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px; align-items:end;">
                         <div class="filter-group">
                             <label for="histSupervisor">Supervisor</label>
@@ -7445,8 +7464,8 @@ export const pages = {
                     </div>
 
                     <div id="histEmpty" style="display:none; text-align:center; padding:3rem; color:var(--gray-500);">
-                        <div style="font-size:2rem;">Sem dados</div>
-                        <p>Selecione um repositor ou supervisor e clique em Buscar.</p>
+                        <div style="font-size:2rem;">📸 Sem dados históricos</div>
+                        <p>Execute o <strong>Fechamento Mensal</strong> para gerar os snapshots, ou selecione filtros e clique em Buscar.</p>
                     </div>
 
                     <div id="histTableContainer" style="display:none; overflow-x:auto;">
