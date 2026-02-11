@@ -33,6 +33,9 @@ class TursoService {
       this.ensureUsersWebSchema().catch((err) => {
         console.warn('⚠️  Falha ao garantir schema de users_web:', err?.message || err);
       });
+      this.ensurePerformanceHistoricoSchema().catch((err) => {
+        console.warn('⚠️  Falha ao garantir schema de performance_historico:', err?.message || err);
+      });
     } catch (error) {
       if (error instanceof DatabaseNotConfiguredError) {
         this.client = null;
@@ -2566,7 +2569,10 @@ class TursoService {
         reg.reg_criado_em as re_criado_em,
         te.esp_nome as tipo_espaco_nome,
         rep.repo_nome as repositor_nome,
-        (SELECT ces_cliente_nome FROM cc_clientes_espacos WHERE ces_cliente_id = reg.reg_cliente_id LIMIT 1) as cliente_nome
+        COALESCE(
+          (SELECT ces_cliente_nome FROM cc_clientes_espacos WHERE ces_cliente_id = reg.reg_cliente_id AND ces_cliente_nome IS NOT NULL AND ces_cliente_nome != '' LIMIT 1),
+          ''
+        ) as cliente_nome
       FROM cc_registro_espacos reg
       JOIN cc_tipos_espaco te ON te.esp_id = reg.reg_tipo_espaco_id
       LEFT JOIN cad_repositor rep ON rep.repo_cod = reg.reg_repositor_id
@@ -2603,7 +2609,38 @@ class TursoService {
     }
 
     const result = await this.execute(sql, args);
-    return result?.rows || result || [];
+    const rows = result?.rows || result || [];
+
+    // Buscar nomes de clientes que estão faltando do banco comercial
+    const clientesSemNome = rows.filter(r => !r.cliente_nome);
+    if (clientesSemNome.length > 0) {
+      const clienteIds = [...new Set(clientesSemNome.map(r => String(r.re_cliente_id).trim().replace(/\.0$/, '')))];
+      try {
+        const comercialClient = this.getComercialClient();
+        if (comercialClient) {
+          const placeholders = clienteIds.map(() => '?').join(',');
+          const clientesResult = await comercialClient.execute({
+            sql: `SELECT cliente, nome, fantasia FROM tab_cliente WHERE cliente IN (${placeholders})`,
+            args: clienteIds
+          });
+          const clientesMap = new Map();
+          (clientesResult?.rows || []).forEach(c => {
+            const codNorm = String(c.cliente).trim().replace(/\.0$/, '');
+            clientesMap.set(codNorm, c.fantasia || c.nome || '');
+          });
+          rows.forEach(r => {
+            const idNorm = String(r.re_cliente_id).trim().replace(/\.0$/, '');
+            if (!r.cliente_nome) {
+              r.cliente_nome = clientesMap.get(idNorm) || '';
+            }
+          });
+        }
+      } catch (error) {
+        console.warn('[listarRegistrosEspacos] Não foi possível buscar nomes dos clientes:', error.message);
+      }
+    }
+
+    return rows;
   }
 
   async buscarClientesComEspaco(listaClientes) {
@@ -4085,6 +4122,61 @@ class TursoService {
       data_inicio: r.repo_data_inicio || null,
       data_fim: r.repo_data_fim || null
     }));
+  }
+
+  // ==================== PERFORMANCE HISTÓRICO ====================
+
+  // Garantir schema da tabela cc_performance_historico
+  async ensurePerformanceHistoricoSchema() {
+    const sql = `
+      CREATE TABLE IF NOT EXISTS cc_performance_historico (
+        ph_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ph_rep_id INTEGER NOT NULL,
+        ph_competencia TEXT NOT NULL,
+        ph_total_faturamento REAL DEFAULT 0,
+        ph_total_peso_liq REAL DEFAULT 0,
+        ph_total_custo REAL DEFAULT 0,
+        ph_criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+        ph_atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (ph_rep_id, ph_competencia)
+      )
+    `;
+    await this.execute(sql, []);
+
+    // Criar índices
+    await this.execute(`CREATE INDEX IF NOT EXISTS idx_ph_rep_id ON cc_performance_historico(ph_rep_id)`, []);
+    await this.execute(`CREATE INDEX IF NOT EXISTS idx_ph_competencia ON cc_performance_historico(ph_competencia)`, []);
+
+    console.log('✅ Tabela cc_performance_historico garantida');
+  }
+
+  // Salvar histórico de performance
+  async salvarHistoricoPerformance(repId, competencia, faturamento, pesoLiq, custo) {
+    await this.ensurePerformanceHistoricoSchema();
+    const sql = `
+      INSERT INTO cc_performance_historico (ph_rep_id, ph_competencia, ph_total_faturamento, ph_total_peso_liq, ph_total_custo, ph_atualizado_em)
+      VALUES (?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(ph_rep_id, ph_competencia) DO UPDATE SET
+        ph_total_faturamento = excluded.ph_total_faturamento,
+        ph_total_peso_liq = excluded.ph_total_peso_liq,
+        ph_total_custo = excluded.ph_total_custo,
+        ph_atualizado_em = datetime('now')
+    `;
+    await this.execute(sql, [repId, competencia, faturamento, pesoLiq, custo]);
+  }
+
+  // Buscar histórico de performance por repositor
+  async buscarHistoricoPerformance(repId, limite = 12) {
+    await this.ensurePerformanceHistoricoSchema();
+    const sql = `
+      SELECT ph_competencia, ph_total_faturamento, ph_total_peso_liq, ph_total_custo, ph_atualizado_em
+      FROM cc_performance_historico
+      WHERE ph_rep_id = ?
+      ORDER BY ph_competencia DESC
+      LIMIT ?
+    `;
+    const result = await this.execute(sql, [repId, limite]);
+    return result?.rows || [];
   }
 }
 
