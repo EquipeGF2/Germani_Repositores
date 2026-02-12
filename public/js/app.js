@@ -13929,8 +13929,17 @@ class App {
             if (btnDownloadZip) btnDownloadZip.onclick = () => this.downloadZip();
             if (btnMostrarTodos) btnMostrarTodos.onclick = () => this.carregarTodosDocumentos();
 
-            // Carregar automaticamente os documentos recentes (últimos 30 dias)
-            await this.carregarDocumentosRecentes();
+            // Exibir estado vazio instruindo o usuário a usar os filtros (sem carregamento automático)
+            const container = document.getElementById('documentosContainer');
+            if (container) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🔍</div>
+                        <p>Utilize os filtros acima para buscar documentos</p>
+                        <small>Selecione o tipo de documento ou repositor e clique em "Buscar Documentos"</small>
+                    </div>
+                `;
+            }
         } catch (error) {
             console.error('Erro ao inicializar consulta de documentos:', error);
             this.showNotification('Não foi possível carregar a consulta de documentos agora. Tente novamente mais tarde.', 'warning');
@@ -15539,12 +15548,19 @@ class App {
             return;
         }
 
+        // Detectar modo de agrupamento baseado nos filtros selecionados
+        const repositorId = document.getElementById('consultaRepositor')?.value || '';
+        const tipoId = document.getElementById('consultaTipo')?.value || '';
+        const agruparPorRepositor = !repositorId;
+        const agruparPorTipo = !tipoId;
+
         container.innerHTML = `
             <div style="margin-bottom: 16px; display: flex; align-items: center; gap: 12px;">
                 <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                     <input type="checkbox" id="selecionarTodos" class="doc-checkbox">
                     <span style="font-weight: 600; color: #374151;">Selecionar Todos</span>
                 </label>
+                <span style="color: #6b7280; font-size: 13px;">${documentos.length} documento(s)</span>
             </div>
         `;
 
@@ -15553,50 +15569,119 @@ class App {
             selecionarTodos.onchange = () => this.toggleSelecionarTodos(documentos);
         }
 
-        documentos.forEach(doc => {
-            const item = document.createElement('div');
-            item.className = 'doc-item';
-            item.id = `doc-${doc.doc_id}`;
-
-            const dataFormatada = doc.doc_data_ref ?
-                new Date(doc.doc_data_ref + 'T12:00:00').toLocaleDateString('pt-BR') : '-';
-
-            // Extrair observação real (ignorar JSON de despesas)
-            const observacaoExibir = this.extrairObservacaoDocumento(doc.doc_observacao);
-
-            item.innerHTML = `
-                <div class="doc-main">
-                    <input type="checkbox" class="doc-checkbox" data-doc-id="${doc.doc_id}">
-                    <div class="doc-info card-safe">
-                        <div class="doc-line">
-                            <span class="doc-icon">📄</span>
-                            <span class="doc-nome truncate-1" title="${doc.doc_nome_drive}">${doc.doc_nome_drive}</span>
-                        </div>
-                        <div class="doc-meta">
-                            <div class="doc-line">
-                                <span class="doc-icon">🏷️</span>
-                                <span class="doc-text"><span class="doc-tipo-badge">${doc.dct_nome || 'Sem tipo'}</span></span>
-                            </div>
-                            <div class="doc-line doc-line-data">
-                                <span class="doc-icon">📅</span>
-                                <span class="doc-text truncate-1" title="${dataFormatada}">${dataFormatada}</span>
-                                <button class="btn-doc-download btn-doc-download-inline" onclick="app.downloadDocumento('${doc.doc_id}')">
-                                    📥 Download
-                                </button>
-                            </div>
-                            ${observacaoExibir ? `<div class="doc-line"><span class="doc-icon">💬</span><span class="doc-text break-any">${observacaoExibir}</span></div>` : ''}
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            const checkbox = item.querySelector('.doc-checkbox');
-            checkbox.onchange = () => this.toggleDocumento(doc.doc_id, checkbox.checked, item);
-
-            container.appendChild(item);
-        });
+        if (agruparPorRepositor && agruparPorTipo) {
+            this._renderDocumentosAgrupadosDuplo(container, documentos);
+        } else if (agruparPorRepositor) {
+            this._renderDocumentosAgrupadosPorRepositor(container, documentos);
+        } else {
+            this._renderDocumentosFlat(container, documentos);
+        }
 
         this.showNotification(`${documentos.length} documento(s) encontrado(s)`, 'success');
+    }
+
+    _criarElementoDocumento(doc) {
+        const item = document.createElement('div');
+        item.className = 'doc-item';
+        item.id = `doc-${doc.doc_id}`;
+
+        const dataFormatada = doc.doc_data_ref ?
+            new Date(doc.doc_data_ref + 'T12:00:00').toLocaleDateString('pt-BR') : '-';
+
+        const observacaoExibir = this.extrairObservacaoDocumento(doc.doc_observacao);
+
+        item.innerHTML = `
+            <div class="doc-main">
+                <input type="checkbox" class="doc-checkbox" data-doc-id="${doc.doc_id}">
+                <div class="doc-info card-safe">
+                    <div class="doc-line">
+                        <span class="doc-icon">📄</span>
+                        <span class="doc-nome truncate-1" title="${doc.doc_nome_drive}">${doc.doc_nome_drive}</span>
+                    </div>
+                    <div class="doc-meta">
+                        <div class="doc-line">
+                            <span class="doc-icon">🏷️</span>
+                            <span class="doc-text"><span class="doc-tipo-badge">${doc.dct_nome || 'Sem tipo'}</span></span>
+                        </div>
+                        <div class="doc-line doc-line-data">
+                            <span class="doc-icon">📅</span>
+                            <span class="doc-text truncate-1" title="${dataFormatada}">${dataFormatada}</span>
+                            <button class="btn-doc-download btn-doc-download-inline" onclick="app.downloadDocumento('${doc.doc_id}')">
+                                📥 Download
+                            </button>
+                        </div>
+                        ${observacaoExibir ? `<div class="doc-line"><span class="doc-icon">💬</span><span class="doc-text break-any">${observacaoExibir}</span></div>` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const checkbox = item.querySelector('.doc-checkbox');
+        checkbox.onchange = () => this.toggleDocumento(doc.doc_id, checkbox.checked, item);
+
+        return item;
+    }
+
+    _renderDocumentosFlat(container, documentos) {
+        documentos.forEach(doc => {
+            container.appendChild(this._criarElementoDocumento(doc));
+        });
+    }
+
+    _renderDocumentosAgrupadosPorRepositor(container, documentos) {
+        const grupos = {};
+        documentos.forEach(doc => {
+            const key = doc.doc_repositor_id || 'sem-repositor';
+            if (!grupos[key]) {
+                grupos[key] = { nome: doc.repo_nome || `Repositor ${key}`, docs: [] };
+            }
+            grupos[key].docs.push(doc);
+        });
+
+        Object.entries(grupos).forEach(([repId, grupo]) => {
+            const header = document.createElement('div');
+            header.style.cssText = 'margin-top: 20px; margin-bottom: 8px; padding: 10px 12px; background: #e5e7eb; border-radius: 8px; font-weight: 700; color: #1f2937; font-size: 15px;';
+            header.textContent = `${grupo.nome} (${grupo.docs.length} documento(s))`;
+            container.appendChild(header);
+
+            grupo.docs.forEach(doc => {
+                container.appendChild(this._criarElementoDocumento(doc));
+            });
+        });
+    }
+
+    _renderDocumentosAgrupadosDuplo(container, documentos) {
+        const grupos = {};
+        documentos.forEach(doc => {
+            const repKey = doc.doc_repositor_id || 'sem-repositor';
+            const tipoKey = doc.doc_dct_id || 'sem-tipo';
+            if (!grupos[repKey]) {
+                grupos[repKey] = { nome: doc.repo_nome || `Repositor ${repKey}`, tipos: {} };
+            }
+            if (!grupos[repKey].tipos[tipoKey]) {
+                grupos[repKey].tipos[tipoKey] = { nome: doc.dct_nome || 'Sem tipo', docs: [] };
+            }
+            grupos[repKey].tipos[tipoKey].docs.push(doc);
+        });
+
+        Object.entries(grupos).forEach(([repId, grupo]) => {
+            const totalRep = Object.values(grupo.tipos).reduce((sum, t) => sum + t.docs.length, 0);
+            const repHeader = document.createElement('div');
+            repHeader.style.cssText = 'margin-top: 24px; margin-bottom: 4px; padding: 10px 12px; background: #e5e7eb; border-radius: 8px; font-weight: 700; color: #111827; font-size: 16px;';
+            repHeader.textContent = `${grupo.nome} (${totalRep} documento(s))`;
+            container.appendChild(repHeader);
+
+            Object.entries(grupo.tipos).forEach(([tipoId, tipoGrupo]) => {
+                const tipoHeader = document.createElement('div');
+                tipoHeader.style.cssText = 'margin-top: 8px; margin-bottom: 4px; padding: 6px 12px 6px 24px; background: #f9fafb; border-left: 3px solid #ef4444; font-weight: 600; color: #374151; font-size: 14px;';
+                tipoHeader.textContent = `${tipoGrupo.nome} (${tipoGrupo.docs.length})`;
+                container.appendChild(tipoHeader);
+
+                tipoGrupo.docs.forEach(doc => {
+                    container.appendChild(this._criarElementoDocumento(doc));
+                });
+            });
+        });
     }
 
     /**
@@ -19908,8 +19993,25 @@ class App {
     // ==================== MÓDULO DE ESPAÇOS ====================
 
     async inicializarPaginaEspacos() {
-        // Carregar clientes com espaço ao abrir a página
-        await this.carregarClientesEspaco();
+        // Carregar apenas os tipos de espaço para preencher o filtro dropdown (sem buscar dados)
+        try {
+            const tiposResp = await fetchJson(`${API_BASE_URL}/api/espacos/tipos`);
+            if (tiposResp?.ok && tiposResp.data) {
+                const selectTipo = document.getElementById('filtro_tipo_espaco');
+                if (selectTipo) {
+                    selectTipo.innerHTML = '<option value="">Todos</option>' +
+                        tiposResp.data.map(t => `<option value="${t.esp_id}">${t.esp_nome}</option>`).join('');
+                }
+            }
+        } catch (e) {
+            console.error('Erro ao carregar tipos de espaço para filtro:', e);
+        }
+
+        // Wiring do botão de busca - dados são carregados somente após clicar
+        const btnBuscar = document.getElementById('btnBuscarEspacos');
+        if (btnBuscar) {
+            btnBuscar.onclick = () => this.carregarClientesEspaco();
+        }
     }
 
     async inicializarPaginaConsultaEspacos() {

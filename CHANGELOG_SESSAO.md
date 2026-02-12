@@ -1,4 +1,51 @@
-# 📋 Changelog da Sessão - Melhorias de Interface e Otimizações
+# Changelog da Sessao
+
+---
+
+## Sessao: Filtros de Busca e Carregamento sob Demanda
+
+**Data:** 12/02/2026
+**Branch:** `claude/add-search-filters-mChkC`
+
+### Alteracoes
+
+**1. Registro de Documentos - Correcao visual**
+- Corrigida cor do texto do botao "Anexar por foto" (`.btn-camera`): adicionado `color: #1f2937` para garantir texto sempre visivel
+- Removido titulo "Envio e registro" e subtitulo "Envie anexos ou fotos diretamente para o Drive/OneDrive" do card-header
+
+**2. Compra de Espaco - Carregamento sob demanda**
+- Removido carregamento automatico de dados ao abrir a pagina
+- Adicionado botao "Buscar" na barra de filtros
+- Estado vazio agora instrui o usuario a usar filtros antes de buscar
+- Filtros disponiveis: Cidade, Tipo de Espaco
+- Operacoes CRUD (salvar, remover, inativar, editar) continuam recarregando os dados normalmente
+
+**3. Consulta de Documentos - Carregamento sob demanda**
+- Removido carregamento automatico dos ultimos 30 dias ao abrir a pagina
+- Estado vazio agora instrui o usuario a preencher filtros e clicar em "Buscar Documentos"
+- Botao "Mostrar Todos" mantido para busca sem filtros quando necessario
+
+**4. Consulta de Documentos - Agrupamento por repositor e tipo**
+- Ao selecionar "Todos" os repositores: documentos agrupados por repositor com headers visuais
+- Ao selecionar "Todos" os repositores + "Todos os tipos": agrupamento duplo (repositor > tipo de documento)
+- Ao selecionar repositor especifico: lista plana (comportamento original)
+- Contagem de documentos exibida nos headers de grupo
+
+**5. Documentacao**
+- README.md: adicionada secao "Padroes de Desenvolvimento" com regras de carregamento sob demanda
+- docs/MANUAL_PROCESSOS.md: criado manual de processos para treinamento
+- CHANGELOG_SESSAO.md: atualizado com registro desta sessao
+
+### Arquivos modificados
+- `public/js/pages.js` - Templates HTML (btn-camera CSS, card-header, empty-states, botao Buscar)
+- `public/js/app.js` - Logica de inicializacao e renderizacao (init functions, renderizarDocumentos com agrupamento)
+- `README.md` - Documentacao de padroes de desenvolvimento
+- `docs/MANUAL_PROCESSOS.md` - Manual de processos (novo)
+- `CHANGELOG_SESSAO.md` - Registro de alteracoes
+
+---
+
+# Changelog da Sessao Anterior - Melhorias de Interface e Otimizacoes
 
 **Data:** 05/12/2025
 **Branch:** `claude/improve-grid-layout-011DaYhf4GXqjQaGuWAQuVFb`

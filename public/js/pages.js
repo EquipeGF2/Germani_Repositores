@@ -3996,12 +3996,6 @@ export const pages = {
 
         return `
             <div class="card">
-                <div class="card-header">
-                    <div>
-                        <h4 class="card-title" style="white-space: nowrap; margin-bottom: 2px;">Envio e registro</h4>
-                        <p class="text-muted" style="margin: 4px 0 0;">Envie anexos ou fotos diretamente para o Drive/OneDrive.</p>
-                    </div>
-                </div>
                 <div class="card-body" style="padding-top: 20px;">
                     <div class="doc-upload-section">
                         <h4 style="margin-bottom: 20px; color: #374151; font-size: 16px; font-weight: 600;">📤 Novo Documento</h4>
@@ -4133,6 +4127,7 @@ export const pages = {
                     border-radius: 8px;
                     cursor: pointer;
                     font-weight: 600;
+                    color: #1f2937;
                     transition: all 0.2s ease;
                     display: inline-flex;
                     align-items: center;
@@ -4591,8 +4586,9 @@ export const pages = {
 
                     <div id="documentosContainer" style="margin-top: 1.5rem;">
                         <div class="empty-state">
-                            <div class="empty-state-icon">📁</div>
-                            <p>Carregando documentos recentes...</p>
+                            <div class="empty-state-icon">🔍</div>
+                            <p>Utilize os filtros acima para buscar documentos</p>
+                            <small>Selecione o tipo de documento ou repositor e clique em "Buscar Documentos"</small>
                         </div>
                     </div>
                 </div>
@@ -6765,15 +6761,20 @@ export const pages = {
                         </div>
                         <div class="filter-group">
                             <label>&nbsp;</label>
-                            <button class="btn btn-primary btn-sm" onclick="window.app.abrirModalClienteEspaco()">
-                                + Adicionar Cliente
-                            </button>
+                            <div style="display: flex; gap: 8px;">
+                                <button class="btn btn-secondary btn-sm" id="btnBuscarEspacos">
+                                    Buscar
+                                </button>
+                                <button class="btn btn-primary btn-sm" onclick="window.app.abrirModalClienteEspaco()">
+                                    + Adicionar Cliente
+                                </button>
+                            </div>
                         </div>
                     </div>
                     <div id="clientesEspacoResultado">
                         <div class="empty-state">
-                            <div class="empty-state-icon">🏪</div>
-                            <p>Carregando clientes com espaço...</p>
+                            <div class="empty-state-icon">🔍</div>
+                            <p>Utilize os filtros e clique em "Buscar" para visualizar os clientes com espaço.</p>
                         </div>
                     </div>
                 </div>
