@@ -1629,7 +1629,7 @@ class TursoDatabase {
             if (cidade) {
                 const rateiosAtivos = await this.mainClient.execute({
                     sql: `
-                        SELECT rat_id FROM cc_rateio
+                        SELECT rat_id FROM rat_cliente_repositor
                         WHERE rat_cliente_codigo = ?
                         AND rat_repositor_id = ?
                         AND rat_vigencia_fim IS NULL
@@ -1644,7 +1644,7 @@ class TursoDatabase {
                     for (const rateio of rateiosAtivos.rows) {
                         await this.mainClient.execute({
                             sql: `
-                                UPDATE cc_rateio
+                                UPDATE rat_cliente_repositor
                                 SET rat_vigencia_fim = ?,
                                     rat_atualizado_em = datetime('now')
                                 WHERE rat_id = ?
@@ -1658,7 +1658,7 @@ class TursoDatabase {
                     const rateiosRestantes = await this.mainClient.execute({
                         sql: `
                             SELECT rat_id, rat_repositor_id, rat_percentual
-                            FROM cc_rateio
+                            FROM rat_cliente_repositor
                             WHERE rat_cliente_codigo = ?
                             AND rat_vigencia_fim IS NULL
                         `,
@@ -1671,7 +1671,7 @@ class TursoDatabase {
 
                         await this.mainClient.execute({
                             sql: `
-                                UPDATE cc_rateio
+                                UPDATE rat_cliente_repositor
                                 SET rat_percentual = 100,
                                     rat_atualizado_em = datetime('now')
                                 WHERE rat_id = ?
