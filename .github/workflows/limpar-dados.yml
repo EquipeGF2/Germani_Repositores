@@ -1,0 +1,27 @@
+name: Limpeza de Dados
+
+on:
+  workflow_dispatch:
+
+jobs:
+  limpar-dados:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: backend
+        run: npm install
+
+      - name: Executar limpeza de dados
+        working-directory: backend
+        env:
+          TURSO_MAIN_URL: ${{ secrets.TURSO_MAIN_URL }}
+          TURSO_MAIN_TOKEN: ${{ secrets.TURSO_MAIN_TOKEN }}
+        run: node src/scripts/limpar-dados.js --executar
