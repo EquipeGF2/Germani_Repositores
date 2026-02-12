@@ -20,6 +20,7 @@ import pwaRoutes from './routes/pwa-telas.js';
 import syncRoutes from './routes/sync.js';
 import atividadesRoutes from './routes/atividades.js';
 import performanceRoutes from './routes/performance.js';
+import adminRoutes from './routes/admin.js';
 import { authService } from './services/auth.js';
 import { schedulerService } from './services/scheduler.js';
 
@@ -136,6 +137,7 @@ app.use('/api/pwa', pwaRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/api/atividades', atividadesRoutes);
 app.use('/api/performance', performanceRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Rota 404
 app.use((req, res) => {

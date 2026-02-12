@@ -3420,6 +3420,8 @@ class App {
                 await this.inicializarPaginaEspacos();
             } else if (pageName === 'consulta-espacos') {
                 await this.inicializarPaginaConsultaEspacos();
+            } else if (pageName === 'limpeza-dados') {
+                await this.inicializarLimpezaDados();
             }
         } catch (error) {
             console.error('Erro ao carregar página:', error);
@@ -22628,6 +22630,175 @@ class App {
             console.error('Erro ao exportar histórico:', error);
             this.showNotification('Erro ao exportar dados', 'error');
         }
+    }
+
+    // ==================== LIMPEZA DE DADOS ====================
+
+    async inicializarLimpezaDados() {
+        const token = localStorage.getItem('auth_token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        // Preview button
+        document.getElementById('btnPreviewLimpeza')?.addEventListener('click', async () => {
+            const btn = document.getElementById('btnPreviewLimpeza');
+            btn.disabled = true;
+            btn.textContent = 'Verificando...';
+
+            try {
+                const data = await fetchJson(`${API_BASE_URL}/api/admin/limpar-dados`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ confirmar: false })
+                });
+
+                const previewDiv = document.getElementById('limpezaPreview');
+                const actionsDiv = document.getElementById('limpezaActions');
+
+                const totalRegistros = data.tabelas.reduce((sum, t) => sum + (t.registros || 0), 0);
+
+                let html = `<h4 style="margin-bottom: 12px;">Registros a remover: <strong>${totalRegistros.toLocaleString()}</strong></h4>`;
+                html += `<table class="limpeza-table"><thead><tr><th>Tabela</th><th style="text-align: right;">Registros</th><th>Nota</th></tr></thead><tbody>`;
+
+                for (const t of data.tabelas) {
+                    const badge = t.registros > 0 ? `<span class="limpeza-badge limpeza-badge-ok">${t.registros.toLocaleString()}</span>` : `<span class="limpeza-badge limpeza-badge-zero">0</span>`;
+                    html += `<tr><td><code>${t.tabela}</code></td><td style="text-align: right;">${badge}</td><td>${t.nota || ''}</td></tr>`;
+                }
+
+                html += `</tbody></table>`;
+                previewDiv.innerHTML = html;
+                previewDiv.style.display = 'block';
+
+                if (totalRegistros > 0) {
+                    actionsDiv.style.display = 'block';
+                }
+            } catch (error) {
+                this.showNotification('Erro ao verificar dados: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Verificar Dados';
+            }
+        });
+
+        // Execute cleanup button
+        document.getElementById('btnExecutarLimpeza')?.addEventListener('click', async () => {
+            if (!confirm('Tem certeza que deseja executar a limpeza? Esta acao e IRREVERSIVEL.')) return;
+
+            const btn = document.getElementById('btnExecutarLimpeza');
+            btn.disabled = true;
+            btn.textContent = 'Executando limpeza...';
+
+            try {
+                const data = await fetchJson(`${API_BASE_URL}/api/admin/limpar-dados`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ confirmar: true })
+                });
+
+                const resultDiv = document.getElementById('limpezaResultado');
+
+                let html = `<div style="background: #d1e7dd; border: 1px solid #badbcc; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                    <strong>${data.message}</strong></div>`;
+                html += `<table class="limpeza-table"><thead><tr><th>Tabela</th><th style="text-align: right;">Removidos</th><th>Status</th></tr></thead><tbody>`;
+
+                for (const r of data.resultados) {
+                    const badge = r.status === 'ok'
+                        ? `<span class="limpeza-badge limpeza-badge-ok">${(r.registros_removidos || 0).toLocaleString()}</span>`
+                        : `<span class="limpeza-badge limpeza-badge-erro">Erro</span>`;
+                    html += `<tr><td><code>${r.tabela}</code></td><td style="text-align: right;">${badge}</td><td>${r.mensagem || r.status}</td></tr>`;
+                }
+
+                html += `</tbody></table>`;
+                resultDiv.innerHTML = html;
+                resultDiv.style.display = 'block';
+
+                document.getElementById('limpezaActions').style.display = 'none';
+                document.getElementById('limpezaPreview').style.display = 'none';
+
+                this.showNotification('Limpeza concluida com sucesso!', 'success');
+            } catch (error) {
+                this.showNotification('Erro na limpeza: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Executar Limpeza';
+            }
+        });
+
+        // Create Drive folders button
+        document.getElementById('btnCriarPastasDrive')?.addEventListener('click', async () => {
+            const btn = document.getElementById('btnCriarPastasDrive');
+            btn.disabled = true;
+            btn.textContent = 'Criando pastas...';
+
+            try {
+                const data = await fetchJson(`${API_BASE_URL}/api/admin/criar-pastas-drive`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({})
+                });
+
+                const resultDiv = document.getElementById('driveResultado');
+
+                let html = `<div style="background: #d1e7dd; border: 1px solid #badbcc; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                    <strong>${data.message}</strong></div>`;
+                html += `<table class="limpeza-table"><thead><tr><th>Repositor</th><th>Status</th><th>Drive</th></tr></thead><tbody>`;
+
+                for (const r of data.resultados) {
+                    const badge = r.status === 'ok'
+                        ? `<span class="limpeza-badge limpeza-badge-ok">OK</span>`
+                        : `<span class="limpeza-badge limpeza-badge-erro">Erro</span>`;
+                    const link = r.drive_link ? `<a href="${r.drive_link}" target="_blank" class="drive-link">Abrir pasta</a>` : (r.mensagem || '');
+                    html += `<tr><td><strong>${r.repo_cod}</strong> - ${r.repo_nome}</td><td>${badge}</td><td>${link}</td></tr>`;
+                }
+
+                html += `</tbody></table>`;
+                resultDiv.innerHTML = html;
+                resultDiv.style.display = 'block';
+
+                this.showNotification('Pastas criadas com sucesso!', 'success');
+            } catch (error) {
+                this.showNotification('Erro ao criar pastas: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Criar Pastas no Drive';
+            }
+        });
+
+        // Status button
+        document.getElementById('btnStatusDados')?.addEventListener('click', async () => {
+            const btn = document.getElementById('btnStatusDados');
+            btn.disabled = true;
+            btn.textContent = 'Consultando...';
+
+            try {
+                const data = await fetchJson(`${API_BASE_URL}/api/admin/status-dados`, { headers });
+                const container = document.getElementById('statusDadosContainer');
+
+                let html = '';
+                for (const [categoria, tabelas] of Object.entries(data.dados)) {
+                    const titulo = categoria.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                    html += `<h4 style="margin: 16px 0 8px;">${titulo}</h4>`;
+                    html += `<table class="limpeza-table"><thead><tr><th>Tabela</th><th style="text-align: right;">Registros</th><th>Nota</th></tr></thead><tbody>`;
+
+                    for (const t of tabelas) {
+                        const badge = t.registros > 0
+                            ? `<span class="limpeza-badge limpeza-badge-ok">${t.registros.toLocaleString()}</span>`
+                            : `<span class="limpeza-badge limpeza-badge-zero">0</span>`;
+                        html += `<tr><td><code>${t.tabela}</code></td><td style="text-align: right;">${badge}</td><td>${t.nota || ''}</td></tr>`;
+                    }
+
+                    html += `</tbody></table>`;
+                }
+
+                container.innerHTML = html;
+                container.style.display = 'block';
+            } catch (error) {
+                this.showNotification('Erro ao consultar status: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Consultar Status';
+            }
+        });
     }
 
     // ==================== NOTIFICAÇÕES ====================
