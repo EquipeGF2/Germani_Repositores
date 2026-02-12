@@ -199,12 +199,49 @@ Agora que o banco está integrado, você pode:
 4. ✅ Criar relatórios e gráficos
 5. ✅ Melhorar a UX/UI
 
+## Padroes de Desenvolvimento
+
+### Telas de Consulta - Carregamento sob Demanda
+
+Todas as telas de consulta seguem o padrao de **nao carregar dados automaticamente** ao abrir a pagina. Isso evita consumo desnecessario de requisicoes ao banco de dados.
+
+**Regras:**
+
+1. Ao abrir a tela, apenas os filtros (dropdowns, selects) sao carregados
+2. Um estado vazio instrui o usuario a preencher os filtros e clicar em "Buscar"
+3. Os dados sao buscados **somente** apos o usuario clicar no botao de busca
+4. Filtros obrigatorios devem ser validados antes da busca
+
+**Telas que seguem este padrao:**
+
+| Tela | Filtros | Botao |
+|------|---------|-------|
+| Consulta de Documentos | Tipo, Repositor, Data Inicial, Data Final | "Buscar Documentos" |
+| Compra de Espaco | Cidade, Tipo de Espaco | "Buscar" |
+| Consulta de Espacos | Repositor, Tipo, Cliente, Data | "Buscar Registros" |
+| Consulta de Visitas | Repositor, Cliente, Status, Data | "Consultar" |
+
+### Agrupamento de Documentos
+
+Na Consulta de Documentos, os resultados sao agrupados automaticamente:
+
+- **Todos os repositores + Todos os tipos**: Agrupamento duplo (repositor > tipo de documento)
+- **Todos os repositores + Tipo especifico**: Agrupamento por repositor
+- **Repositor especifico**: Lista plana (sem agrupamento)
+
+### Documentacao Complementar
+
+- `docs/MANUAL_PROCESSOS.md` - Manual de processos para treinamento
+- `docs/AUTENTICACAO.md` - Detalhes de autenticacao
+- `docs/CONFIGURACAO_API.md` - Configuracao da API backend
+- `docs/GESTAO_USUARIOS.md` - Gestao de usuarios
+
 ## 🤝 Contribuindo
 
-1. Faça suas alterações
+1. Faca suas alteracoes
 2. Commit e push para a branch
-3. GitHub Actions fará o deploy automaticamente
-4. Acesse sua URL do GitHub Pages para ver as mudanças
+3. GitHub Actions fara o deploy automaticamente
+4. Acesse sua URL do GitHub Pages para ver as mudancas
 
 ## 📄 Licença
 
