@@ -9,8 +9,8 @@
 
 import { createClient } from '@libsql/client';
 
-const TURSO_URL = 'libsql://germanirepositor-genaroforratig365-pixel.aws-us-east-1.turso.io';
-const TURSO_TOKEN = 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NjU5OTg1NTcsImlkIjoiZDZkYTE2ZWItMWM1NS00MjJiLWJmOGItYzdhODY5ZTI0M2M2IiwicmlkIjoiMGNiMzI5MjItNTU5Mi00NGRjLTljN2ItYWZjOGIwMGU0ZjI0In0.xbAqf93M25sX4CG5Ha6tJHB2zOoDL8Xpe-M2j00Fhl3wtmm9pA3HPM973bRNLpFmAp5Gmz4gCH8e2_bWE5XrDA';
+const TURSO_URL = process.env.TURSO_MAIN_URL || process.env.TURSO_DATABASE_URL || 'libsql://germanirepositor-genaroforratig365-pixel.aws-us-east-1.turso.io';
+const TURSO_TOKEN = process.env.TURSO_MAIN_TOKEN || process.env.TURSO_AUTH_TOKEN || '';
 
 const TABELAS_LIMPAR = [
   // Dependentes primeiro
