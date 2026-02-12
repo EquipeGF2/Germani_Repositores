@@ -231,6 +231,8 @@ Na Consulta de Documentos, os resultados sao agrupados automaticamente:
 
 ### Documentacao Complementar
 
+- `docs/MANUAL_MOBILE.md` - **Manual do Aplicativo Mobile** - Passo a passo completo para repositores (operadores de campo)
+- `docs/MANUAL_WEB.md` - **Documentacao Completa do Sistema Web** - Todos os modulos, processos, cadastros, consultas, performance e configuracoes
 - `docs/MANUAL_PROCESSOS.md` - Manual de processos para treinamento
 - `docs/AUTENTICACAO.md` - Detalhes de autenticacao
 - `docs/CONFIGURACAO_API.md` - Configuracao da API backend
