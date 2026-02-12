@@ -22747,13 +22747,53 @@ class App {
                     const badge = r.status === 'ok'
                         ? `<span class="limpeza-badge limpeza-badge-ok">OK</span>`
                         : `<span class="limpeza-badge limpeza-badge-erro">Erro</span>`;
-                    const link = r.drive_link ? `<a href="${r.drive_link}" target="_blank" class="drive-link">Abrir pasta</a>` : (r.mensagem || '');
-                    html += `<tr><td><strong>${r.repo_cod}</strong> - ${r.repo_nome}</td><td>${badge}</td><td>${link}</td></tr>`;
+                    let link;
+                    if (r.status === 'ok') {
+                        link = `<a href="${r.drive_link}" target="_blank" class="drive-link">Abrir pasta</a>`;
+                    } else {
+                        link = `<span style="color:#dc3545;font-size:0.85em;">${r.mensagem || 'Internal Error'}</span>
+                            <button class="btn-recriar-pasta" data-repo-cod="${r.repo_cod}" data-repo-nome="${r.repo_nome}"
+                                style="margin-left:8px;padding:4px 12px;background:#f0ad4e;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.85em;">
+                                Recriar
+                            </button>`;
+                    }
+                    html += `<tr id="drive-row-${r.repo_cod}"><td><strong>${r.repo_cod}</strong> - ${r.repo_nome}</td><td>${badge}</td><td>${link}</td></tr>`;
                 }
 
                 html += `</tbody></table>`;
                 resultDiv.innerHTML = html;
                 resultDiv.style.display = 'block';
+
+                // Bind retry buttons for failed items
+                resultDiv.querySelectorAll('.btn-recriar-pasta').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        const repoCod = parseInt(e.target.dataset.repoCod);
+                        const repoNome = e.target.dataset.repoNome;
+                        e.target.disabled = true;
+                        e.target.textContent = 'Recriando...';
+
+                        try {
+                            const retryData = await fetchJson(`${API_BASE_URL}/api/admin/recriar-pasta-drive`, {
+                                method: 'POST',
+                                headers,
+                                body: JSON.stringify({ repo_cod: repoCod })
+                            });
+
+                            const row = document.getElementById(`drive-row-${repoCod}`);
+                            if (row && retryData.ok) {
+                                const r = retryData.resultado;
+                                row.innerHTML = `<td><strong>${r.repo_cod}</strong> - ${r.repo_nome}</td>
+                                    <td><span class="limpeza-badge limpeza-badge-ok">OK</span></td>
+                                    <td><a href="${r.drive_link}" target="_blank" class="drive-link">Abrir pasta</a></td>`;
+                                this.showNotification(`Pasta recriada para ${repoNome}`, 'success');
+                            }
+                        } catch (retryError) {
+                            e.target.disabled = false;
+                            e.target.textContent = 'Recriar';
+                            this.showNotification(`Erro ao recriar pasta de ${repoNome}: ${retryError.message}`, 'error');
+                        }
+                    });
+                });
 
                 this.showNotification('Pastas criadas com sucesso!', 'success');
             } catch (error) {
