@@ -753,8 +753,8 @@ class AuthManager {
         this.mostrarModalTrocarSenha();
       } else {
         this.mostrarAplicacao();
-        // Recarregar a página para aplicar permissões
-        window.location.reload();
+        // Aplicar permissões e navegar sem recarregar a página
+        await this.inicializarAposLogin();
       }
     } catch (error) {
       erroEl.textContent = error.message;
@@ -841,13 +841,31 @@ class AuthManager {
 
       // Mostrar aplicação
       this.mostrarAplicacao();
-      window.location.reload();
+      await this.inicializarAposLogin();
     } catch (error) {
       erroEl.textContent = error.message;
       erroEl.style.display = 'block';
     } finally {
       btnConfirmar.disabled = false;
       btnConfirmar.textContent = 'Alterar Senha';
+    }
+  }
+
+  /**
+   * Inicializar aplicação após login sem recarregar a página.
+   * Atualiza permissões, UI do usuário e navega para a página inicial.
+   */
+  async inicializarAposLogin() {
+    try {
+      await this.refreshTelas().catch(() => {});
+      if (window.app) {
+        window.app.aplicarInformacoesUsuario();
+        window.app.configurarVisibilidadeConfiguracoes();
+        const paginaInicial = window.app.definirPaginaInicial();
+        await window.app.navigateTo(paginaInicial, {}, { replaceHistory: true });
+      }
+    } catch (error) {
+      console.error('[AUTH] Erro ao inicializar após login:', error);
     }
   }
 

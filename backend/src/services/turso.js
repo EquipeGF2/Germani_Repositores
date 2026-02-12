@@ -11,31 +11,8 @@ class TursoService {
     this.tableColumnsCache = new Map();
     try {
       this.client = getDbClient();
-      this.schemaEnsured = false;
-      this.ensureRegistroVisitaSchema().catch((err) => {
-        console.warn('⚠️  Falha ao garantir schema de registro de visita:', err?.message || err);
-      });
-      this.ensureVisitaSessaoSchema().catch((err) => {
-        console.warn('⚠️  Falha ao garantir schema de sessão de visita:', err?.message || err);
-      });
-      this.ensureRateioSchema().catch((err) => {
-        console.warn('⚠️  Falha ao garantir schema de rateio:', err?.message || err);
-      });
-      this.ensureVendaCentralizadaSchema().catch((err) => {
-        console.warn('⚠️  Falha ao garantir schema de venda centralizada:', err?.message || err);
-      });
-      this.ensureDrivePendenciaSchema().catch((err) => {
-        console.warn('⚠️  Falha ao garantir schema de pendência de Drive:', err?.message || err);
-      });
-      this.ensureUsuariosSchema().catch((err) => {
-        console.warn('⚠️  Falha ao garantir schema de usuários:', err?.message || err);
-      });
-      this.ensureUsersWebSchema().catch((err) => {
-        console.warn('⚠️  Falha ao garantir schema de users_web:', err?.message || err);
-      });
-      this.ensurePerformanceHistoricoSchema().catch((err) => {
-        console.warn('⚠️  Falha ao garantir schema de performance_historico:', err?.message || err);
-      });
+      // Schema validations são executadas em background pelo server.js na inicialização.
+      // Não precisam rodar no construtor - as tabelas já existem em produção.
     } catch (error) {
       if (error instanceof DatabaseNotConfiguredError) {
         this.client = null;

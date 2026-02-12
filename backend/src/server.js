@@ -20,6 +20,7 @@ import pwaRoutes from './routes/pwa-telas.js';
 import syncRoutes from './routes/sync.js';
 import atividadesRoutes from './routes/atividades.js';
 import performanceRoutes from './routes/performance.js';
+import adminRoutes from './routes/admin.js';
 import { authService } from './services/auth.js';
 import { schedulerService } from './services/scheduler.js';
 
@@ -136,6 +137,7 @@ app.use('/api/pwa', pwaRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/api/atividades', atividadesRoutes);
 app.use('/api/performance', performanceRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Rota 404
 app.use((req, res) => {
@@ -184,51 +186,8 @@ async function inicializar() {
 
     initDbClient();
 
-    // Executar schema checks em paralelo para reduzir tempo de startup
-    const inicioSchemas = Date.now();
-    await Promise.all([
-      tursoService.ensureSchemaRegistroRota().catch(e => console.warn('⚠️ Schema registro-rota:', e.message)),
-      tursoService.ensureSchemaDocumentos().catch(e => console.warn('⚠️ Schema documentos:', e.message)),
-      tursoService.ensureUsuariosSchema().catch(e => console.warn('⚠️ Schema usuarios:', e.message)),
-      tursoService.ensureSchemaClientesCoordenadas().catch(e => console.warn('⚠️ Schema coordenadas:', e.message)),
-      tursoService.ensureSchemaEspacos().catch(e => console.warn('⚠️ Schema espacos:', e.message)),
-    ]);
-    console.log(`✅ Schemas base verificados em ${Date.now() - inicioSchemas}ms`);
-
-    // Schema web depende dos schemas base - executar depois
-    try {
-      const inicioWeb = Date.now();
-      await tursoService.ensureWebLoginSchema();
-      console.log(`✅ Schema de login web inicializado em ${Date.now() - inicioWeb}ms`);
-    } catch (webError) {
-      console.warn('⚠️  Aviso ao inicializar schema web:', webError.message);
-    }
-
-    // Admin e acesso web podem rodar em paralelo
-    await Promise.all([
-      (async () => {
-        try {
-          const result = await tursoService.criarUsuarioAdmin();
-          if (result.criado) {
-            console.log('✅ Usuário admin criado com sucesso!');
-            console.log('   Usuário: admin | Senha: troca@123456');
-          }
-        } catch (adminError) {
-          console.warn('⚠️  Aviso ao verificar/criar admin:', adminError.message);
-        }
-      })(),
-      (async () => {
-        try {
-          await tursoService.darAcessoWebCompleto('genaro');
-        } catch (genaroError) {
-          console.log('ℹ️  Usuário genaro não encontrado ou já configurado');
-        }
-      })()
-    ]);
-
-    console.log(`⏱️  Inicialização total: ${Date.now() - inicioTotal}ms`);
-
-    // Iniciar servidor
+    // INICIAR SERVIDOR IMEDIATAMENTE - responder health check sem esperar schemas
+    // Isso elimina a espera de cold start para o frontend (preWarmServer)
     app.listen(config.port, () => {
       console.log('');
       console.log('='.repeat(60));
@@ -245,6 +204,40 @@ async function inicializar() {
       // Iniciar agendamentos automáticos (fechamento mensal, etc.)
       schedulerService.init();
     });
+
+    console.log(`⏱️  Servidor iniciado em ${Date.now() - inicioTotal}ms`);
+
+    // SCHEMAS EM BACKGROUND - não bloqueiam o servidor nem o health check
+    // As tabelas já existem em produção; estes checks são apenas para garantir
+    (async () => {
+      try {
+        const inicioSchemas = Date.now();
+        await Promise.all([
+          tursoService.ensureSchemaRegistroRota().catch(e => console.warn('⚠️ Schema registro-rota:', e.message)),
+          tursoService.ensureSchemaDocumentos().catch(e => console.warn('⚠️ Schema documentos:', e.message)),
+          tursoService.ensureUsuariosSchema().catch(e => console.warn('⚠️ Schema usuarios:', e.message)),
+          tursoService.ensureSchemaClientesCoordenadas().catch(e => console.warn('⚠️ Schema coordenadas:', e.message)),
+          tursoService.ensureSchemaEspacos().catch(e => console.warn('⚠️ Schema espacos:', e.message)),
+        ]);
+        console.log(`✅ Schemas base verificados em ${Date.now() - inicioSchemas}ms`);
+
+        try {
+          await tursoService.ensureWebLoginSchema();
+          console.log(`✅ Schema de login web ok`);
+        } catch (webError) {
+          console.warn('⚠️  Aviso ao inicializar schema web:', webError.message);
+        }
+
+        await Promise.all([
+          tursoService.criarUsuarioAdmin().then(r => { if (r.criado) console.log('✅ Usuário admin criado'); }).catch(e => console.warn('⚠️ Admin:', e.message)),
+          tursoService.darAcessoWebCompleto('genaro').catch(() => {})
+        ]);
+
+        console.log(`⏱️  Schemas finalizados em ${Date.now() - inicioTotal}ms (background)`);
+      } catch (bgError) {
+        console.error('❌ Erro nos schemas em background:', bgError);
+      }
+    })();
   } catch (error) {
     console.error('❌ Erro ao inicializar servidor:', error);
     process.exit(1);

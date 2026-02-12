@@ -7546,6 +7546,106 @@ export const pages = {
                 }
             </style>
         `;
+    },
+
+    'limpeza-dados': async () => {
+        return `
+            <div class="card" style="margin-bottom: 24px;">
+                <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <h3 class="card-title" style="margin: 0;">Limpeza de Dados</h3>
+                </div>
+                <div class="card-body">
+                    <p style="color: var(--gray-600); margin-bottom: 16px;">
+                        Remove registros operacionais (visitas, documentos, pesquisas, fotos, coordenadas) mantendo cadastros e configurações intactos.
+                    </p>
+
+                    <div id="limpezaStatusContainer" style="margin-bottom: 20px;">
+                        <button class="btn btn-primary" id="btnPreviewLimpeza" style="margin-right: 8px;">
+                            Verificar Dados
+                        </button>
+                    </div>
+
+                    <div id="limpezaPreview" style="display: none; margin-bottom: 20px;"></div>
+
+                    <div id="limpezaActions" style="display: none; margin-bottom: 20px;">
+                        <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                            <strong>Atenção:</strong> Esta ação é irreversível. Todos os registros operacionais listados acima serão permanentemente removidos.
+                        </div>
+                        <button class="btn" id="btnExecutarLimpeza" style="background: #dc3545; color: white; padding: 10px 24px; font-weight: 600;">
+                            Executar Limpeza
+                        </button>
+                    </div>
+
+                    <div id="limpezaResultado" style="display: none;"></div>
+                </div>
+            </div>
+
+            <div class="card" style="margin-bottom: 24px;">
+                <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <h3 class="card-title" style="margin: 0;">Estrutura de Pastas - Google Drive</h3>
+                </div>
+                <div class="card-body">
+                    <p style="color: var(--gray-600); margin-bottom: 16px;">
+                        Cria a estrutura de pastas no Google Drive para todos os repositores ativos (checkin, checkout, campanha, despesas, espaco, documentos).
+                    </p>
+
+                    <button class="btn btn-primary" id="btnCriarPastasDrive">
+                        Criar Pastas no Drive
+                    </button>
+
+                    <div id="driveResultado" style="display: none; margin-top: 20px;"></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title" style="margin: 0;">Status do Banco de Dados</h3>
+                </div>
+                <div class="card-body">
+                    <button class="btn btn-primary" id="btnStatusDados" style="margin-bottom: 16px;">
+                        Consultar Status
+                    </button>
+                    <div id="statusDadosContainer" style="display: none;"></div>
+                </div>
+            </div>
+
+            <style>
+                .limpeza-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 0.9rem;
+                }
+                .limpeza-table th, .limpeza-table td {
+                    padding: 8px 12px;
+                    text-align: left;
+                    border-bottom: 1px solid var(--gray-200);
+                }
+                .limpeza-table th {
+                    background: var(--gray-50);
+                    font-weight: 600;
+                    color: var(--gray-700);
+                }
+                .limpeza-table tr:hover {
+                    background: var(--gray-50);
+                }
+                .limpeza-badge {
+                    display: inline-block;
+                    padding: 2px 8px;
+                    border-radius: 12px;
+                    font-size: 0.8rem;
+                    font-weight: 600;
+                }
+                .limpeza-badge-ok { background: #d1e7dd; color: #0f5132; }
+                .limpeza-badge-erro { background: #f8d7da; color: #842029; }
+                .limpeza-badge-zero { background: var(--gray-100); color: var(--gray-500); }
+                .drive-link {
+                    color: var(--primary);
+                    text-decoration: none;
+                    font-size: 0.85rem;
+                }
+                .drive-link:hover { text-decoration: underline; }
+            </style>
+        `;
     }
 };
 
@@ -7583,7 +7683,8 @@ export const pageTitles = {
     'performance-faturamento': 'Faturamento',
     'performance-historico': 'Histórico',
     'cadastro-espacos': 'Compra de Espaço',
-    'consulta-espacos': 'Consulta de Espaços'
+    'consulta-espacos': 'Consulta de Espaços',
+    'limpeza-dados': 'Limpeza de Dados'
 };
 
 export const mobilePageTitles = {
