@@ -245,6 +245,120 @@ router.post('/criar-pastas-drive', requireAuth, requireAdmin, async (req, res) =
   }
 });
 
+/**
+ * POST /api/admin/recriar-pasta-drive
+ * Recria pastas Drive para um repositor específico (retry individual).
+ * Requer: { repo_cod: number }
+ */
+router.post('/recriar-pasta-drive', requireAuth, requireAdmin, async (req, res) => {
+  const { repo_cod } = req.body;
+
+  if (!repo_cod) {
+    return res.status(400).json({ ok: false, message: 'repo_cod é obrigatório' });
+  }
+
+  try {
+    const result = await tursoService.execute(
+      'SELECT repo_cod, repo_nome FROM cad_repositor WHERE repo_cod = ?',
+      [repo_cod]
+    );
+
+    if (!result.rows || result.rows.length === 0) {
+      return res.status(404).json({ ok: false, message: `Repositor ${repo_cod} não encontrado` });
+    }
+
+    const repo = result.rows[0];
+    const repId = repo.repo_cod;
+    const repoNome = repo.repo_nome;
+
+    const subpastas = ['checkin', 'checkout', 'CAMPANHA', 'despesas', 'espaco', 'documentos'];
+
+    // Criar pasta raiz do repositor
+    const rootFolderId = await googleDriveService.criarPastaRepositor(repId, repoNome);
+
+    // Criar subpastas padrão
+    const pastasCreated = {};
+    for (const sub of subpastas) {
+      const subFolderId = await googleDriveService.createFolderIfNotExists(rootFolderId, sub);
+      pastasCreated[sub] = subFolderId;
+    }
+
+    // Criar subpastas de documentos
+    try {
+      const tiposDoc = await tursoService.execute(
+        "SELECT dct_id, dct_nome FROM cc_documento_tipos WHERE dct_ativo = 1 ORDER BY dct_ordem"
+      );
+
+      if (tiposDoc.rows?.length > 0) {
+        const docsFolderId = pastasCreated['documentos'];
+        for (const tipo of tiposDoc.rows) {
+          const tipoSlug = googleDriveService.slugify(tipo.dct_nome);
+          const tipoFolderId = await googleDriveService.createFolderIfNotExists(docsFolderId, tipoSlug);
+
+          await tursoService.execute(
+            `INSERT OR REPLACE INTO cc_repositor_drive_pastas (rpf_repositor_id, rpf_dct_id, rpf_drive_folder_id)
+             VALUES (?, ?, ?)`,
+            [repId, tipo.dct_id, tipoFolderId]
+          );
+        }
+      }
+    } catch (docError) {
+      console.warn(`[ADMIN] Erro ao criar subpastas de documentos para REP ${repId}: ${docError.message}`);
+    }
+
+    // Salvar mapeamento raiz no banco
+    await tursoService.execute(
+      `INSERT OR REPLACE INTO cc_repositor_drive (rpd_repositor_id, rpd_drive_root_folder_id, rpd_drive_documentos_folder_id)
+       VALUES (?, ?, ?)`,
+      [repId, rootFolderId, pastasCreated['documentos']]
+    );
+
+    // Criar subpastas de despesas
+    try {
+      const tiposGasto = await tursoService.execute(
+        "SELECT gst_id, gst_nome FROM cc_gasto_tipos WHERE gst_ativo = 1 ORDER BY gst_ordem"
+      );
+
+      if (tiposGasto.rows?.length > 0) {
+        const despesasFolderId = pastasCreated['despesas'];
+        for (const gasto of tiposGasto.rows) {
+          const gastoSlug = googleDriveService.slugify(gasto.gst_nome);
+          await googleDriveService.createFolderIfNotExists(despesasFolderId, gastoSlug);
+        }
+      }
+    } catch (gastoError) {
+      console.warn(`[ADMIN] Erro ao criar subpastas de despesas para REP ${repId}: ${gastoError.message}`);
+    }
+
+    const driveLink = `https://drive.google.com/drive/folders/${rootFolderId}`;
+
+    console.log(`[ADMIN] REP ${repId} (${repoNome}): pastas recriadas - ${driveLink}`);
+
+    res.json({
+      ok: true,
+      message: `Pastas recriadas para ${repoNome}`,
+      resultado: {
+        repo_cod: repId,
+        repo_nome: repoNome,
+        root_folder_id: rootFolderId,
+        drive_link: driveLink,
+        subpastas: Object.keys(pastasCreated),
+        status: 'ok'
+      }
+    });
+  } catch (error) {
+    console.error(`[ADMIN] Erro ao recriar pastas para REP ${repo_cod}: ${error.message}`);
+    res.status(500).json({
+      ok: false,
+      message: `Erro ao recriar pastas: ${error.message}`,
+      erro_detalhes: {
+        code: error.code || 'UNKNOWN',
+        stage: error.stage || 'DRIVE_FOLDER'
+      }
+    });
+  }
+});
+
 // ==================== STATUS DE DADOS ====================
 
 /**
