@@ -23,8 +23,6 @@ router.post('/limpar-dados', requireAuth, requireAdmin, async (req, res) => {
         'cc_visita_sessao',
         'cc_documentos',
         'cc_despesa_valores',
-        'cc_repositor_drive',
-        'cc_repositor_drive_pastas',
         'cc_drive_pendencia',
         'cc_registro_espacos',
         'cc_clientes_coordenadas',
@@ -70,8 +68,6 @@ router.post('/limpar-dados', requireAuth, requireAdmin, async (req, res) => {
       'cc_registro_visita',
       'cc_visita_sessao',
       'cc_documentos',
-      'cc_repositor_drive_pastas',
-      'cc_repositor_drive',
       'cc_registro_espacos',
       'cc_clientes_coordenadas',
       'cc_pesquisa_respostas',
@@ -367,6 +363,41 @@ router.post('/recriar-pasta-drive', requireAuth, requireAdmin, async (req, res) 
  */
 router.get('/status-dados', requireAuth, requireAdmin, async (req, res) => {
   try {
+    // Pré-criar tabelas que são criadas dinamicamente (evita "tabela não existe")
+    await tursoService.execute(`
+      CREATE TABLE IF NOT EXISTS cc_nao_atendimento (
+        na_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        na_repositor_id INTEGER NOT NULL,
+        na_cliente_id TEXT NOT NULL,
+        na_cliente_nome TEXT,
+        na_data_visita TEXT NOT NULL,
+        na_motivo TEXT NOT NULL,
+        na_criado_em TEXT NOT NULL
+      )
+    `);
+    await tursoService.execute(`
+      CREATE TABLE IF NOT EXISTS cc_sync_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rep_id INTEGER,
+        usuario_id INTEGER,
+        tipo TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
+        dispositivo TEXT,
+        ip TEXT,
+        criado_em TEXT DEFAULT (datetime('now'))
+      )
+    `);
+    await tursoService.execute(`
+      CREATE TABLE IF NOT EXISTS cc_forca_sync (
+        rep_id INTEGER PRIMARY KEY,
+        forcar_download INTEGER DEFAULT 0,
+        forcar_upload INTEGER DEFAULT 0,
+        mensagem TEXT,
+        criado_em TEXT DEFAULT (datetime('now')),
+        criado_por INTEGER
+      )
+    `);
+
     const tabelas = {
       cadastros: [
         'cad_repositor',
