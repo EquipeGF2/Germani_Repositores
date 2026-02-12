@@ -385,6 +385,126 @@ class GoogleDriveService {
     return this.createFolderIfNotExists(root, 'espaco');
   }
 
+  /**
+   * Lista subpastas de uma pasta (apenas folders)
+   */
+  async listarSubpastas(parentId) {
+    await this.authenticate();
+    const arquivos = [];
+    let pageToken;
+
+    try {
+      do {
+        const response = await this.drive.files.list({
+          q: `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+          fields: 'nextPageToken, files(id, name)',
+          spaces: 'drive',
+          orderBy: 'name',
+          pageToken
+        });
+        arquivos.push(...(response.data.files || []));
+        pageToken = response.data.nextPageToken;
+      } while (pageToken);
+      return arquivos;
+    } catch (error) {
+      const mapped = this.mapDriveError('DRIVE_LIST', error);
+      this.logDriveError('DRIVE_LIST', mapped, { parentId });
+      throw mapped;
+    }
+  }
+
+  /**
+   * Lista arquivos (não-pastas) com data de criação, filtrando por data limite
+   * @param {string} parentId - ID da pasta pai
+   * @param {string} [dataLimite] - Data limite ISO (YYYY-MM-DD). Retorna arquivos criados até essa data.
+   */
+  async listarArquivosComData(parentId, dataLimite) {
+    await this.authenticate();
+    const arquivos = [];
+    let pageToken;
+
+    try {
+      let query = `'${parentId}' in parents and mimeType!='application/vnd.google-apps.folder' and trashed=false`;
+      if (dataLimite) {
+        query += ` and createdTime < '${dataLimite}T23:59:59'`;
+      }
+
+      do {
+        const response = await this.drive.files.list({
+          q: query,
+          fields: 'nextPageToken, files(id, name, mimeType, size, createdTime, webViewLink)',
+          spaces: 'drive',
+          orderBy: 'createdTime desc',
+          pageToken
+        });
+        arquivos.push(...(response.data.files || []));
+        pageToken = response.data.nextPageToken;
+      } while (pageToken);
+      return arquivos;
+    } catch (error) {
+      const mapped = this.mapDriveError('DRIVE_LIST', error);
+      this.logDriveError('DRIVE_LIST', mapped, { parentId, dataLimite });
+      throw mapped;
+    }
+  }
+
+  /**
+   * Deleta um arquivo do Drive
+   */
+  async deletarArquivo(fileId) {
+    await this.authenticate();
+    try {
+      await this.drive.files.delete({ fileId });
+      return true;
+    } catch (error) {
+      const mapped = this.mapDriveError('DRIVE_DELETE', error);
+      this.logDriveError('DRIVE_DELETE', mapped, { fileId });
+      throw mapped;
+    }
+  }
+
+  /**
+   * Baixa o conteúdo de um arquivo como stream
+   */
+  async downloadArquivo(fileId) {
+    await this.authenticate();
+    try {
+      const response = await this.drive.files.get(
+        { fileId, alt: 'media' },
+        { responseType: 'stream' }
+      );
+      return response.data;
+    } catch (error) {
+      const mapped = this.mapDriveError('DRIVE_DOWNLOAD', error);
+      this.logDriveError('DRIVE_DOWNLOAD', mapped, { fileId });
+      throw mapped;
+    }
+  }
+
+  /**
+   * Lista recursivamente todos os arquivos dentro de uma pasta (incluindo subpastas)
+   * Retorna array com { id, name, mimeType, size, createdTime, path }
+   */
+  async listarArquivosRecursivo(parentId, dataLimite, basePath = '') {
+    const resultado = [];
+
+    // Listar arquivos nesta pasta
+    const arquivos = await this.listarArquivosComData(parentId, dataLimite);
+    for (const arq of arquivos) {
+      resultado.push({ ...arq, path: basePath ? `${basePath}/${arq.name}` : arq.name });
+    }
+
+    // Listar subpastas e recursionar
+    const subpastas = await this.listarSubpastas(parentId);
+    for (const sub of subpastas) {
+      const subPath = basePath ? `${basePath}/${sub.name}` : sub.name;
+      const subArquivos = await this.listarArquivosRecursivo(sub.id, dataLimite, subPath);
+      resultado.push(...subArquivos);
+    }
+
+    return resultado;
+  }
+
   slugify(text) {
     return text
       .toString()

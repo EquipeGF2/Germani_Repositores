@@ -437,4 +437,263 @@ router.get('/status-dados', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+// ==================== ESTRUTURA DRIVE ====================
+
+/**
+ * GET /api/admin/drive/estrutura
+ * Retorna a estrutura de pastas do Drive para todos os repositores ativos.
+ * Inclui pastas raiz e subpastas de primeiro nível.
+ */
+router.get('/drive/estrutura', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    // Buscar mapeamento de pastas do banco
+    const mappings = await tursoService.execute(
+      `SELECT rd.rpd_repositor_id, rd.rpd_drive_root_folder_id, r.repo_nome
+       FROM cc_repositor_drive rd
+       JOIN cad_repositor r ON r.repo_cod = rd.rpd_repositor_id
+       WHERE r.repo_data_fim IS NULL
+       ORDER BY r.repo_nome`
+    );
+
+    if (!mappings.rows?.length) {
+      return res.json({ ok: true, repositores: [], message: 'Nenhuma pasta encontrada. Crie as pastas primeiro.' });
+    }
+
+    const repositores = [];
+
+    for (const m of mappings.rows) {
+      try {
+        const subpastas = await googleDriveService.listarSubpastas(m.rpd_drive_root_folder_id);
+        repositores.push({
+          repo_cod: m.rpd_repositor_id,
+          repo_nome: m.repo_nome,
+          root_folder_id: m.rpd_drive_root_folder_id,
+          drive_link: `https://drive.google.com/drive/folders/${m.rpd_drive_root_folder_id}`,
+          subpastas: subpastas.map(s => ({ id: s.id, name: s.name }))
+        });
+      } catch (err) {
+        repositores.push({
+          repo_cod: m.rpd_repositor_id,
+          repo_nome: m.repo_nome,
+          root_folder_id: m.rpd_drive_root_folder_id,
+          subpastas: [],
+          erro: err.message
+        });
+      }
+    }
+
+    res.json({ ok: true, repositores });
+  } catch (error) {
+    console.error('[ADMIN] Erro ao carregar estrutura Drive:', error);
+    res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
+/**
+ * GET /api/admin/drive/pasta/:folderId/conteudo
+ * Lista conteúdo de uma pasta (subpastas + arquivos).
+ */
+router.get('/drive/pasta/:folderId/conteudo', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { folderId } = req.params;
+
+    const [subpastas, arquivos] = await Promise.all([
+      googleDriveService.listarSubpastas(folderId),
+      googleDriveService.listarArquivosComData(folderId)
+    ]);
+
+    res.json({
+      ok: true,
+      subpastas: subpastas.map(s => ({ id: s.id, name: s.name })),
+      arquivos: arquivos.map(a => ({
+        id: a.id,
+        name: a.name,
+        size: a.size,
+        createdTime: a.createdTime,
+        webViewLink: a.webViewLink
+      }))
+    });
+  } catch (error) {
+    console.error('[ADMIN] Erro ao listar conteúdo de pasta:', error);
+    res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
+/**
+ * POST /api/admin/drive/download-backup
+ * Gera ZIP com todos os arquivos até a data limite.
+ * Body: { data_limite: 'YYYY-MM-DD' }
+ */
+router.post('/drive/download-backup', requireAuth, requireAdmin, async (req, res) => {
+  const { data_limite } = req.body;
+
+  if (!data_limite) {
+    return res.status(400).json({ ok: false, message: 'data_limite é obrigatório (YYYY-MM-DD)' });
+  }
+
+  try {
+    const { default: archiver } = await import('archiver');
+
+    // Buscar todas as pastas raiz
+    const mappings = await tursoService.execute(
+      `SELECT rd.rpd_repositor_id, rd.rpd_drive_root_folder_id, r.repo_nome
+       FROM cc_repositor_drive rd
+       JOIN cad_repositor r ON r.repo_cod = rd.rpd_repositor_id
+       WHERE r.repo_data_fim IS NULL
+       ORDER BY r.repo_nome`
+    );
+
+    if (!mappings.rows?.length) {
+      return res.status(404).json({ ok: false, message: 'Nenhuma pasta de repositor encontrada' });
+    }
+
+    // Configurar resposta como ZIP
+    const nomeArquivo = `backup_drive_ate_${data_limite}.zip`;
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${nomeArquivo}"`);
+
+    const archive = archiver('zip', { zlib: { level: 5 } });
+    archive.pipe(res);
+
+    archive.on('error', (err) => {
+      console.error('[ADMIN] Erro no archiver:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ ok: false, message: err.message });
+      }
+    });
+
+    let totalArquivos = 0;
+
+    for (const m of mappings.rows) {
+      const pastaBase = `REP_${m.rpd_repositor_id}_${googleDriveService.slugify(m.repo_nome)}`;
+
+      try {
+        const arquivos = await googleDriveService.listarArquivosRecursivo(
+          m.rpd_drive_root_folder_id,
+          data_limite
+        );
+
+        for (const arq of arquivos) {
+          try {
+            const stream = await googleDriveService.downloadArquivo(arq.id);
+            archive.append(stream, { name: `${pastaBase}/${arq.path}` });
+            totalArquivos++;
+          } catch (dlErr) {
+            console.warn(`[ADMIN] Não foi possível baixar ${arq.name}: ${dlErr.message}`);
+          }
+        }
+      } catch (listErr) {
+        console.warn(`[ADMIN] Erro ao listar arquivos REP ${m.rpd_repositor_id}: ${listErr.message}`);
+      }
+    }
+
+    console.log(`[ADMIN] Backup ZIP gerado: ${totalArquivos} arquivos até ${data_limite}`);
+    await archive.finalize();
+  } catch (error) {
+    console.error('[ADMIN] Erro ao gerar backup:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ ok: false, message: error.message });
+    }
+  }
+});
+
+/**
+ * POST /api/admin/drive/limpar-arquivos
+ * Exclui arquivos criados até a data limite em todas as pastas.
+ * Body: { data_limite: 'YYYY-MM-DD', confirmar: boolean }
+ */
+router.post('/drive/limpar-arquivos', requireAuth, requireAdmin, async (req, res) => {
+  const { data_limite, confirmar } = req.body;
+
+  if (!data_limite) {
+    return res.status(400).json({ ok: false, message: 'data_limite é obrigatório (YYYY-MM-DD)' });
+  }
+
+  try {
+    // Buscar todas as pastas raiz
+    const mappings = await tursoService.execute(
+      `SELECT rd.rpd_repositor_id, rd.rpd_drive_root_folder_id, r.repo_nome
+       FROM cc_repositor_drive rd
+       JOIN cad_repositor r ON r.repo_cod = rd.rpd_repositor_id
+       WHERE r.repo_data_fim IS NULL
+       ORDER BY r.repo_nome`
+    );
+
+    if (!mappings.rows?.length) {
+      return res.status(404).json({ ok: false, message: 'Nenhuma pasta de repositor encontrada' });
+    }
+
+    // Coletar todos os arquivos
+    const todosArquivos = [];
+
+    for (const m of mappings.rows) {
+      try {
+        const arquivos = await googleDriveService.listarArquivosRecursivo(
+          m.rpd_drive_root_folder_id,
+          data_limite
+        );
+        for (const arq of arquivos) {
+          todosArquivos.push({
+            ...arq,
+            repo_cod: m.rpd_repositor_id,
+            repo_nome: m.repo_nome
+          });
+        }
+      } catch (listErr) {
+        console.warn(`[ADMIN] Erro ao listar REP ${m.rpd_repositor_id}: ${listErr.message}`);
+      }
+    }
+
+    // Modo preview: só retorna contagem
+    if (!confirmar) {
+      const porRepositor = {};
+      for (const arq of todosArquivos) {
+        if (!porRepositor[arq.repo_cod]) {
+          porRepositor[arq.repo_cod] = { repo_nome: arq.repo_nome, quantidade: 0 };
+        }
+        porRepositor[arq.repo_cod].quantidade++;
+      }
+
+      return res.json({
+        ok: true,
+        preview: true,
+        total_arquivos: todosArquivos.length,
+        data_limite,
+        por_repositor: Object.entries(porRepositor).map(([cod, info]) => ({
+          repo_cod: parseInt(cod),
+          repo_nome: info.repo_nome,
+          quantidade: info.quantidade
+        }))
+      });
+    }
+
+    // Modo execução: deletar arquivos
+    let deletados = 0;
+    let erros = 0;
+
+    for (const arq of todosArquivos) {
+      try {
+        await googleDriveService.deletarArquivo(arq.id);
+        deletados++;
+      } catch (delErr) {
+        console.warn(`[ADMIN] Erro ao deletar ${arq.name}: ${delErr.message}`);
+        erros++;
+      }
+    }
+
+    console.log(`[ADMIN] Limpeza Drive: ${deletados} deletados, ${erros} erros (até ${data_limite})`);
+
+    res.json({
+      ok: true,
+      message: `${deletados} arquivo(s) excluído(s)${erros > 0 ? `, ${erros} com erro` : ''}`,
+      deletados,
+      erros,
+      data_limite
+    });
+  } catch (error) {
+    console.error('[ADMIN] Erro ao limpar arquivos:', error);
+    res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
 export default router;

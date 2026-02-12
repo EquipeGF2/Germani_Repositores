@@ -7548,68 +7548,144 @@ export const pages = {
         `;
     },
 
-    'limpeza-dados': async () => {
+    'dados': async () => {
         return `
-            <div class="card" style="margin-bottom: 24px;">
-                <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-                    <h3 class="card-title" style="margin: 0;">Limpeza de Dados</h3>
-                </div>
-                <div class="card-body">
-                    <p style="color: var(--gray-600); margin-bottom: 16px;">
-                        Remove registros operacionais (visitas, documentos, pesquisas, fotos, coordenadas) mantendo cadastros e configurações intactos.
-                    </p>
+            <!-- Abas -->
+            <div class="dados-tabs" style="display: flex; gap: 0; margin-bottom: 24px; border-bottom: 2px solid var(--gray-200);">
+                <button class="dados-tab dados-tab-active" data-tab="dados-tab-dados" style="padding: 12px 24px; border: none; background: none; font-size: 1rem; font-weight: 600; cursor: pointer; border-bottom: 3px solid var(--primary); color: var(--primary); margin-bottom: -2px;">
+                    Dados
+                </button>
+                <button class="dados-tab" data-tab="dados-tab-drive" style="padding: 12px 24px; border: none; background: none; font-size: 1rem; font-weight: 500; cursor: pointer; color: var(--gray-500); margin-bottom: -2px; border-bottom: 3px solid transparent;">
+                    Pastas Drive
+                </button>
+            </div>
 
-                    <div id="limpezaStatusContainer" style="margin-bottom: 20px;">
-                        <button class="btn btn-primary" id="btnPreviewLimpeza" style="margin-right: 8px;">
-                            Verificar Dados
-                        </button>
+            <!-- ABA: Dados -->
+            <div id="dados-tab-dados" class="dados-tab-content">
+                <div class="card" style="margin-bottom: 24px;">
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <h3 class="card-title" style="margin: 0;">Limpeza de Dados</h3>
                     </div>
+                    <div class="card-body">
+                        <p style="color: var(--gray-600); margin-bottom: 16px;">
+                            Remove registros operacionais (visitas, documentos, pesquisas, fotos, coordenadas) mantendo cadastros e configurações intactos.
+                        </p>
 
-                    <div id="limpezaPreview" style="display: none; margin-bottom: 20px;"></div>
-
-                    <div id="limpezaActions" style="display: none; margin-bottom: 20px;">
-                        <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
-                            <strong>Atenção:</strong> Esta ação é irreversível. Todos os registros operacionais listados acima serão permanentemente removidos.
+                        <div id="limpezaStatusContainer" style="margin-bottom: 20px;">
+                            <button class="btn btn-primary" id="btnPreviewLimpeza" style="margin-right: 8px;">
+                                Verificar Dados
+                            </button>
                         </div>
-                        <button class="btn" id="btnExecutarLimpeza" style="background: #dc3545; color: white; padding: 10px 24px; font-weight: 600;">
-                            Executar Limpeza
-                        </button>
+
+                        <div id="limpezaPreview" style="display: none; margin-bottom: 20px;"></div>
+
+                        <div id="limpezaActions" style="display: none; margin-bottom: 20px;">
+                            <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                                <strong>Atenção:</strong> Esta ação é irreversível. Todos os registros operacionais listados acima serão permanentemente removidos.
+                            </div>
+                            <button class="btn" id="btnExecutarLimpeza" style="background: #dc3545; color: white; padding: 10px 24px; font-weight: 600;">
+                                Executar Limpeza
+                            </button>
+                        </div>
+
+                        <div id="limpezaResultado" style="display: none;"></div>
                     </div>
+                </div>
 
-                    <div id="limpezaResultado" style="display: none;"></div>
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title" style="margin: 0;">Status do Banco de Dados</h3>
+                    </div>
+                    <div class="card-body">
+                        <button class="btn btn-primary" id="btnStatusDados" style="margin-bottom: 16px;">
+                            Consultar Status
+                        </button>
+                        <div id="statusDadosContainer" style="display: none;"></div>
+                    </div>
                 </div>
             </div>
 
-            <div class="card" style="margin-bottom: 24px;">
-                <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-                    <h3 class="card-title" style="margin: 0;">Estrutura de Pastas - Google Drive</h3>
-                </div>
-                <div class="card-body">
-                    <p style="color: var(--gray-600); margin-bottom: 16px;">
-                        Cria a estrutura de pastas no Google Drive para todos os repositores ativos (checkin, checkout, campanha, despesas, espaco, documentos).
-                    </p>
+            <!-- ABA: Pastas Drive -->
+            <div id="dados-tab-drive" class="dados-tab-content" style="display: none;">
+                <div class="card" style="margin-bottom: 24px;">
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <h3 class="card-title" style="margin: 0;">Estrutura de Pastas - Google Drive</h3>
+                    </div>
+                    <div class="card-body">
+                        <p style="color: var(--gray-600); margin-bottom: 16px;">
+                            Cria e gerencia a estrutura de pastas no Google Drive para todos os repositores ativos.
+                        </p>
 
-                    <button class="btn btn-primary" id="btnCriarPastasDrive">
-                        Criar Pastas no Drive
-                    </button>
+                        <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px;">
+                            <button class="btn btn-primary" id="btnCriarPastasDrive">
+                                Criar Pastas no Drive
+                            </button>
+                            <button class="btn btn-primary" id="btnCarregarEstrutura" style="background: var(--gray-600);">
+                                Carregar Estrutura
+                            </button>
+                        </div>
 
-                    <div id="driveResultado" style="display: none; margin-top: 20px;"></div>
+                        <div id="driveResultado" style="display: none; margin-bottom: 20px;"></div>
+                    </div>
                 </div>
-            </div>
 
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title" style="margin: 0;">Status do Banco de Dados</h3>
+                <div class="card" id="cardEstruturaDrive" style="display: none; margin-bottom: 24px;">
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <h3 class="card-title" style="margin: 0;">Navegação de Pastas</h3>
+                    </div>
+                    <div class="card-body">
+                        <div id="driveTreeContainer" style="margin-bottom: 20px;"></div>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <button class="btn btn-primary" id="btnStatusDados" style="margin-bottom: 16px;">
-                        Consultar Status
-                    </button>
-                    <div id="statusDadosContainer" style="display: none;"></div>
+
+                <div class="card" style="margin-bottom: 24px;">
+                    <div class="card-header">
+                        <h3 class="card-title" style="margin: 0;">Gestão de Arquivos por Data</h3>
+                    </div>
+                    <div class="card-body">
+                        <p style="color: var(--gray-600); margin-bottom: 16px;">
+                            Selecione uma data limite. Os arquivos criados <strong>até essa data</strong> (inclusive) serão incluídos no download/backup ou na exclusão para liberar espaço.
+                        </p>
+
+                        <div style="display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 20px;">
+                            <div>
+                                <label style="display: block; font-weight: 600; margin-bottom: 6px; font-size: 0.9rem;">Data limite (até):</label>
+                                <input type="date" id="driveDataLimite" style="padding: 8px 12px; border: 1px solid var(--gray-300); border-radius: 6px; font-size: 0.95rem;" />
+                            </div>
+                            <div style="display: flex; gap: 8px;">
+                                <button class="btn btn-primary" id="btnDownloadBackup" style="background: #198754;">
+                                    Download Backup (ZIP)
+                                </button>
+                                <button class="btn" id="btnLimparArquivos" style="background: #dc3545; color: white; padding: 10px 24px; font-weight: 600;">
+                                    Excluir Arquivos
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="driveGestaoResultado" style="display: none;"></div>
+                    </div>
                 </div>
             </div>
 
             <style>
+                .dados-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 0.9rem;
+                }
+                .dados-table th, .dados-table td {
+                    padding: 8px 12px;
+                    text-align: left;
+                    border-bottom: 1px solid var(--gray-200);
+                }
+                .dados-table th {
+                    background: var(--gray-50);
+                    font-weight: 600;
+                    color: var(--gray-700);
+                }
+                .dados-table tr:hover {
+                    background: var(--gray-50);
+                }
                 .limpeza-table {
                     width: 100%;
                     border-collapse: collapse;
@@ -7628,22 +7704,68 @@ export const pages = {
                 .limpeza-table tr:hover {
                     background: var(--gray-50);
                 }
-                .limpeza-badge {
+                .limpeza-badge, .dados-badge {
                     display: inline-block;
                     padding: 2px 8px;
                     border-radius: 12px;
                     font-size: 0.8rem;
                     font-weight: 600;
                 }
-                .limpeza-badge-ok { background: #d1e7dd; color: #0f5132; }
-                .limpeza-badge-erro { background: #f8d7da; color: #842029; }
-                .limpeza-badge-zero { background: var(--gray-100); color: var(--gray-500); }
+                .limpeza-badge-ok, .dados-badge-ok { background: #d1e7dd; color: #0f5132; }
+                .limpeza-badge-erro, .dados-badge-erro { background: #f8d7da; color: #842029; }
+                .limpeza-badge-zero, .dados-badge-zero { background: var(--gray-100); color: var(--gray-500); }
                 .drive-link {
                     color: var(--primary);
                     text-decoration: none;
                     font-size: 0.85rem;
                 }
                 .drive-link:hover { text-decoration: underline; }
+
+                .dados-tab:hover {
+                    color: var(--primary) !important;
+                }
+
+                /* Tree view styles */
+                .drive-tree-item {
+                    padding: 6px 0;
+                }
+                .drive-tree-toggle {
+                    cursor: pointer;
+                    user-select: none;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    font-size: 0.9rem;
+                }
+                .drive-tree-toggle:hover {
+                    background: var(--gray-100);
+                }
+                .drive-tree-children {
+                    margin-left: 24px;
+                    border-left: 1px solid var(--gray-200);
+                    padding-left: 12px;
+                }
+                .drive-tree-files {
+                    margin-left: 24px;
+                    padding-left: 12px;
+                }
+                .drive-tree-file {
+                    padding: 3px 0;
+                    font-size: 0.85rem;
+                    color: var(--gray-600);
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                }
+                .drive-folder-icon { color: #f0ad4e; }
+                .drive-file-icon { color: var(--gray-400); }
+                .drive-tree-count {
+                    font-size: 0.75rem;
+                    color: var(--gray-400);
+                    margin-left: 4px;
+                }
             </style>
         `;
     }
@@ -7684,7 +7806,7 @@ export const pageTitles = {
     'performance-historico': 'Histórico',
     'cadastro-espacos': 'Compra de Espaço',
     'consulta-espacos': 'Consulta de Espaços',
-    'limpeza-dados': 'Limpeza de Dados'
+    'dados': 'Dados'
 };
 
 export const mobilePageTitles = {

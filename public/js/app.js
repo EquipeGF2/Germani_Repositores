@@ -3420,8 +3420,8 @@ class App {
                 await this.inicializarPaginaEspacos();
             } else if (pageName === 'consulta-espacos') {
                 await this.inicializarPaginaConsultaEspacos();
-            } else if (pageName === 'limpeza-dados') {
-                await this.inicializarLimpezaDados();
+            } else if (pageName === 'dados') {
+                await this.inicializarPaginaDados();
             }
         } catch (error) {
             console.error('Erro ao carregar página:', error);
@@ -22632,14 +22632,44 @@ class App {
         }
     }
 
-    // ==================== LIMPEZA DE DADOS ====================
+    // ==================== PÁGINA DADOS ====================
 
-    async inicializarLimpezaDados() {
+    async inicializarPaginaDados() {
         const token = localStorage.getItem('auth_token');
         const headers = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
-        // Preview button
+        // === SISTEMA DE ABAS ===
+        document.querySelectorAll('.dados-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Desativar todas as abas
+                document.querySelectorAll('.dados-tab').forEach(t => {
+                    t.classList.remove('dados-tab-active');
+                    t.style.borderBottom = '3px solid transparent';
+                    t.style.color = 'var(--gray-500)';
+                    t.style.fontWeight = '500';
+                });
+                // Esconder todo conteúdo
+                document.querySelectorAll('.dados-tab-content').forEach(c => c.style.display = 'none');
+                // Ativar aba clicada
+                tab.classList.add('dados-tab-active');
+                tab.style.borderBottom = '3px solid var(--primary)';
+                tab.style.color = 'var(--primary)';
+                tab.style.fontWeight = '600';
+                // Mostrar conteúdo correspondente
+                const targetId = tab.dataset.tab;
+                const target = document.getElementById(targetId);
+                if (target) target.style.display = 'block';
+            });
+        });
+
+        // Definir data padrão para ontem
+        const ontem = new Date();
+        ontem.setDate(ontem.getDate() - 1);
+        const inputData = document.getElementById('driveDataLimite');
+        if (inputData) inputData.value = ontem.toISOString().split('T')[0];
+
+        // === ABA DADOS: Preview Limpeza ===
         document.getElementById('btnPreviewLimpeza')?.addEventListener('click', async () => {
             const btn = document.getElementById('btnPreviewLimpeza');
             btn.disabled = true;
@@ -22680,7 +22710,7 @@ class App {
             }
         });
 
-        // Execute cleanup button
+        // === ABA DADOS: Executar Limpeza ===
         document.getElementById('btnExecutarLimpeza')?.addEventListener('click', async () => {
             if (!confirm('Tem certeza que deseja executar a limpeza? Esta acao e IRREVERSIVEL.')) return;
 
@@ -22724,87 +22754,7 @@ class App {
             }
         });
 
-        // Create Drive folders button
-        document.getElementById('btnCriarPastasDrive')?.addEventListener('click', async () => {
-            const btn = document.getElementById('btnCriarPastasDrive');
-            btn.disabled = true;
-            btn.textContent = 'Criando pastas...';
-
-            try {
-                const data = await fetchJson(`${API_BASE_URL}/api/admin/criar-pastas-drive`, {
-                    method: 'POST',
-                    headers,
-                    body: JSON.stringify({})
-                });
-
-                const resultDiv = document.getElementById('driveResultado');
-
-                let html = `<div style="background: #d1e7dd; border: 1px solid #badbcc; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
-                    <strong>${data.message}</strong></div>`;
-                html += `<table class="limpeza-table"><thead><tr><th>Repositor</th><th>Status</th><th>Drive</th></tr></thead><tbody>`;
-
-                for (const r of data.resultados) {
-                    const badge = r.status === 'ok'
-                        ? `<span class="limpeza-badge limpeza-badge-ok">OK</span>`
-                        : `<span class="limpeza-badge limpeza-badge-erro">Erro</span>`;
-                    let link;
-                    if (r.status === 'ok') {
-                        link = `<a href="${r.drive_link}" target="_blank" class="drive-link">Abrir pasta</a>`;
-                    } else {
-                        link = `<span style="color:#dc3545;font-size:0.85em;">${r.mensagem || 'Internal Error'}</span>
-                            <button class="btn-recriar-pasta" data-repo-cod="${r.repo_cod}" data-repo-nome="${r.repo_nome}"
-                                style="margin-left:8px;padding:4px 12px;background:#f0ad4e;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.85em;">
-                                Recriar
-                            </button>`;
-                    }
-                    html += `<tr id="drive-row-${r.repo_cod}"><td><strong>${r.repo_cod}</strong> - ${r.repo_nome}</td><td>${badge}</td><td>${link}</td></tr>`;
-                }
-
-                html += `</tbody></table>`;
-                resultDiv.innerHTML = html;
-                resultDiv.style.display = 'block';
-
-                // Bind retry buttons for failed items
-                resultDiv.querySelectorAll('.btn-recriar-pasta').forEach(btn => {
-                    btn.addEventListener('click', async (e) => {
-                        const repoCod = parseInt(e.target.dataset.repoCod);
-                        const repoNome = e.target.dataset.repoNome;
-                        e.target.disabled = true;
-                        e.target.textContent = 'Recriando...';
-
-                        try {
-                            const retryData = await fetchJson(`${API_BASE_URL}/api/admin/recriar-pasta-drive`, {
-                                method: 'POST',
-                                headers,
-                                body: JSON.stringify({ repo_cod: repoCod })
-                            });
-
-                            const row = document.getElementById(`drive-row-${repoCod}`);
-                            if (row && retryData.ok) {
-                                const r = retryData.resultado;
-                                row.innerHTML = `<td><strong>${r.repo_cod}</strong> - ${r.repo_nome}</td>
-                                    <td><span class="limpeza-badge limpeza-badge-ok">OK</span></td>
-                                    <td><a href="${r.drive_link}" target="_blank" class="drive-link">Abrir pasta</a></td>`;
-                                this.showNotification(`Pasta recriada para ${repoNome}`, 'success');
-                            }
-                        } catch (retryError) {
-                            e.target.disabled = false;
-                            e.target.textContent = 'Recriar';
-                            this.showNotification(`Erro ao recriar pasta de ${repoNome}: ${retryError.message}`, 'error');
-                        }
-                    });
-                });
-
-                this.showNotification('Pastas criadas com sucesso!', 'success');
-            } catch (error) {
-                this.showNotification('Erro ao criar pastas: ' + error.message, 'error');
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Criar Pastas no Drive';
-            }
-        });
-
-        // Status button
+        // === ABA DADOS: Status BD ===
         document.getElementById('btnStatusDados')?.addEventListener('click', async () => {
             const btn = document.getElementById('btnStatusDados');
             btn.disabled = true;
@@ -22838,6 +22788,437 @@ class App {
                 btn.disabled = false;
                 btn.textContent = 'Consultar Status';
             }
+        });
+
+        // === ABA DRIVE: Criar Pastas ===
+        document.getElementById('btnCriarPastasDrive')?.addEventListener('click', async () => {
+            const btn = document.getElementById('btnCriarPastasDrive');
+            btn.disabled = true;
+            btn.textContent = 'Criando pastas...';
+
+            try {
+                const data = await fetchJson(`${API_BASE_URL}/api/admin/criar-pastas-drive`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({})
+                });
+
+                const resultDiv = document.getElementById('driveResultado');
+
+                let html = `<div style="background: #d1e7dd; border: 1px solid #badbcc; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                    <strong>${data.message}</strong></div>`;
+                html += `<table class="dados-table"><thead><tr><th>Repositor</th><th>Status</th><th>Drive</th></tr></thead><tbody>`;
+
+                for (const r of data.resultados) {
+                    const badge = r.status === 'ok'
+                        ? `<span class="dados-badge dados-badge-ok">OK</span>`
+                        : `<span class="dados-badge dados-badge-erro">Erro</span>`;
+                    let link;
+                    if (r.status === 'ok') {
+                        link = `<a href="${r.drive_link}" target="_blank" class="drive-link">Abrir pasta</a>`;
+                    } else {
+                        link = `<span style="color:#dc3545;font-size:0.85em;">${r.mensagem || 'Internal Error'}</span>
+                            <button class="btn-recriar-pasta" data-repo-cod="${r.repo_cod}" data-repo-nome="${r.repo_nome}"
+                                style="margin-left:8px;padding:4px 12px;background:#f0ad4e;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.85em;">
+                                Recriar
+                            </button>`;
+                    }
+                    html += `<tr id="drive-row-${r.repo_cod}"><td><strong>${r.repo_cod}</strong> - ${r.repo_nome}</td><td>${badge}</td><td>${link}</td></tr>`;
+                }
+
+                html += `</tbody></table>`;
+                resultDiv.innerHTML = html;
+                resultDiv.style.display = 'block';
+
+                // Bind retry buttons
+                this._bindRetryButtons(resultDiv, headers);
+
+                this.showNotification('Pastas criadas com sucesso!', 'success');
+            } catch (error) {
+                this.showNotification('Erro ao criar pastas: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Criar Pastas no Drive';
+            }
+        });
+
+        // === ABA DRIVE: Carregar Estrutura (tree view) ===
+        document.getElementById('btnCarregarEstrutura')?.addEventListener('click', async () => {
+            const btn = document.getElementById('btnCarregarEstrutura');
+            btn.disabled = true;
+            btn.textContent = 'Carregando...';
+
+            try {
+                const data = await fetchJson(`${API_BASE_URL}/api/admin/drive/estrutura`, { headers });
+
+                const card = document.getElementById('cardEstruturaDrive');
+                const container = document.getElementById('driveTreeContainer');
+
+                if (!data.repositores?.length) {
+                    container.innerHTML = '<p style="color: var(--gray-500);">Nenhuma pasta encontrada. Crie as pastas primeiro.</p>';
+                    card.style.display = 'block';
+                    return;
+                }
+
+                let html = '';
+                for (const repo of data.repositores) {
+                    const hasError = !!repo.erro;
+                    html += `
+                        <div class="drive-tree-item">
+                            <div class="drive-tree-toggle" data-folder-id="${repo.root_folder_id}" data-expanded="false">
+                                <span class="drive-tree-arrow">&#9654;</span>
+                                <span class="drive-folder-icon">&#128193;</span>
+                                <strong>${repo.repo_cod} - ${repo.repo_nome}</strong>
+                                ${repo.subpastas?.length ? `<span class="drive-tree-count">(${repo.subpastas.length} subpastas)</span>` : ''}
+                                ${hasError ? `<span class="dados-badge dados-badge-erro" style="margin-left:8px;">Erro</span>` : ''}
+                                <a href="${repo.drive_link}" target="_blank" class="drive-link" style="margin-left:8px;" onclick="event.stopPropagation()">Abrir</a>
+                            </div>
+                            <div class="drive-tree-children" style="display: none;">
+                                ${repo.subpastas?.map(sub => `
+                                    <div class="drive-tree-item">
+                                        <div class="drive-tree-toggle drive-subtoggle" data-folder-id="${sub.id}" data-expanded="false">
+                                            <span class="drive-tree-arrow">&#9654;</span>
+                                            <span class="drive-folder-icon">&#128193;</span>
+                                            ${sub.name}
+                                        </div>
+                                        <div class="drive-tree-children" data-sub-content="${sub.id}" style="display: none;">
+                                            <div style="color: var(--gray-400); font-size: 0.85rem; padding: 4px 0;">Clique para carregar...</div>
+                                        </div>
+                                    </div>
+                                `).join('') || '<div style="color: var(--gray-400); font-size: 0.85rem; padding: 4px 0;">Nenhuma subpasta</div>'}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                container.innerHTML = html;
+                card.style.display = 'block';
+
+                // Bind tree toggle (repositores raiz)
+                container.querySelectorAll('.drive-tree-toggle:not(.drive-subtoggle)').forEach(toggle => {
+                    toggle.addEventListener('click', () => {
+                        const children = toggle.nextElementSibling;
+                        const arrow = toggle.querySelector('.drive-tree-arrow');
+                        const expanded = toggle.dataset.expanded === 'true';
+                        toggle.dataset.expanded = expanded ? 'false' : 'true';
+                        children.style.display = expanded ? 'none' : 'block';
+                        arrow.innerHTML = expanded ? '&#9654;' : '&#9660;';
+                    });
+                });
+
+                // Bind subtree toggle (subpastas - carrega conteúdo sob demanda)
+                container.querySelectorAll('.drive-subtoggle').forEach(toggle => {
+                    toggle.addEventListener('click', async () => {
+                        const folderId = toggle.dataset.folderId;
+                        const children = toggle.nextElementSibling;
+                        const arrow = toggle.querySelector('.drive-tree-arrow');
+                        const expanded = toggle.dataset.expanded === 'true';
+
+                        if (expanded) {
+                            toggle.dataset.expanded = 'false';
+                            children.style.display = 'none';
+                            arrow.innerHTML = '&#9654;';
+                            return;
+                        }
+
+                        toggle.dataset.expanded = 'true';
+                        children.style.display = 'block';
+                        arrow.innerHTML = '&#9660;';
+
+                        // Carregar conteúdo sob demanda (apenas na primeira vez)
+                        if (children.dataset.loaded === 'true') return;
+
+                        children.innerHTML = '<div style="color: var(--gray-400); font-size: 0.85rem; padding: 4px 0;">Carregando...</div>';
+
+                        try {
+                            const conteudo = await fetchJson(`${API_BASE_URL}/api/admin/drive/pasta/${folderId}/conteudo`, { headers });
+
+                            let subHtml = '';
+
+                            // Subpastas dentro desta pasta
+                            if (conteudo.subpastas?.length) {
+                                for (const sub of conteudo.subpastas) {
+                                    subHtml += `
+                                        <div class="drive-tree-item">
+                                            <div class="drive-tree-toggle drive-subtoggle-inner" data-folder-id="${sub.id}" data-expanded="false">
+                                                <span class="drive-tree-arrow">&#9654;</span>
+                                                <span class="drive-folder-icon">&#128193;</span>
+                                                ${sub.name}
+                                            </div>
+                                            <div class="drive-tree-children" style="display: none;">
+                                                <div style="color: var(--gray-400); font-size: 0.85rem; padding: 4px 0;">Clique para carregar...</div>
+                                            </div>
+                                        </div>`;
+                                }
+                            }
+
+                            // Arquivos
+                            if (conteudo.arquivos?.length) {
+                                for (const arq of conteudo.arquivos) {
+                                    const dataFormatada = arq.createdTime ? new Date(arq.createdTime).toLocaleDateString('pt-BR') : '';
+                                    const tamanho = arq.size ? `${(parseInt(arq.size) / 1024).toFixed(1)} KB` : '';
+                                    subHtml += `
+                                        <div class="drive-tree-file">
+                                            <span class="drive-file-icon">&#128196;</span>
+                                            ${arq.webViewLink ? `<a href="${arq.webViewLink}" target="_blank" class="drive-link">${arq.name}</a>` : arq.name}
+                                            <span style="color: var(--gray-400); font-size: 0.8rem;">${dataFormatada} ${tamanho}</span>
+                                        </div>`;
+                                }
+                            }
+
+                            if (!conteudo.subpastas?.length && !conteudo.arquivos?.length) {
+                                subHtml = '<div style="color: var(--gray-400); font-size: 0.85rem; padding: 4px 0;">Pasta vazia</div>';
+                            }
+
+                            children.innerHTML = subHtml;
+                            children.dataset.loaded = 'true';
+
+                            // Bind inner subtree toggles
+                            children.querySelectorAll('.drive-subtoggle-inner').forEach(innerToggle => {
+                                innerToggle.addEventListener('click', async () => {
+                                    const innerId = innerToggle.dataset.folderId;
+                                    const innerChildren = innerToggle.nextElementSibling;
+                                    const innerArrow = innerToggle.querySelector('.drive-tree-arrow');
+                                    const innerExpanded = innerToggle.dataset.expanded === 'true';
+
+                                    if (innerExpanded) {
+                                        innerToggle.dataset.expanded = 'false';
+                                        innerChildren.style.display = 'none';
+                                        innerArrow.innerHTML = '&#9654;';
+                                        return;
+                                    }
+
+                                    innerToggle.dataset.expanded = 'true';
+                                    innerChildren.style.display = 'block';
+                                    innerArrow.innerHTML = '&#9660;';
+
+                                    if (innerChildren.dataset.loaded === 'true') return;
+
+                                    innerChildren.innerHTML = '<div style="color: var(--gray-400); font-size: 0.85rem; padding: 4px 0;">Carregando...</div>';
+
+                                    try {
+                                        const innerConteudo = await fetchJson(`${API_BASE_URL}/api/admin/drive/pasta/${innerId}/conteudo`, { headers });
+                                        let innerHtml = '';
+
+                                        if (innerConteudo.subpastas?.length) {
+                                            for (const s of innerConteudo.subpastas) {
+                                                innerHtml += `<div class="drive-tree-file"><span class="drive-folder-icon">&#128193;</span> ${s.name}</div>`;
+                                            }
+                                        }
+                                        if (innerConteudo.arquivos?.length) {
+                                            for (const a of innerConteudo.arquivos) {
+                                                const df = a.createdTime ? new Date(a.createdTime).toLocaleDateString('pt-BR') : '';
+                                                const sz = a.size ? `${(parseInt(a.size) / 1024).toFixed(1)} KB` : '';
+                                                innerHtml += `<div class="drive-tree-file"><span class="drive-file-icon">&#128196;</span>
+                                                    ${a.webViewLink ? `<a href="${a.webViewLink}" target="_blank" class="drive-link">${a.name}</a>` : a.name}
+                                                    <span style="color: var(--gray-400); font-size: 0.8rem;">${df} ${sz}</span>
+                                                </div>`;
+                                            }
+                                        }
+                                        if (!innerConteudo.subpastas?.length && !innerConteudo.arquivos?.length) {
+                                            innerHtml = '<div style="color: var(--gray-400); font-size: 0.85rem; padding: 4px 0;">Pasta vazia</div>';
+                                        }
+
+                                        innerChildren.innerHTML = innerHtml;
+                                        innerChildren.dataset.loaded = 'true';
+                                    } catch (innerErr) {
+                                        innerChildren.innerHTML = `<div style="color: #dc3545; font-size: 0.85rem;">${innerErr.message}</div>`;
+                                    }
+                                });
+                            });
+
+                        } catch (loadErr) {
+                            children.innerHTML = `<div style="color: #dc3545; font-size: 0.85rem;">${loadErr.message}</div>`;
+                        }
+                    });
+                });
+
+                this.showNotification(`Estrutura carregada: ${data.repositores.length} repositores`, 'success');
+            } catch (error) {
+                this.showNotification('Erro ao carregar estrutura: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Carregar Estrutura';
+            }
+        });
+
+        // === ABA DRIVE: Download Backup ===
+        document.getElementById('btnDownloadBackup')?.addEventListener('click', async () => {
+            const dataLimite = document.getElementById('driveDataLimite')?.value;
+            if (!dataLimite) {
+                this.showNotification('Selecione uma data limite', 'error');
+                return;
+            }
+
+            if (!confirm(`Fazer download de todos os arquivos criados até ${dataLimite}? Isso pode levar alguns minutos.`)) return;
+
+            const btn = document.getElementById('btnDownloadBackup');
+            btn.disabled = true;
+            btn.textContent = 'Gerando backup...';
+            const resultDiv = document.getElementById('driveGestaoResultado');
+            resultDiv.innerHTML = '<div style="padding: 12px; color: var(--gray-600);">Gerando backup ZIP... isso pode levar alguns minutos dependendo da quantidade de arquivos.</div>';
+            resultDiv.style.display = 'block';
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/admin/drive/download-backup`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ data_limite: dataLimite })
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json();
+                    throw new Error(errData.message || 'Erro ao gerar backup');
+                }
+
+                // Download do ZIP
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `backup_drive_ate_${dataLimite}.zip`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+
+                resultDiv.innerHTML = `<div style="background: #d1e7dd; border: 1px solid #badbcc; border-radius: 8px; padding: 16px;">
+                    <strong>Backup gerado com sucesso!</strong> O download iniciou automaticamente.</div>`;
+                this.showNotification('Backup baixado com sucesso!', 'success');
+            } catch (error) {
+                resultDiv.innerHTML = `<div style="background: #f8d7da; border: 1px solid #f5c2c7; border-radius: 8px; padding: 16px;">
+                    <strong>Erro:</strong> ${error.message}</div>`;
+                this.showNotification('Erro no backup: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Download Backup (ZIP)';
+            }
+        });
+
+        // === ABA DRIVE: Limpar Arquivos ===
+        document.getElementById('btnLimparArquivos')?.addEventListener('click', async () => {
+            const dataLimite = document.getElementById('driveDataLimite')?.value;
+            if (!dataLimite) {
+                this.showNotification('Selecione uma data limite', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('btnLimparArquivos');
+            btn.disabled = true;
+            btn.textContent = 'Verificando...';
+            const resultDiv = document.getElementById('driveGestaoResultado');
+
+            try {
+                // Primeiro: preview
+                const preview = await fetchJson(`${API_BASE_URL}/api/admin/drive/limpar-arquivos`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ data_limite: dataLimite, confirmar: false })
+                });
+
+                if (preview.total_arquivos === 0) {
+                    resultDiv.innerHTML = `<div style="background: #d1e7dd; border: 1px solid #badbcc; border-radius: 8px; padding: 16px;">
+                        Nenhum arquivo encontrado até ${dataLimite}.</div>`;
+                    resultDiv.style.display = 'block';
+                    this.showNotification('Nenhum arquivo para excluir', 'info');
+                    return;
+                }
+
+                // Mostrar preview
+                let previewHtml = `<div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                    <strong>Serão excluídos ${preview.total_arquivos} arquivo(s)</strong> criados até ${dataLimite}:
+                </div>`;
+                previewHtml += `<table class="dados-table"><thead><tr><th>Repositor</th><th style="text-align: right;">Arquivos</th></tr></thead><tbody>`;
+                for (const r of preview.por_repositor) {
+                    previewHtml += `<tr><td>${r.repo_cod} - ${r.repo_nome}</td><td style="text-align: right;"><span class="dados-badge dados-badge-ok">${r.quantidade}</span></td></tr>`;
+                }
+                previewHtml += `</tbody></table>`;
+                previewHtml += `<div style="margin-top: 16px;">
+                    <button class="btn" id="btnConfirmarLimpezaDrive" style="background: #dc3545; color: white; padding: 10px 24px; font-weight: 600;">
+                        Confirmar Exclusão de ${preview.total_arquivos} arquivo(s)
+                    </button>
+                    <button class="btn" id="btnCancelarLimpezaDrive" style="background: var(--gray-400); color: white; padding: 10px 24px; margin-left: 8px;">
+                        Cancelar
+                    </button>
+                </div>`;
+
+                resultDiv.innerHTML = previewHtml;
+                resultDiv.style.display = 'block';
+
+                // Cancelar
+                document.getElementById('btnCancelarLimpezaDrive')?.addEventListener('click', () => {
+                    resultDiv.style.display = 'none';
+                });
+
+                // Confirmar exclusão
+                document.getElementById('btnConfirmarLimpezaDrive')?.addEventListener('click', async () => {
+                    if (!confirm(`ATENÇÃO: Excluir permanentemente ${preview.total_arquivos} arquivo(s) do Drive? Esta ação é IRREVERSÍVEL.`)) return;
+
+                    const confirmBtn = document.getElementById('btnConfirmarLimpezaDrive');
+                    confirmBtn.disabled = true;
+                    confirmBtn.textContent = 'Excluindo...';
+
+                    try {
+                        const result = await fetchJson(`${API_BASE_URL}/api/admin/drive/limpar-arquivos`, {
+                            method: 'POST',
+                            headers,
+                            body: JSON.stringify({ data_limite: dataLimite, confirmar: true })
+                        });
+
+                        resultDiv.innerHTML = `<div style="background: #d1e7dd; border: 1px solid #badbcc; border-radius: 8px; padding: 16px;">
+                            <strong>${result.message}</strong></div>`;
+                        this.showNotification(result.message, 'success');
+                    } catch (execError) {
+                        resultDiv.innerHTML = `<div style="background: #f8d7da; border: 1px solid #f5c2c7; border-radius: 8px; padding: 16px;">
+                            <strong>Erro:</strong> ${execError.message}</div>`;
+                        this.showNotification('Erro na exclusão: ' + execError.message, 'error');
+                    }
+                });
+
+            } catch (error) {
+                resultDiv.innerHTML = `<div style="background: #f8d7da; border: 1px solid #f5c2c7; border-radius: 8px; padding: 16px;">
+                    <strong>Erro:</strong> ${error.message}</div>`;
+                resultDiv.style.display = 'block';
+                this.showNotification('Erro: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Excluir Arquivos';
+            }
+        });
+    }
+
+    /**
+     * Bind retry buttons for Drive folder creation
+     */
+    _bindRetryButtons(container, headers) {
+        container.querySelectorAll('.btn-recriar-pasta').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const repoCod = parseInt(e.target.dataset.repoCod);
+                const repoNome = e.target.dataset.repoNome;
+                e.target.disabled = true;
+                e.target.textContent = 'Recriando...';
+
+                try {
+                    const retryData = await fetchJson(`${API_BASE_URL}/api/admin/recriar-pasta-drive`, {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({ repo_cod: repoCod })
+                    });
+
+                    const row = document.getElementById(`drive-row-${repoCod}`);
+                    if (row && retryData.ok) {
+                        const r = retryData.resultado;
+                        row.innerHTML = `<td><strong>${r.repo_cod}</strong> - ${r.repo_nome}</td>
+                            <td><span class="dados-badge dados-badge-ok">OK</span></td>
+                            <td><a href="${r.drive_link}" target="_blank" class="drive-link">Abrir pasta</a></td>`;
+                        this.showNotification(`Pasta recriada para ${repoNome}`, 'success');
+                    }
+                } catch (retryError) {
+                    e.target.disabled = false;
+                    e.target.textContent = 'Recriar';
+                    this.showNotification(`Erro ao recriar pasta de ${repoNome}: ${retryError.message}`, 'error');
+                }
+            });
         });
     }
 
