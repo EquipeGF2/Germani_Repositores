@@ -13,14 +13,12 @@ const TURSO_URL = process.env.TURSO_MAIN_URL || process.env.TURSO_DATABASE_URL |
 const TURSO_TOKEN = process.env.TURSO_MAIN_TOKEN || process.env.TURSO_AUTH_TOKEN || '';
 
 const TABELAS_LIMPAR = [
-  // Dependentes primeiro
+  // Dependentes primeiro (mapeamento Drive NAO e limpo aqui, gerenciar pela aba Pastas Drive)
   'cc_despesa_valores',
   'cc_drive_pendencia',
   'cc_registro_visita',
   'cc_visita_sessao',
   'cc_documentos',
-  'cc_repositor_drive_pastas',
-  'cc_repositor_drive',
   'cc_registro_espacos',
   'cc_clientes_coordenadas',
   'cc_pesquisa_respostas',
