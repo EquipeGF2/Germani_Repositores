@@ -81,15 +81,15 @@ function normalizarSlug(valor, padrao = 'DOC') {
 
 function formatarDataHoraLocal(iso) {
   const data = new Date(iso);
+  const TZ = 'America/Sao_Paulo';
 
-  // Usar UTC para evitar problemas de timezone
-  const ano = data.getUTCFullYear();
-  const mes = String(data.getUTCMonth() + 1).padStart(2, '0');
-  const dia = String(data.getUTCDate()).padStart(2, '0');
-  const hora = String(data.getUTCHours()).padStart(2, '0');
-  const minuto = String(data.getUTCMinutes()).padStart(2, '0');
+  // Usar Intl.DateTimeFormat para horário de Brasília
+  const fmtData = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(data);
+  const fmtHora = new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false }).format(data);
 
-  const ano2Digitos = String(ano).slice(-2);
+  const [ano, mes, dia] = fmtData.split('-');
+  const [hora, minuto] = fmtHora.split(':');
+  const ano2Digitos = ano.slice(-2);
 
   return {
     ddmmaa: `${dia}${mes}${ano2Digitos}`,

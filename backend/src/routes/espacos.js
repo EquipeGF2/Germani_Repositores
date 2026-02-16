@@ -264,15 +264,15 @@ router.post('/upload-foto', upload.single('foto'), async (req, res) => {
 
     // Gerar nome do arquivo: REP{COD}_CLI{COD}_ESPACO_{DATA}_{HORA}_{SEQUENCIAL}
     const now = new Date();
-    // Ajustar para horário de Brasília (UTC-3)
-    const brasiliaOffset = -3 * 60 * 60 * 1000;
-    const brasiliaTime = new Date(now.getTime() + brasiliaOffset);
+    // Usar Intl.DateTimeFormat para horário de Brasília (respeita horário de verão)
+    const fmtData = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+    const fmtHora = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(now);
 
-    const data = brasiliaTime.toISOString().split('T')[0].replace(/-/g, '');
-    const hora = brasiliaTime.toISOString().split('T')[1].substring(0, 8).replace(/:/g, '');
+    const data = fmtData.replace(/-/g, '');
+    const hora = fmtHora.replace(/:/g, '');
 
     // Buscar sequencial - contar registros de hoje para este cliente
-    const dataHoje = brasiliaTime.toISOString().split('T')[0];
+    const dataHoje = fmtData;
     const registrosHoje = await tursoService.execute(
       `SELECT COUNT(*) as total FROM cc_registro_espacos
        WHERE reg_repositor_id = ? AND reg_cliente_id = ? AND reg_data_registro = ?`,
