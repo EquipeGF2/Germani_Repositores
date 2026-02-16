@@ -246,7 +246,7 @@
                     <div style="font-size: 14px; opacity: 0.9;">${saudacao},</div>
                     <div style="font-size: 20px; font-weight: 700; margin-top: 2px;">${usuario?.nome_completo || usuario?.username || 'Repositor'}</div>
                     <div style="font-size: 12px; opacity: 0.8; margin-top: 6px;">
-                        ${now.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                        ${now.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: 'numeric', month: 'long' })}
                     </div>
                 </div>
 
@@ -420,7 +420,7 @@
     function renderMais() {
         const usuario = authManager?.usuario;
         const ultimoSync = localStorage.getItem('ultimo_sync');
-        const syncText = ultimoSync ? new Date(ultimoSync).toLocaleString('pt-BR') : 'Nunca';
+        const syncText = ultimoSync ? new Date(ultimoSync).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : 'Nunca';
 
         pwaContent.innerHTML = `
             <div class="pwa-page">

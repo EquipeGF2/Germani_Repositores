@@ -38,19 +38,20 @@ export function formatarData(dataString) {
 }
 
 /**
- * Formata data e hora completa
+ * Fuso horário padrão do sistema (Brasília / São Paulo)
+ */
+export const FUSO_HORARIO = 'America/Sao_Paulo';
+
+/**
+ * Formata data e hora completa no fuso horário de Brasília
  */
 export function formatarDataHora(dataString) {
     if (!dataString) return '-';
 
     const date = new Date(dataString);
-    const dia = String(date.getDate()).padStart(2, '0');
-    const mes = String(date.getMonth() + 1).padStart(2, '0');
-    const ano = date.getFullYear();
-    const hora = String(date.getHours()).padStart(2, '0');
-    const minuto = String(date.getMinutes()).padStart(2, '0');
+    if (isNaN(date.getTime())) return '-';
 
-    return `${dia}/${mes}/${ano} ${hora}:${minuto}`;
+    return date.toLocaleString('pt-BR', { timeZone: FUSO_HORARIO });
 }
 
 /**

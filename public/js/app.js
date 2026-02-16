@@ -1691,7 +1691,7 @@ class App {
                         : '<span class="badge badge-secondary">Repositor</span>';
 
                     const ultimoLogin = usuario.ultimo_login
-                        ? new Date(usuario.ultimo_login).toLocaleString('pt-BR')
+                        ? new Date(usuario.ultimo_login).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
                         : '-';
 
                     return `
@@ -1739,7 +1739,7 @@ class App {
                         : '<span class="badge badge-secondary">Repositor</span>';
 
                     const ultimoLogin = usuario.ultimo_login
-                        ? new Date(usuario.ultimo_login).toLocaleString('pt-BR')
+                        ? new Date(usuario.ultimo_login).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
                         : '-';
 
                     return `
@@ -2149,7 +2149,7 @@ class App {
             sessoes.forEach(s => {
                 const repSessoes = porRepositor.get(s.rep_id) || [];
                 const multiplos = repSessoes.length > 1;
-                const checkinData = s.checkin_at ? new Date(s.checkin_at).toLocaleString('pt-BR') : '-';
+                const checkinData = s.checkin_at ? new Date(s.checkin_at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
                 const dataPlanj = s.data_planejada || '-';
 
                 html += `
@@ -3013,7 +3013,7 @@ class App {
                 : '<span class="badge badge-secondary">Repositor</span>';
 
             const ultimoLogin = usuario.ultimo_login
-                ? new Date(usuario.ultimo_login).toLocaleString('pt-BR')
+                ? new Date(usuario.ultimo_login).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
                 : '-';
 
             return `
@@ -7448,7 +7448,7 @@ class App {
                             <tbody>
                                 ${historico.map(h => {
                                     const dataAlteracao = new Date(h.hist_data_alteracao);
-                                    const dataFormatada = dataAlteracao.toLocaleString('pt-BR');
+                                    const dataFormatada = dataAlteracao.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
                                     return `
                                         <tr>
@@ -7521,7 +7521,7 @@ class App {
             container.innerHTML = `
                 <div class="auditoria-cards">
                     ${registros.map(item => {
-                        const dataFormatada = item.rot_aud_data_hora ? new Date(item.rot_aud_data_hora).toLocaleString('pt-BR') : '-';
+                        const dataFormatada = item.rot_aud_data_hora ? new Date(item.rot_aud_data_hora).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
                         const usuario = item.rot_aud_usuario || '-';
                         return `
                             <div class="auditoria-card">
@@ -7570,7 +7570,7 @@ class App {
                         </thead>
                         <tbody>
                             ${registros.map(item => {
-                                const dataFormatada = item.rot_aud_data_hora ? new Date(item.rot_aud_data_hora).toLocaleString('pt-BR') : '-';
+                                const dataFormatada = item.rot_aud_data_hora ? new Date(item.rot_aud_data_hora).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
                                 const usuario = item.rot_aud_usuario || '-';
                                 return `
                                     <tr>
@@ -7628,7 +7628,7 @@ class App {
                 container.innerHTML = `
                     <div class="checkings-cards">
                         ${response.data.map(item => {
-                            const dataCancelamento = item.rv_cancelado_em ? new Date(item.rv_cancelado_em).toLocaleString('pt-BR') : '-';
+                            const dataCancelamento = item.rv_cancelado_em ? new Date(item.rv_cancelado_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
                             return `
                                 <div class="checking-card" style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 12px;">
                                     <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
@@ -7665,7 +7665,7 @@ class App {
                             </thead>
                             <tbody>
                                 ${response.data.map(item => {
-                                    const dataCancelamento = item.rv_cancelado_em ? new Date(item.rv_cancelado_em).toLocaleString('pt-BR') : '-';
+                                    const dataCancelamento = item.rv_cancelado_em ? new Date(item.rv_cancelado_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
                                     return `
                                         <tr>
                                             <td>${dataCancelamento}</td>
@@ -8098,7 +8098,7 @@ class App {
     formatarDataCurta(data) {
         const objetoData = data instanceof Date ? data : new Date(data);
         if (!objetoData || Number.isNaN(objetoData.getTime())) return null;
-        return objetoData.toLocaleDateString('pt-BR');
+        return objetoData.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     }
 
     formatarDataParaNomeArquivo(data = new Date()) {
@@ -8380,7 +8380,7 @@ class App {
 
     async exportarArquivosRoteiro({ tipo = 'pdf', repositorIds = [], filtros = {}, formatoPDF = 'detalhado' } = {}) {
         const dataGeracao = new Date();
-        const dataGeracaoTexto = dataGeracao.toLocaleDateString('pt-BR');
+        const dataGeracaoTexto = dataGeracao.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
         const dataNomePDF = this.formatarDataParaNomeArquivo(dataGeracao);
         const dataNomePlanilha = dataGeracao.toISOString().split('T')[0].replace(/-/g, '');
 
@@ -8722,7 +8722,7 @@ class App {
         const { registros, repositorInfo } = this.dadosEnvioWhatsApp;
 
         const dataAtualizacao = await this.obterUltimaAtualizacaoRepositor(repositorInfo.repo_cod, registros);
-        const dataFormatada = dataAtualizacao || new Date().toLocaleDateString('pt-BR');
+        const dataFormatada = dataAtualizacao || new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
         const mensagem = this.gerarMensagemWhatsAppRoteiro(registros, repositorInfo, dataFormatada);
         const mensagemEncoded = encodeURIComponent(mensagem);
@@ -8890,7 +8890,7 @@ class App {
 
     async exportarMapaConsolidado({ filtros = {} } = {}) {
         const dataGeracao = new Date();
-        const dataGeracaoTexto = dataGeracao.toLocaleString('pt-BR');
+        const dataGeracaoTexto = dataGeracao.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
         const registros = await db.consultarRoteiro({ ...filtros, incluirRateio: true });
         if (!registros || !registros.length) {
@@ -14343,7 +14343,7 @@ class App {
                         <div class="despesa-fotos-grid">
                             ${grupo.docs.map(doc => {
                                 const imgUrl = doc.doc_url_drive || '';
-                                const dataRef = doc.dv_data_ref ? new Date(doc.dv_data_ref + 'T12:00:00').toLocaleDateString('pt-BR') : '';
+                                const dataRef = doc.dv_data_ref ? new Date(doc.dv_data_ref + 'T12:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '';
                                 return `
                                     <div class="despesa-foto-item">
                                         <img src="${imgUrl}"
@@ -15606,7 +15606,7 @@ class App {
         item.id = `doc-${doc.doc_id}`;
 
         const dataFormatada = doc.doc_data_ref ?
-            new Date(doc.doc_data_ref + 'T12:00:00').toLocaleDateString('pt-BR') : '-';
+            new Date(doc.doc_data_ref + 'T12:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
 
         const observacaoExibir = this.extrairObservacaoDocumento(doc.doc_observacao);
 
@@ -16546,7 +16546,7 @@ class App {
             const itens = grupo.imagens.map((img, imgIndex) => {
                 const { previewUrl, originalUrl, downloadUrl } = this.resolverUrlImagemCampanha(img, { modoThumb: true });
                 const urlImagem = previewUrl || originalUrl || '';
-                const dataRegistro = img.data_hora_registro ? new Date(img.data_hora_registro).toLocaleString('pt-BR') : '-';
+                const dataRegistro = img.data_hora_registro ? new Date(img.data_hora_registro).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
                 const linkOrigem = originalUrl || downloadUrl || urlImagem || '#';
                 const thumbFallbackClass = urlImagem ? '' : 'thumb-fallback-visible';
                 const imagemVisivel = urlImagem ? '' : 'style="display:none;"';
@@ -16639,7 +16639,7 @@ class App {
         const { previewUrl, originalUrl } = this.resolverUrlImagemCampanha(imagem);
         const urlImagem = previewUrl || originalUrl || '';
         const possuiImagem = Boolean(urlImagem);
-        const dataRegistro = imagem?.data_hora_registro ? new Date(imagem.data_hora_registro).toLocaleString('pt-BR') : '-';
+        const dataRegistro = imagem?.data_hora_registro ? new Date(imagem.data_hora_registro).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
 
         const lightbox = document.createElement('div');
         lightbox.className = 'campanha-lightbox';
@@ -16992,7 +16992,7 @@ class App {
                 visitasOrdenadas.forEach((visita, idx) => {
                     const clienteId = String(visita.cliente_id || visita.rv_cliente_codigo || '').trim();
                     const ordemPlanejadaCliente = visita.rot_ordem_visita || visita.rot_ordem_cidade || null;
-                    const horaCheckin = visita.checkin_at ? new Date(visita.checkin_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-';
+                    const horaCheckin = visita.checkin_at ? new Date(visita.checkin_at).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }) : '-';
 
                     // Verificar se a ordem está correta
                     let foraDeOrdem = false;
@@ -17021,7 +17021,7 @@ class App {
 
                 analises.push({
                     dia,
-                    diaFormatado: new Date(dia + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }),
+                    diaFormatado: new Date(dia + 'T12:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'short', day: '2-digit', month: '2-digit' }),
                     totalVisitas: visitasOrdenadas.length,
                     foraDeOrdem: totalForaDeOrdem,
                     aderencia: parseInt(aderencia),
@@ -17461,8 +17461,8 @@ class App {
                     '<span class="pesquisa-badge pesquisa-badge-ativa">Ativa</span>' :
                     '<span class="pesquisa-badge pesquisa-badge-inativa">Inativa</span>');
 
-                const dataInicio = p.pes_data_inicio ? new Date(p.pes_data_inicio).toLocaleDateString('pt-BR') : '-';
-                const dataFim = p.pes_data_fim ? new Date(p.pes_data_fim).toLocaleDateString('pt-BR') : '-';
+                const dataInicio = p.pes_data_inicio ? new Date(p.pes_data_inicio).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
+                const dataFim = p.pes_data_fim ? new Date(p.pes_data_fim).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
 
                 return `
                     <div class="pesquisa-card">
@@ -18688,7 +18688,7 @@ class App {
                     </thead>
                     <tbody>
                         ${respostasDaPesquisa.map(r => {
-                            const data = r.res_data_resposta ? new Date(r.res_data_resposta).toLocaleString('pt-BR') : '-';
+                            const data = r.res_data_resposta ? new Date(r.res_data_resposta).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
                             const respostasCampos = r.res_respostas || [];
 
                             // Criar um mapa de pergunta -> resposta
@@ -18760,7 +18760,7 @@ class App {
                 }
             }
 
-            const data = resposta.res_data_resposta ? new Date(resposta.res_data_resposta).toLocaleString('pt-BR') : '-';
+            const data = resposta.res_data_resposta ? new Date(resposta.res_data_resposta).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
 
             body.innerHTML = `
                 <div class="detalhes-resposta-grid">
@@ -18839,8 +18839,8 @@ class App {
             // Criar linhas de dados
             const rows = this.respostasPesquisaAtual.map(r => {
                 const dataHora = r.res_data_resposta ? new Date(r.res_data_resposta) : null;
-                const data = dataHora ? dataHora.toLocaleDateString('pt-BR') : '';
-                const hora = dataHora ? dataHora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+                const data = dataHora ? dataHora.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '';
+                const hora = dataHora ? dataHora.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }) : '';
 
                 // Dados fixos
                 const rowFixa = [
@@ -20615,7 +20615,7 @@ class App {
                 body: JSON.stringify({
                     todos: true,
                     tipo,
-                    mensagem: `Forçado pelo admin via web em ${new Date().toLocaleString('pt-BR')}`
+                    mensagem: `Forçado pelo admin via web em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`
                 })
             });
 
@@ -20656,7 +20656,7 @@ class App {
                 body: JSON.stringify({
                     repId: parseInt(repId, 10),
                     tipo: 'ambos',
-                    mensagem: `Forçado pelo admin via web em ${new Date().toLocaleString('pt-BR')}`
+                    mensagem: `Forçado pelo admin via web em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`
                 })
             });
 
@@ -21605,7 +21605,7 @@ class App {
             const dtEl = document.getElementById('cameraDateTime');
             if (dtEl) {
                 const now = new Date();
-                dtEl.innerHTML = `<strong>Data/Hora:</strong> ${now.toLocaleString('pt-BR')}`;
+                dtEl.innerHTML = `<strong>Data/Hora:</strong> ${now.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`;
             }
         }, 1000);
 
@@ -21648,7 +21648,7 @@ class App {
         const clienteNome = this.espacosRegistroState?.clienteNome || 'Cliente';
         const clienteId = this.espacosRegistroState?.clienteId || '';
         const now = new Date();
-        const dataHora = now.toLocaleString('pt-BR');
+        const dataHora = now.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
         // Fundo semi-transparente para a marca d'água
         const textoLinha1 = `Cliente: ${clienteId} - ${clienteNome}`;
@@ -22975,7 +22975,7 @@ class App {
                             // Arquivos
                             if (conteudo.arquivos?.length) {
                                 for (const arq of conteudo.arquivos) {
-                                    const dataFormatada = arq.createdTime ? new Date(arq.createdTime).toLocaleDateString('pt-BR') : '';
+                                    const dataFormatada = arq.createdTime ? new Date(arq.createdTime).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '';
                                     const tamanho = arq.size ? `${(parseInt(arq.size) / 1024).toFixed(1)} KB` : '';
                                     subHtml += `
                                         <div class="drive-tree-file">
@@ -23027,7 +23027,7 @@ class App {
                                         }
                                         if (innerConteudo.arquivos?.length) {
                                             for (const a of innerConteudo.arquivos) {
-                                                const df = a.createdTime ? new Date(a.createdTime).toLocaleDateString('pt-BR') : '';
+                                                const df = a.createdTime ? new Date(a.createdTime).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '';
                                                 const sz = a.size ? `${(parseInt(a.size) / 1024).toFixed(1)} KB` : '';
                                                 innerHtml += `<div class="drive-tree-file"><span class="drive-file-icon">&#128196;</span>
                                                     ${a.webViewLink ? `<a href="${a.webViewLink}" target="_blank" class="drive-link">${a.name}</a>` : a.name}
