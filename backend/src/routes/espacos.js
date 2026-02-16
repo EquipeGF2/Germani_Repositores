@@ -157,14 +157,15 @@ router.patch('/clientes/:id', async (req, res) => {
 // GET /api/espacos/registros - Listar registros de espaços
 router.get('/registros', async (req, res) => {
   try {
-    const { cliente_id, repositor_id, data_inicio, data_fim, tipo_espaco_id, limite } = req.query;
+    const { cliente_id, repositor_id, data_inicio, data_fim, tipo_espaco_id, limite, cidade } = req.query;
     const registros = await tursoService.listarRegistrosEspacos({
       clienteId: cliente_id,
       repositorId: repositor_id ? parseInt(repositor_id) : null,
       dataInicio: data_inicio,
       dataFim: data_fim,
       tipoEspacoId: tipo_espaco_id ? parseInt(tipo_espaco_id) : null,
-      limite: limite ? parseInt(limite) : null
+      limite: limite ? parseInt(limite) : null,
+      cidade: cidade || null
     });
     res.json({ ok: true, data: registros });
   } catch (error) {

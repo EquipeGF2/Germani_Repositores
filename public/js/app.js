@@ -13938,7 +13938,7 @@ class App {
                     <div class="empty-state">
                         <div class="empty-state-icon">🔍</div>
                         <p>Utilize os filtros acima para buscar documentos</p>
-                        <small>Selecione o tipo de documento ou repositor e clique em "Buscar Documentos"</small>
+                        <small>Informe o período e clique em "Buscar Documentos"</small>
                     </div>
                 `;
             }
@@ -14002,16 +14002,29 @@ class App {
             const container = document.getElementById('documentosContainer');
             if (!container) return;
 
+            const dataInicio = document.getElementById('consultaDataInicio')?.value;
+            const dataFim = document.getElementById('consultaDataFim')?.value;
+
+            if (!dataInicio || !dataFim) {
+                this.showNotification('Informe o período (data inicial e final) para consulta', 'warning');
+                return;
+            }
+
             container.innerHTML = '<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p style="margin-top: 16px;">Carregando todos os documentos...</p></div>';
 
-            const data = await fetchJson(`${API_BASE_URL}/api/documentos?todos=true`);
+            const params = new URLSearchParams();
+            params.append('todos', 'true');
+            params.append('data_inicio', dataInicio);
+            params.append('data_fim', dataFim);
+
+            const data = await fetchJson(`${API_BASE_URL}/api/documentos?${params.toString()}`);
             const documentos = data.documentos || [];
 
             if (documentos.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
                         <div class="empty-state-icon">📁</div>
-                        <p>Nenhum documento cadastrado no sistema</p>
+                        <p>Nenhum documento encontrado no período selecionado</p>
                     </div>
                 `;
                 return;
@@ -15519,16 +15532,21 @@ class App {
             const dataInicio = document.getElementById('consultaDataInicio').value;
             const dataFim = document.getElementById('consultaDataFim').value;
 
-            if (!repositorId && !tipoId) {
-                this.showNotification('Selecione ao menos o tipo de documento ou o repositor', 'warning');
+            if (!dataInicio || !dataFim) {
+                this.showNotification('Informe o período (data inicial e final) para consulta', 'warning');
                 return;
+            }
+
+            const container = document.getElementById('documentosContainer');
+            if (container) {
+                container.innerHTML = '<div style="text-align: center; padding: 40px;"><div class="spinner"></div><p style="margin-top: 16px;">Buscando documentos...</p></div>';
             }
 
             const params = new URLSearchParams();
             if (repositorId) params.append('repositor_id', repositorId);
             if (tipoId) params.append('dct_id', tipoId);
-            if (dataInicio) params.append('data_inicio', dataInicio);
-            if (dataFim) params.append('data_fim', dataFim);
+            params.append('data_inicio', dataInicio);
+            params.append('data_fim', dataFim);
 
             const data = await fetchJson(`${API_BASE_URL}/api/documentos?${params.toString()}`);
             this.renderizarDocumentos(data.documentos || []);
@@ -21299,6 +21317,7 @@ class App {
         try {
             container.innerHTML = '<div class="loading">Consultando...</div>';
 
+            const cidade = document.getElementById('filtro_cidade_espaco_consulta')?.value?.trim() || '';
             const repositorId = document.getElementById('filtro_rep_espaco')?.value || '';
             const clienteId = document.getElementById('filtro_cliente_espaco')?.value || '';
             const tipoEspacoId = document.getElementById('filtro_tipo_espaco_consulta')?.value || '';
@@ -21306,6 +21325,7 @@ class App {
             const dataFim = document.getElementById('filtro_data_fim_espaco')?.value || '';
 
             const params = new URLSearchParams();
+            if (cidade) params.append('cidade', cidade);
             if (repositorId) params.append('repositor_id', repositorId);
             if (clienteId) params.append('cliente_id', clienteId);
             if (tipoEspacoId) params.append('tipo_espaco_id', tipoEspacoId);

@@ -2579,6 +2579,10 @@ class TursoService {
       sql += ' AND reg.reg_tipo_espaco_id = ?';
       args.push(filtros.tipoEspacoId);
     }
+    if (filtros.cidade) {
+      sql += ' AND reg.reg_cliente_id IN (SELECT ces_cliente_id FROM cc_clientes_espacos WHERE UPPER(ces_cidade) LIKE UPPER(?))';
+      args.push('%' + filtros.cidade + '%');
+    }
 
     sql += ' ORDER BY reg.reg_data_registro DESC, reg.reg_criado_em DESC';
 

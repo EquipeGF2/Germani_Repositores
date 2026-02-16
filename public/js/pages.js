@@ -3998,7 +3998,6 @@ export const pages = {
             <div class="card">
                 <div class="card-body" style="padding-top: 20px;">
                     <div class="doc-upload-section">
-                        <h4 style="margin-bottom: 20px; color: #374151; font-size: 16px; font-weight: 600;">📤 Novo Documento</h4>
                         <div class="doc-form-grid">
                             <div class="filter-group">
                                 <label for="uploadRepositor">Repositor *</label>
@@ -4057,7 +4056,6 @@ export const pages = {
                         </div>
 
                         <div style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 12px; align-items: center;">
-                            <div style="color: #6b7280; font-size: 13px;">Envie vários anexos de uma vez ou capture fotos em sequência.</div>
                             <button class="btn btn-primary" id="btnUploadDocumento" style="min-width: 160px;">📤 Enviar Documento</button>
                         </div>
 
@@ -4127,7 +4125,7 @@ export const pages = {
                     border-radius: 8px;
                     cursor: pointer;
                     font-weight: 600;
-                    color: #1f2937;
+                    color: #111827;
                     transition: all 0.2s ease;
                     display: inline-flex;
                     align-items: center;
@@ -4135,9 +4133,9 @@ export const pages = {
                 }
 
                 .btn-camera:hover {
-                    background: #fff1f2;
-                    border-color: #fca5a5;
-                    color: #b91c1c;
+                    background: #f3f4f6;
+                    border-color: #9ca3af;
+                    color: #111827;
                     transform: translateY(-1px);
                 }
 
@@ -4289,11 +4287,12 @@ export const pages = {
                     border: 1px solid #d1d5db;
                     border-radius: 8px;
                     background: white;
+                    color: #111827;
                     cursor: pointer;
                 }
 
                 input[type="file"]:hover {
-                    border-color: #ef4444;
+                    border-color: #9ca3af;
                 }
 
                 @media (max-width: 768px) {
@@ -4588,7 +4587,7 @@ export const pages = {
                         <div class="empty-state">
                             <div class="empty-state-icon">🔍</div>
                             <p>Utilize os filtros acima para buscar documentos</p>
-                            <small>Selecione o tipo de documento ou repositor e clique em "Buscar Documentos"</small>
+                            <small>Informe o período e clique em "Buscar Documentos"</small>
                         </div>
                     </div>
                 </div>
@@ -7015,6 +7014,10 @@ export const pages = {
             <div class="card">
                 <div class="card-body">
                     <div class="filter-bar filter-bar-wide" style="margin-bottom: 20px;">
+                        <div class="filter-group">
+                            <label for="filtro_cidade_espaco_consulta">Cidade</label>
+                            <input type="text" id="filtro_cidade_espaco_consulta" placeholder="Buscar cidade...">
+                        </div>
                         <div class="filter-group">
                             <label for="filtro_rep_espaco">Repositor</label>
                             <select id="filtro_rep_espaco">
