@@ -1732,6 +1732,7 @@ class TursoService {
         rep_supervisor TEXT,
         rep_representante_codigo TEXT,
         rep_representante_nome TEXT,
+        repo_controle_dia_semana INTEGER DEFAULT 1,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -1739,6 +1740,12 @@ class TursoService {
 
     await this.execute(sqlRepositor, []);
     console.log('✅ Tabela cad_repositor garantida');
+
+    try {
+      await this.execute("ALTER TABLE cad_repositor ADD COLUMN repo_controle_dia_semana INTEGER DEFAULT 1", []);
+    } catch (error) {
+      // Coluna já existe
+    }
 
     // Agora criar a tabela cc_usuarios (SEM FK pois causa problemas no Turso)
     // A validação de rep_id é feita em código antes do INSERT

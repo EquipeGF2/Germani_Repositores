@@ -278,44 +278,44 @@ class TursoDatabase {
         });
     }
 
-    async createRepositor(nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo = 'repositor', repSupervisor = null, diasTrabalhados = 'seg,ter,qua,qui,sex', repJornadaTipo = 'INTEGRAL', telefone = null, email = null) {
+    async createRepositor(nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo = 'repositor', repSupervisor = null, diasTrabalhados = 'seg,ter,qua,qui,sex', repJornadaTipo = 'INTEGRAL', telefone = null, email = null, controleDiaSemana = 1) {
         try {
             const nomeNormalizado = normalizarTextoCadastro(nome);
             const cidadeNormalizada = normalizarTextoCadastro(cidadeRef);
-            const jornadaNormalizada = vinculo === 'agencia' ? null : (repJornadaTipo || 'INTEGRAL');
-                    const jornadaLegada = jornadaNormalizada ? jornadaNormalizada.toLowerCase() : null;
+            const jornadaNormalizada = repJornadaTipo || 'INTEGRAL';
+            const jornadaLegada = jornadaNormalizada.toLowerCase();
             const supervisorNormalizado = normalizarSupervisor(repSupervisor);
-            const diasParaGravar = vinculo === 'agencia' ? null : (diasTrabalhados || 'seg,ter,qua,qui,sex');
+            const diasParaGravar = diasTrabalhados || 'seg,ter,qua,qui,sex';
 
             const nomeDuplicado = await this.nomeRepositorJaExiste(nomeNormalizado);
             if (nomeDuplicado) {
                 throw new Error('Já existe um repositor cadastrado com este nome.');
             }
 
-            if (vinculo !== 'agencia') {
-                const diasSelecionados = (diasTrabalhados || '').split(',').map(d => d.trim()).filter(Boolean);
-                if (diasSelecionados.length === 0) {
-                    throw new Error('Selecione pelo menos um dia de trabalho para o repositor.');
-                }
+            const diasSelecionados = (diasTrabalhados || '').split(',').map(d => d.trim()).filter(Boolean);
+            if (diasSelecionados.length === 0) {
+                throw new Error('Selecione pelo menos um dia de trabalho.');
             }
 
-                    const result = await this.mainClient.execute({
-                        sql: `INSERT INTO cad_repositor (
-                                repo_nome, repo_data_inicio, repo_data_fim,
-                                repo_cidade_ref, repo_representante, rep_telefone, rep_email, rep_contato_telefone, repo_vinculo,
-                            dias_trabalhados, jornada, rep_jornada_tipo,
-                            rep_supervisor, rep_representante_codigo, rep_representante_nome
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
-                        args: [
-                            nomeNormalizado, dataInicio, dataFim,
-                            cidadeNormalizada,
-                            `${repCodigo || ''}${repNome ? ' - ' + repNome : ''}`.trim(),
+            const result = await this.mainClient.execute({
+                sql: `INSERT INTO cad_repositor (
+                        repo_nome, repo_data_inicio, repo_data_fim,
+                        repo_cidade_ref, repo_representante, rep_telefone, rep_email, rep_contato_telefone, repo_vinculo,
+                        dias_trabalhados, jornada, rep_jornada_tipo,
+                        rep_supervisor, rep_representante_codigo, rep_representante_nome,
+                        repo_controle_dia_semana
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                args: [
+                    nomeNormalizado, dataInicio, dataFim,
+                    cidadeNormalizada,
+                    `${repCodigo || ''}${repNome ? ' - ' + repNome : ''}`.trim(),
                     telefone || null,
                     email || null,
                     telefone || null,
                     vinculo,
                     diasParaGravar, jornadaLegada, jornadaNormalizada,
-                    supervisorNormalizado, repCodigo, repNome
+                    supervisorNormalizado, repCodigo, repNome,
+                    vinculo === 'agencia' ? (controleDiaSemana ? 1 : 0) : 1
                 ]
             });
 
@@ -390,28 +390,26 @@ class TursoDatabase {
         }
     }
 
-    async updateRepositor(cod, nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo = 'repositor', repSupervisor = null, diasTrabalhados = 'seg,ter,qua,qui,sex', repJornadaTipo = 'INTEGRAL', telefone = null, email = null) {
+    async updateRepositor(cod, nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo = 'repositor', repSupervisor = null, diasTrabalhados = 'seg,ter,qua,qui,sex', repJornadaTipo = 'INTEGRAL', telefone = null, email = null, controleDiaSemana = 1) {
         try {
             // Buscar dados antigos para comparação
             const dadosAntigos = await this.getRepositor(cod);
 
             const nomeNormalizado = normalizarTextoCadastro(nome);
             const cidadeNormalizada = normalizarTextoCadastro(cidadeRef);
-            const jornadaNormalizada = vinculo === 'agencia' ? null : (repJornadaTipo || 'INTEGRAL');
-            const jornadaLegada = jornadaNormalizada ? jornadaNormalizada.toLowerCase() : null;
+            const jornadaNormalizada = repJornadaTipo || 'INTEGRAL';
+            const jornadaLegada = jornadaNormalizada.toLowerCase();
             const supervisorNormalizado = normalizarSupervisor(repSupervisor);
-            const diasParaGravar = vinculo === 'agencia' ? null : (diasTrabalhados || 'seg,ter,qua,qui,sex');
+            const diasParaGravar = diasTrabalhados || 'seg,ter,qua,qui,sex';
 
             const nomeDuplicado = await this.nomeRepositorJaExiste(nomeNormalizado, cod);
             if (nomeDuplicado) {
                 throw new Error('Já existe um repositor cadastrado com este nome.');
             }
 
-            if (vinculo !== 'agencia') {
-                const diasSelecionados = (diasTrabalhados || '').split(',').map(d => d.trim()).filter(Boolean);
-                if (diasSelecionados.length === 0) {
-                    throw new Error('Selecione pelo menos um dia de trabalho para o repositor.');
-                }
+            const diasSelecionados = (diasTrabalhados || '').split(',').map(d => d.trim()).filter(Boolean);
+            if (diasSelecionados.length === 0) {
+                throw new Error('Selecione pelo menos um dia de trabalho.');
             }
 
             // Atualizar o registro
@@ -421,6 +419,7 @@ class TursoDatabase {
                           repo_cidade_ref = ?, repo_representante = ?, rep_telefone = ?, rep_email = ?, rep_contato_telefone = ?, repo_vinculo = ?,
                           dias_trabalhados = ?, jornada = ?, rep_jornada_tipo = ?,
                           rep_supervisor = ?, rep_representante_codigo = ?, rep_representante_nome = ?,
+                          repo_controle_dia_semana = ?,
                           updated_at = CURRENT_TIMESTAMP
                       WHERE repo_cod = ?`,
                 args: [
@@ -433,6 +432,7 @@ class TursoDatabase {
                     vinculo,
                     diasParaGravar, jornadaLegada, jornadaNormalizada,
                     supervisorNormalizado, repCodigo, repNome,
+                    vinculo === 'agencia' ? (controleDiaSemana ? 1 : 0) : 1,
                     cod
                 ]
             });

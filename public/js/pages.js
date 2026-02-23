@@ -167,6 +167,14 @@ export const pages = {
                                                     <span>É uma Agência?</span>
                                                 </label>
                                             </div>
+                                            <div class="form-group controle-dia-semana-group" id="controleDiaSemanaGroup" style="display: none;">
+                                                <label for="repo_controle_dia_semana" class="label-nowrap">Controle dia da semana</label>
+                                                <label class="checkbox-inline" style="display: flex; align-items: center; gap: 8px;">
+                                                    <input type="checkbox" id="repo_controle_dia_semana" style="width: auto; margin: 0;" checked>
+                                                    <span>Controlar dia da semana no roteiro</span>
+                                                </label>
+                                                <small class="helper-compact">Desmarque se a agência não tem dias específicos de atendimento</small>
+                                            </div>
                                             <div class="form-group">
                                                 <label for="repo_cidade_ref">Cidade Referência</label>
                                                 <input type="text" id="repo_cidade_ref" placeholder="Ex: São Paulo" required>
@@ -618,25 +626,29 @@ export const pages = {
         }
 
         const repositor = contexto;
+        const isAgenciaSemDia = repositor.repo_vinculo === 'agencia' && !Number(repositor.repo_controle_dia_semana);
 
         const representanteLabel = repositor.rep_representante_codigo
             ? `${repositor.rep_representante_codigo}${repositor.rep_representante_nome ? ' - ' + repositor.rep_representante_nome : ''}`
             : (repositor.rep_representante_nome || '-');
 
-        return `
+        const headerComum = `
             <button class="btn-voltar-roteiro" onclick="window.app.voltarListaRepositores()">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
                 Voltar
             </button>
             <div class="roteiro-header">
                 <div>
-                    <p class="form-card-eyebrow">Roteiro do Repositor</p>
+                    <p class="form-card-eyebrow">Roteiro ${repositor.repo_vinculo === 'agencia' ? 'da Agência' : 'do Repositor'}</p>
                     <h3>${repositor.repo_nome}</h3>
-                    <p class="text-muted">Configure os dias, cidades e clientes atendidos. As alterações serão salvas ao clicar no botão "Salvar Roteiro".</p>
+                    <p class="text-muted">${isAgenciaSemDia
+                        ? 'Configure as cidades e clientes atendidos pela agência. As alterações serão salvas ao clicar em "Salvar Roteiro".'
+                        : 'Configure os dias, cidades e clientes atendidos. As alterações serão salvas ao clicar no botão "Salvar Roteiro".'}</p>
                 </div>
                 <div class="roteiro-badges">
                     <span class="badge badge-info">Cód. ${repositor.repo_cod}</span>
                     <span class="badge">${repositor.repo_vinculo === 'agencia' ? 'Agência' : 'Repositor'}</span>
+                    ${isAgenciaSemDia ? '<span class="badge">Sem controle de dia</span>' : ''}
                     <span id="roteiroPendentesIndicador" class="badge badge-warning" style="display: none;">Alterações pendentes</span>
                 </div>
             </div>
@@ -659,6 +671,120 @@ export const pages = {
                     <strong>${(repositor.rep_jornada_tipo || 'INTEGRAL').replace('_', ' ')}</strong>
                 </div>
             </div>
+        `;
+
+        // Simplified layout for agencies WITHOUT day control
+        if (isAgenciaSemDia) {
+            return `
+                ${headerComum}
+
+                <div class="roteiro-layout roteiro-layout-simples">
+                    <section class="card">
+                        <div class="card-header">
+                            <div>
+                                <p class="form-card-eyebrow">Cidades atendidas</p>
+                            </div>
+                            <button class="btn btn-secondary btn-sm" id="btnSelecionarTodasCidades" style="display:none;">
+                                <span id="textoSelecionarTodas">✓ Selecionar Todas</span>
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div class="cidades-busca-container">
+                                <div class="cidades-busca-seq-row">
+                                    <div class="autocomplete-input cidade-input-larga">
+                                        <input type="text" id="roteiroCidadeBusca" placeholder="Buscar cidade">
+                                        <div id="roteiroCidadeSugestoes" class="autocomplete-list"></div>
+                                    </div>
+                                </div>
+                                <div class="cidades-botoes-row">
+                                    <button class="btn btn-primary btn-sm btn-compact btn-add-cidade" id="btnAdicionarCidade">+ Adicionar</button>
+                                </div>
+                            </div>
+
+                            <div id="roteiroCidadesMensagem" class="roteiro-hint"></div>
+
+                            <div id="roteiroCidadesContainer" class="cidades-lista-container"></div>
+
+                            <div class="cidades-acoes" id="cidadesAcoesContainer" style="display:none;">
+                                <button class="btn btn-danger btn-sm" id="btnRemoverSelecionadas">
+                                    🗑️ Remover Selecionadas
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="card card-clientes-roteiro">
+                        <div class="card-header">
+                            <div>
+                                <p class="form-card-eyebrow">Clientes</p>
+                            </div>
+                            <button class="btn btn-primary btn-sm btn-compact" id="btnAdicionarClienteRoteiro">➕ Cliente</button>
+                        </div>
+                        <div class="card-body">
+                            <div id="roteiroClientesMensagem" class="roteiro-hint"></div>
+                            <div class="table-container" id="roteiroClientesTabela"></div>
+                        </div>
+                    </section>
+                </div>
+
+                <div class="roteiro-salvar-container">
+                    <button class="btn btn-primary" id="btnSalvarRoteiroCompleto">💾 Salvar Roteiro</button>
+                </div>
+
+                <div class="modal" id="modalAdicionarCliente">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>Adicionar cliente ao roteiro</h3>
+                            <button class="modal-close" onclick="window.app.fecharModalAdicionarCliente()">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="form-row" style="position: sticky; top: 0; background: white; z-index: 10; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid #e5e7eb;">
+                                <div class="form-group" style="flex: 1;">
+                                    <label for="modalBuscaClientesCidade">Buscar cliente</label>
+                                    <input type="text" id="modalBuscaClientesCidade" placeholder="Nome, fantasia, bairro ou código">
+                                </div>
+                            </div>
+                            <div class="table-container" id="modalTabelaClientesCidade"></div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" onclick="window.app.fecharModalAdicionarCliente()">Fechar</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal" id="modalRateioRapido">
+                    <div class="modal-content modal-rateio-content">
+                        <div class="modal-header">
+                            <h3>Percentual de rateio</h3>
+                            <button class="modal-close" onclick="window.app.cancelarModalRateioRapido()">&times;</button>
+                        </div>
+                        <div class="modal-body modal-rateio-body">
+                            <p id="rateioRapidoClienteInfo" class="rateio-info-cliente"></p>
+                            <p id="rateioRapidoRepositorInfo" class="rateio-info-repositor"></p>
+                            <div class="rateio-campos">
+                                <div class="form-group">
+                                    <label for="rateioRapidoPercentual">% de rateio para este repositor</label>
+                                    <input type="number" id="rateioRapidoPercentual" min="0" max="100" step="0.01" required>
+                                    <small class="helper-compact">Valores entre 0 e 100.</small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="rateioRapidoVigenciaInicio">Data início</label>
+                                    <input type="date" id="rateioRapidoVigenciaInicio" required>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer modal-rateio-footer">
+                            <button class="btn btn-secondary" type="button" onclick="window.app.cancelarModalRateioRapido()">Cancelar</button>
+                            <button class="btn btn-primary" type="button" id="confirmarRateioRapido">Confirmar</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Normal layout with day control
+        return `
+            ${headerComum}
 
             <div class="roteiro-layout">
                 <section class="card">
