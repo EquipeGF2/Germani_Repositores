@@ -3531,15 +3531,15 @@ class App {
         const diasTrabalhados = Array.from(diasCheckboxes).map(cb => cb.value).join(',');
 
         const campoJornada = document.querySelector('input[name="rep_jornada_tipo"]:checked');
-        const jornada = vinculo === 'agencia' ? null : (campoJornada?.value || 'INTEGRAL');
+        const jornada = campoJornada?.value || 'INTEGRAL';
 
         if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
             this.showNotification('Informe um e-mail válido ou deixe o campo em branco.', 'warning');
             return;
         }
 
-        if (vinculo !== 'agencia' && !diasTrabalhados) {
-            this.showNotification('Selecione ao menos um dia trabalhado para o repositor.', 'warning');
+        if (!diasTrabalhados) {
+            this.showNotification('Selecione ao menos um dia trabalhado.', 'warning');
             return;
         }
 
@@ -3619,12 +3619,12 @@ class App {
         const diasTrabalho = document.querySelectorAll('.dia-trabalho');
         const jornadas = document.querySelectorAll('input[name="rep_jornada_tipo"]');
 
+        // Agências e repositores podem ter jornada de trabalho
         diasTrabalho.forEach(cb => {
-            cb.disabled = !!isAgencia;
-            if (isAgencia) cb.checked = false;
+            cb.disabled = false;
         });
 
-        if (!isAgencia && !Array.from(diasTrabalho).some(cb => cb.checked)) {
+        if (!Array.from(diasTrabalho).some(cb => cb.checked)) {
             const diasPadrao = ['seg', 'ter', 'qua', 'qui', 'sex'];
             diasTrabalho.forEach(cb => {
                 cb.checked = diasPadrao.includes(cb.value);
@@ -3632,16 +3632,15 @@ class App {
         }
 
         jornadas.forEach(rd => {
-            rd.disabled = !!isAgencia;
-            if (isAgencia) rd.checked = false;
+            rd.disabled = false;
         });
 
-        if (!isAgencia && !Array.from(jornadas).some(j => j.checked) && jornadas[0]) {
+        if (!Array.from(jornadas).some(j => j.checked) && jornadas[0]) {
             jornadas[0].checked = true;
         }
 
         if (cardJornada) {
-            cardJornada.classList.toggle('card-desabilitado', !!isAgencia);
+            cardJornada.classList.remove('card-desabilitado');
         }
     }
 
@@ -9507,26 +9506,7 @@ class App {
             totaisMensais[m.num] = { fixo: 0, variavel: 0 };
         });
 
-        // Legenda
         let html = `
-            <div class="custos-grid-legenda">
-                <span style="font-weight: 600; color: #374151;">Legenda:</span>
-                <div class="legenda-item">
-                    <div class="legenda-cor fixo"></div>
-                    <span>Custo Fixo</span>
-                </div>
-                <div class="legenda-item">
-                    <div class="legenda-cor var"></div>
-                    <span>Custo Variável</span>
-                </div>
-                <div class="legenda-item">
-                    <span style="font-size: 14px;">💰</span>
-                    <span>Inclui despesas de viagem</span>
-                </div>
-            </div>
-        `;
-
-        html += `
             <table class="custos-grid-table">
                 <thead>
                     <tr>

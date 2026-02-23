@@ -1471,52 +1471,61 @@ export const pages = {
         ];
 
         return `
-            <div class="card">
-                <div class="card-header">
-                    <div>
-                        <h3 class="card-title">Grid de Custos - Formato Excel</h3>
-                        <p class="text-muted" style="margin: 4px 0 0;">
-                            Edição em lote de custos mensais por repositor • Somente meses do mês vigente em diante são editáveis
-                        </p>
-                    </div>
-                    <div class="card-actions" style="gap: 8px;">
-                        <button class="btn btn-secondary btn-sm" id="btnBaixarModelo" title="Baixar modelo Excel">📥 Baixar Modelo</button>
-                        <button class="btn btn-secondary btn-sm" id="btnImportarExcel" title="Importar planilha Excel">📤 Importar Excel</button>
-                        <button class="btn btn-primary btn-sm" id="btnSalvarGrid" disabled>💾 Salvar Alterações</button>
-                    </div>
-                </div>
-
-                <div class="card-body">
-                    <div class="filter-bar">
-                        <div class="filter-group">
-                            <label for="filtroGridAno">Ano</label>
-                            <select id="filtroGridAno">
-                                ${anos.map(ano => `<option value="${ano}" ${ano === anoAtual ? 'selected' : ''}>${ano}</option>`).join('')}
-                            </select>
+            <div class="card custos-grid-card">
+                <div class="card-body" style="padding: 20px;">
+                    <!-- Toolbar compacta -->
+                    <div class="custos-toolbar">
+                        <div class="custos-toolbar-left">
+                            <div class="custos-filter-inline">
+                                <label for="filtroGridAno">Ano</label>
+                                <select id="filtroGridAno">
+                                    ${anos.map(ano => `<option value="${ano}" ${ano === anoAtual ? 'selected' : ''}>${ano}</option>`).join('')}
+                                </select>
+                            </div>
+                            <button class="btn btn-primary btn-sm" id="btnCarregarGrid">Carregar</button>
                         </div>
-                        <div class="filter-group" style="display: flex; align-items: flex-end;">
-                            <button class="btn btn-secondary" id="btnCarregarGrid">🔍 Carregar</button>
+                        <div class="custos-toolbar-right">
+                            <button class="btn btn-outline btn-sm" id="btnBaixarModelo" title="Baixar modelo Excel">📥 Modelo</button>
+                            <button class="btn btn-outline btn-sm" id="btnImportarExcel" title="Importar planilha Excel">📤 Importar</button>
+                            <button class="btn btn-success btn-sm" id="btnSalvarGrid" disabled>💾 Salvar</button>
                         </div>
                     </div>
 
-                    <div id="gridCustosContainer" style="margin-top: 1rem; overflow-x: auto;">
+                    <!-- Legenda inline -->
+                    <div class="custos-legenda">
+                        <div class="custos-legenda-item">
+                            <span class="custos-legenda-dot fixo"></span>
+                            <span>Fixo</span>
+                        </div>
+                        <div class="custos-legenda-item">
+                            <span class="custos-legenda-dot var"></span>
+                            <span>Variável</span>
+                        </div>
+                        <div class="custos-legenda-item">
+                            <span>💰</span>
+                            <span>Desp. viagem</span>
+                        </div>
+                    </div>
+
+                    <!-- Grid container -->
+                    <div id="gridCustosContainer" class="custos-grid-wrapper">
                         <div class="empty-state">
                             <div class="empty-state-icon">📊</div>
-                            <p>Selecione o ano e clique em "Carregar" para visualizar o grid de custos</p>
+                            <p>Selecione o ano e clique em "Carregar"</p>
                         </div>
                     </div>
 
-                    <div id="gridInfoPendentes" style="display: none; margin-top: 1.5rem; padding: 16px 20px; background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border-radius: 12px; border-left: 5px solid #f59e0b; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                        <strong style="color: #92400e; font-size: 15px;">⚠️ Alterações Pendentes:</strong>
-                        <span id="gridContadorPendentes" style="color: #92400e; font-weight: 600; font-size: 15px;">0</span>
-                        <span style="color: #78350f;"> célula(s) modificada(s). Clique em "Salvar Alterações" para gravar no banco de dados.</span>
+                    <!-- Barra de pendências -->
+                    <div id="gridInfoPendentes" class="custos-pendentes" style="display: none;">
+                        <span class="custos-pendentes-icon">⚠️</span>
+                        <span><strong id="gridContadorPendentes">0</strong> célula(s) modificada(s) — clique em "Salvar" para gravar.</span>
                     </div>
                 </div>
             </div>
 
             <!-- Modal para importar Excel -->
             <div class="modal" id="modalImportarExcel">
-                <div class="modal-content" style="max-width: 500px; border-radius: 12px;">
+                <div class="modal-content" style="max-width: 480px; border-radius: 12px;">
                     <div class="modal-header">
                         <h3>Importar Planilha Excel</h3>
                         <button class="modal-close" onclick="window.app.fecharModalImportarExcel()">&times;</button>
@@ -1525,9 +1534,7 @@ export const pages = {
                         <div class="form-group">
                             <label for="arquivoExcel">Arquivo Excel (XLSX ou CSV)</label>
                             <input type="file" id="arquivoExcel" class="form-control" accept=".xlsx,.xls,.csv" style="border-radius: 8px;">
-                            <small class="text-muted">
-                                O arquivo deve conter as colunas: rep_id, ano, mes, valor
-                            </small>
+                            <small class="text-muted">Colunas: rep_id, ano, mes, valor</small>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -1538,266 +1545,367 @@ export const pages = {
             </div>
 
             <style>
-                /* Container do Grid */
-                #gridCustosContainer {
-                    border-radius: 8px;
-                    overflow: hidden;
-                    border: 1px solid #e5e7eb;
+                /* ===== Grid de Custos - Layout Moderno ===== */
+                .custos-grid-card {
+                    overflow: visible;
                 }
 
-                .custos-grid-table {
-                    width: 100%;
-                    border-collapse: collapse;
+                /* Toolbar */
+                .custos-toolbar {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 12px;
+                    flex-wrap: wrap;
+                    margin-bottom: 16px;
+                }
+                .custos-toolbar-left,
+                .custos-toolbar-right {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+                .custos-filter-inline {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+                .custos-filter-inline label {
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: #374151;
+                    margin: 0;
+                }
+                .custos-filter-inline select {
+                    padding: 6px 10px;
+                    border: 1px solid #d1d5db;
+                    border-radius: 6px;
                     font-size: 13px;
                     background: white;
                 }
-
-                /* Cabeçalhos - Estilo padrão data-table */
-                .custos-grid-table thead th {
-                    background: #f9fafb;
+                .btn-outline {
+                    background: white;
                     color: #374151;
-                    padding: 12px 10px;
+                    border: 1px solid #d1d5db;
+                    border-radius: 6px;
+                    padding: 6px 12px;
+                    font-size: 12px;
+                    font-weight: 500;
+                    cursor: pointer;
+                    transition: all 0.15s ease;
+                }
+                .btn-outline:hover {
+                    background: #f9fafb;
+                    border-color: #9ca3af;
+                }
+                .btn-success {
+                    background: #059669;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 6px 14px;
+                    font-size: 12px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.15s ease;
+                }
+                .btn-success:hover:not(:disabled) {
+                    background: #047857;
+                }
+                .btn-success:disabled {
+                    background: #d1d5db;
+                    cursor: not-allowed;
+                }
+
+                /* Legenda */
+                .custos-legenda {
+                    display: flex;
+                    align-items: center;
+                    gap: 16px;
+                    margin-bottom: 12px;
+                    font-size: 12px;
+                    color: #6b7280;
+                }
+                .custos-legenda-item {
+                    display: flex;
+                    align-items: center;
+                    gap: 5px;
+                }
+                .custos-legenda-dot {
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 2px;
+                }
+                .custos-legenda-dot.fixo {
+                    background: #22c55e;
+                }
+                .custos-legenda-dot.var {
+                    background: #f97316;
+                }
+
+                /* Grid wrapper */
+                .custos-grid-wrapper {
+                    overflow-x: auto;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 10px;
+                    background: white;
+                }
+
+                /* Tabela */
+                .custos-grid-table {
+                    width: 100%;
+                    border-collapse: separate;
+                    border-spacing: 0;
+                    font-size: 12px;
+                }
+
+                /* Cabeçalho */
+                .custos-grid-table thead th {
+                    background: #f8fafc;
+                    color: #475569;
+                    padding: 10px 8px;
                     text-align: center;
                     font-weight: 600;
-                    font-size: 13px;
-                    border-bottom: 2px solid #e5e7eb;
+                    font-size: 12px;
+                    border-bottom: 2px solid #e2e8f0;
                     white-space: nowrap;
                     position: sticky;
                     top: 0;
                     z-index: 10;
+                    letter-spacing: 0.3px;
+                    text-transform: uppercase;
                 }
-
                 .custos-grid-table thead th:first-child {
                     text-align: left;
-                    min-width: 200px;
+                    min-width: 180px;
                     position: sticky;
                     left: 0;
                     z-index: 11;
-                    background: #f9fafb;
+                    background: #f8fafc;
+                    border-right: 1px solid #e2e8f0;
+                    padding-left: 14px;
                 }
 
-                /* Células do Corpo */
+                /* Corpo */
                 .custos-grid-table tbody td {
-                    border-bottom: 1px solid #e5e7eb;
+                    border-bottom: 1px solid #f1f5f9;
                     padding: 0;
                     background: white;
+                    vertical-align: middle;
                 }
-
+                .custos-grid-table tbody tr:nth-child(even) td {
+                    background: #fafbfc;
+                }
                 .custos-grid-table tbody tr:hover td {
-                    background: #f9fafb;
+                    background: #f0f4ff;
                 }
-
                 .custos-grid-table tbody td:first-child {
-                    padding: 10px 12px;
+                    padding: 8px 14px;
                     font-weight: 500;
-                    font-size: 13px;
-                    background: #f9fafb;
+                    font-size: 12px;
+                    background: #f8fafc;
                     position: sticky;
                     left: 0;
                     z-index: 5;
-                    border-right: 1px solid #e5e7eb;
-                    color: #374151;
+                    border-right: 1px solid #e2e8f0;
+                    color: #1e293b;
+                    white-space: nowrap;
+                }
+                .custos-grid-table tbody tr:nth-child(even) td:first-child {
+                    background: #f3f5f7;
+                }
+                .custos-grid-table tbody tr:hover td:first-child {
+                    background: #e8ecf4;
                 }
 
-                /* Linha de Totais */
-                .custos-grid-table .total-row {
-                    background: #f3f4f6;
-                    font-weight: 600;
-                }
-
+                /* Linha total */
                 .custos-grid-table .total-row td {
-                    padding: 12px 10px;
+                    padding: 10px 8px;
                     text-align: right;
-                    border-top: 2px solid #d1d5db;
-                    color: #111827;
+                    border-top: 2px solid #cbd5e1;
+                    background: #f1f5f9 !important;
+                    color: #0f172a;
+                    font-weight: 700;
+                    font-size: 12px;
                 }
-
                 .custos-grid-table .total-row td:first-child {
                     text-align: left;
-                    font-weight: 700;
+                    background: #f1f5f9 !important;
+                    padding-left: 14px;
                 }
 
-                /* Coluna de Total por Repositor */
+                /* Coluna total por repositor */
                 .custos-grid-table .total-col {
-                    font-weight: 600;
+                    font-weight: 700;
                     text-align: right;
-                    padding: 10px;
-                    background: #f9fafb;
-                    color: #111827;
-                    border-left: 1px solid #e5e7eb;
+                    padding: 8px 10px !important;
+                    background: #f8fafc;
+                    color: #0f172a;
+                    border-left: 1px solid #e2e8f0;
+                    font-size: 12px;
                 }
 
-                /* Coluna de Ações */
+                /* Coluna de ações */
                 .custos-grid-table .acoes-col {
                     text-align: center;
-                    padding: 8px;
+                    padding: 4px 6px !important;
                     white-space: nowrap;
-                    background: white;
-                    width: 90px;
+                    width: 80px;
                 }
-
-                /* Botões de Ação */
                 .custos-grid-table .btn-acoes {
-                    padding: 4px 8px;
-                    font-size: 11px;
+                    padding: 3px 8px;
+                    font-size: 10px;
                     font-weight: 500;
-                    border: 1px solid #d1d5db;
-                    border-radius: 6px;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 4px;
                     cursor: pointer;
-                    margin: 2px 0;
+                    margin: 1px 0;
                     display: block;
                     width: 100%;
                     transition: all 0.15s ease;
                     background: white;
-                    color: #374151;
+                    color: #475569;
                 }
-
                 .custos-grid-table .btn-replicar {
                     background: #f0fdf4;
                     border-color: #86efac;
                     color: #166534;
                 }
-
                 .custos-grid-table .btn-replicar:hover {
                     background: #dcfce7;
-                    border-color: #4ade80;
                 }
-
                 .custos-grid-table .btn-limpar {
                     background: #fef2f2;
                     border-color: #fca5a5;
                     color: #991b1b;
                 }
-
                 .custos-grid-table .btn-limpar:hover {
                     background: #fee2e2;
-                    border-color: #f87171;
                 }
-
                 .custos-grid-table .btn-acoes:active {
-                    transform: scale(0.98);
+                    transform: scale(0.97);
                 }
 
-                /* Células com Fixo e Variável */
+                /* Células F/V */
                 .custos-grid-table .custo-cell {
                     display: flex;
                     flex-direction: column;
-                    gap: 2px;
-                    padding: 4px;
+                    gap: 1px;
+                    padding: 3px 4px;
                 }
-
                 .custos-grid-table .custo-cell .custo-row {
                     display: flex;
                     align-items: center;
-                    gap: 4px;
+                    gap: 3px;
                 }
-
                 .custos-grid-table .custo-cell .custo-label {
-                    font-size: 9px;
+                    font-size: 8px;
                     font-weight: 700;
                     text-transform: uppercase;
                     letter-spacing: 0.3px;
-                    min-width: 28px;
+                    min-width: 14px;
                     text-align: center;
-                    padding: 2px 4px;
-                    border-radius: 4px;
+                    padding: 1px 3px;
+                    border-radius: 3px;
+                    line-height: 1.4;
                 }
-
                 .custos-grid-table .custo-cell .custo-label.fixo {
                     background: #dcfce7;
                     color: #166534;
                 }
-
                 .custos-grid-table .custo-cell .custo-label.var {
                     background: #fed7aa;
                     color: #9a3412;
                 }
-
                 .custos-grid-table .custo-cell .cell-input-mini {
                     flex: 1;
-                    border: 1px solid #e5e7eb;
-                    padding: 4px 6px;
+                    border: 1px solid #e2e8f0;
+                    padding: 3px 5px;
                     text-align: right;
                     font-family: 'Segoe UI', Tahoma, sans-serif;
                     font-size: 11px;
                     font-weight: 500;
                     background: white;
-                    color: #374151;
-                    border-radius: 4px;
-                    width: 60px;
+                    color: #334155;
+                    border-radius: 3px;
+                    width: 62px;
+                    min-width: 62px;
+                    transition: border-color 0.15s ease, box-shadow 0.15s ease;
                 }
-
                 .custos-grid-table .custo-cell .cell-input-mini:focus {
                     outline: none;
                     border-color: #3b82f6;
-                    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+                    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
                 }
-
                 .custos-grid-table .custo-cell .cell-input-mini:disabled {
-                    background: #f3f4f6;
-                    color: #9ca3af;
+                    background: #f1f5f9;
+                    color: #94a3b8;
                     cursor: not-allowed;
-                    border-color: #e5e7eb;
+                    border-color: #e2e8f0;
                 }
-
                 .custos-grid-table .custo-cell .cell-input-mini.modified {
-                    background: #fef3c7;
+                    background: #fffbeb;
                     border-color: #f59e0b;
                     font-weight: 700;
                     color: #92400e;
                 }
-
                 .custos-grid-table .custo-cell .cell-input-mini.input-fixo {
-                    border-left: 3px solid #22c55e;
+                    border-left: 2px solid #22c55e;
                 }
-
                 .custos-grid-table .custo-cell .cell-input-mini.input-var {
-                    border-left: 3px solid #f97316;
+                    border-left: 2px solid #f97316;
                 }
-
-                /* Indicador de despesas incluídas */
                 .custos-grid-table .custo-cell .despesa-indicator {
-                    font-size: 12px;
+                    font-size: 11px;
                     cursor: help;
-                    opacity: 0.8;
+                    opacity: 0.7;
                     flex-shrink: 0;
                 }
-
                 .custos-grid-table .custo-cell .despesa-indicator:hover {
                     opacity: 1;
-                    transform: scale(1.1);
                 }
 
-                /* Legenda da Grid */
-                .custos-grid-legenda {
-                    display: flex;
-                    gap: 20px;
-                    margin-bottom: 12px;
-                    font-size: 12px;
-                    align-items: center;
-                }
-
-                .custos-grid-legenda .legenda-item {
+                /* Pendentes bar */
+                .custos-pendentes {
+                    margin-top: 14px;
+                    padding: 10px 16px;
+                    background: #fffbeb;
+                    border: 1px solid #fcd34d;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    color: #92400e;
                     display: flex;
                     align-items: center;
-                    gap: 6px;
+                    gap: 8px;
+                }
+                .custos-pendentes-icon {
+                    font-size: 16px;
                 }
 
-                .custos-grid-legenda .legenda-cor {
-                    width: 16px;
-                    height: 16px;
-                    border-radius: 4px;
-                    border: 1px solid rgba(0,0,0,0.1);
-                }
-
-                .custos-grid-legenda .legenda-cor.fixo {
-                    background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
-                    border-left: 3px solid #22c55e;
-                }
-
-                .custos-grid-legenda .legenda-cor.var {
-                    background: linear-gradient(135deg, #fed7aa 0%, #fdba74 100%);
-                    border-left: 3px solid #f97316;
+                /* Responsivo */
+                @media (max-width: 768px) {
+                    .custos-toolbar {
+                        flex-direction: column;
+                        align-items: stretch;
+                    }
+                    .custos-toolbar-left,
+                    .custos-toolbar-right {
+                        justify-content: center;
+                        flex-wrap: wrap;
+                    }
+                    .custos-grid-table .custo-cell .cell-input-mini {
+                        width: 52px;
+                        min-width: 52px;
+                        font-size: 10px;
+                    }
+                    .custos-grid-table .custo-cell .custo-label {
+                        font-size: 7px;
+                        min-width: 12px;
+                    }
+                    .custos-grid-table thead th,
+                    .custos-grid-table tbody td:first-child {
+                        font-size: 11px;
+                    }
                 }
             </style>
         `;
@@ -7789,6 +7897,7 @@ export const pageTitles = {
     'consulta-alteracoes': 'Consulta de Alterações',
     'consulta-roteiro': 'Consulta de Roteiro',
     'custos-repositor': 'Custos por Repositor',
+    'custos-grid': 'Grid de Custos',
     'estrutura-banco-comercial': 'Estrutura do Banco Comercial',
     'manutencao-coordenadas': 'Coordenadas',
     'configuracoes-sistema': 'Configurações do Sistema',
