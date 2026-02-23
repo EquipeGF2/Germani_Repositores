@@ -3465,6 +3465,9 @@ class App {
             document.getElementById('repo_cod').value = '';
             document.getElementById('repo_vinculo_agencia').checked = false;
 
+            const controleDiaCheckbox = document.getElementById('repo_controle_dia_semana');
+            if (controleDiaCheckbox) controleDiaCheckbox.checked = true;
+
             // Resetar checkbox de criar usuário PWA
             const checkboxCriarUsuario = document.getElementById('repo_criar_usuario');
             if (checkboxCriarUsuario) {
@@ -3533,6 +3536,8 @@ class App {
         const campoJornada = document.querySelector('input[name="rep_jornada_tipo"]:checked');
         const jornada = campoJornada?.value || 'INTEGRAL';
 
+        const controleDiaSemana = document.getElementById('repo_controle_dia_semana')?.checked ? 1 : 0;
+
         if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
             this.showNotification('Informe um e-mail válido ou deixe o campo em branco.', 'warning');
             return;
@@ -3546,10 +3551,10 @@ class App {
         try {
             let repoCodCriado = cod;
             if (cod) {
-                await db.updateRepositor(cod, nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo, supervisor, diasTrabalhados, jornada, telefone || null, email || null);
+                await db.updateRepositor(cod, nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo, supervisor, diasTrabalhados, jornada, telefone || null, email || null, controleDiaSemana);
                 this.showNotification(`${vinculo === 'agencia' ? 'Agência' : 'Repositor'} atualizado com sucesso!`, 'success');
             } else {
-                const resultado = await db.createRepositor(nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo, supervisor, diasTrabalhados, jornada, telefone || null, email || null);
+                const resultado = await db.createRepositor(nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo, supervisor, diasTrabalhados, jornada, telefone || null, email || null, controleDiaSemana);
                 repoCodCriado = resultado?.repo_cod || resultado?.id;
                 this.showNotification(`${vinculo === 'agencia' ? 'Agência' : 'Repositor'} cadastrado com sucesso!`, 'success');
             }
@@ -3618,6 +3623,12 @@ class App {
         const cardJornada = document.getElementById('cardJornadaTrabalho');
         const diasTrabalho = document.querySelectorAll('.dia-trabalho');
         const jornadas = document.querySelectorAll('input[name="rep_jornada_tipo"]');
+        const controleDiaSemanaGroup = document.getElementById('controleDiaSemanaGroup');
+
+        // Mostrar/ocultar opção de controle dia da semana (apenas para agências)
+        if (controleDiaSemanaGroup) {
+            controleDiaSemanaGroup.style.display = isAgencia ? 'block' : 'none';
+        }
 
         // Agências e repositores podem ter jornada de trabalho
         diasTrabalho.forEach(cb => {
@@ -3942,6 +3953,11 @@ class App {
 
     // ==================== ROTEIRO DO REPOSITOR ====================
 
+    isAgenciaSemControleDia() {
+        const repo = this.contextoRoteiro;
+        return repo && repo.repo_vinculo === 'agencia' && !Number(repo.repo_controle_dia_semana);
+    }
+
     async inicializarRoteiroRepositor() {
         const repositor = this.contextoRoteiro;
 
@@ -3950,14 +3966,21 @@ class App {
             return;
         }
 
-        this.diasRoteiroDisponiveis = db.obterDiasTrabalho(repositor);
-        if (!this.estadoRoteiro.diaSelecionado && this.diasRoteiroDisponiveis.length > 0) {
-            this.estadoRoteiro.diaSelecionado = this.diasRoteiroDisponiveis[0];
-        }
+        // Agência sem controle de dia da semana: roteiro simplificado
+        if (this.isAgenciaSemControleDia()) {
+            this.estadoRoteiro.diaSelecionado = 'todos';
+            await this.inicializarBuscaCidadesRoteiro();
+            await this.carregarCidadesRoteiro();
+        } else {
+            this.diasRoteiroDisponiveis = db.obterDiasTrabalho(repositor);
+            if (!this.estadoRoteiro.diaSelecionado && this.diasRoteiroDisponiveis.length > 0) {
+                this.estadoRoteiro.diaSelecionado = this.diasRoteiroDisponiveis[0];
+            }
 
-        await this.inicializarBuscaCidadesRoteiro();
-        this.renderDiasRoteiro();
-        await this.carregarCidadesRoteiro();
+            await this.inicializarBuscaCidadesRoteiro();
+            this.renderDiasRoteiro();
+            await this.carregarCidadesRoteiro();
+        }
 
         const buscaInput = document.getElementById('roteiroBuscaCliente');
         if (buscaInput) {
@@ -4240,10 +4263,10 @@ class App {
         const mensagem = document.getElementById('roteiroCidadesMensagem');
         const dia = this.estadoRoteiro.diaSelecionado;
         const cidade = (inputCidade?.value || '').trim().toUpperCase();
-        const ordemInformada = inputOrdem?.value ? Number(inputOrdem.value) : null;
+        const semControleDia = this.isAgenciaSemControleDia();
 
         if (!dia) {
-            if (mensagem) mensagem.textContent = 'Selecione um dia trabalhado para adicionar cidades.';
+            if (mensagem) mensagem.textContent = semControleDia ? 'Erro interno: dia não configurado.' : 'Selecione um dia trabalhado para adicionar cidades.';
             return;
         }
 
@@ -4252,10 +4275,18 @@ class App {
             return;
         }
 
-        if (!ordemInformada || Number.isNaN(ordemInformada) || ordemInformada < 1) {
-            this.showNotification('Informe uma ordem válida para a cidade antes de adicionar.', 'warning');
-            if (mensagem) mensagem.textContent = 'A ordem da cidade é obrigatória.';
-            return;
+        // Para agências sem controle de dia, ordem automática; para demais, ordem obrigatória
+        let ordemInformada;
+        if (semControleDia) {
+            const cidadesExistentes = this.cidadesRoteiroCache || [];
+            ordemInformada = cidadesExistentes.length + 1;
+        } else {
+            ordemInformada = inputOrdem?.value ? Number(inputOrdem.value) : null;
+            if (!ordemInformada || Number.isNaN(ordemInformada) || ordemInformada < 1) {
+                this.showNotification('Informe uma ordem válida para a cidade antes de adicionar.', 'warning');
+                if (mensagem) mensagem.textContent = 'A ordem da cidade é obrigatória.';
+                return;
+            }
         }
 
         try {
@@ -4320,11 +4351,15 @@ class App {
             this.resetarFormularioClienteRoteiro(this.estadoRoteiro.cidadeSelecionada);
         }
 
+        const semControleDia = this.isAgenciaSemControleDia();
+
         if (cidades.length === 0) {
             console.log('[ROTEIRO] Nenhuma cidade encontrada, exibindo mensagem');
             container.innerHTML = '';
             this.resetarFormularioClienteRoteiro();
-            if (mensagem) mensagem.textContent = 'Cadastre uma cidade para este dia para visualizar os clientes.';
+            if (mensagem) mensagem.textContent = semControleDia
+                ? 'Adicione uma cidade para visualizar os clientes.'
+                : 'Cadastre uma cidade para este dia para visualizar os clientes.';
 
             // Sempre inicializar ordem como 1 quando não há cidades no dia
             const campoOrdemCidade = document.getElementById('roteiroCidadeOrdem');
@@ -4338,20 +4373,37 @@ class App {
         }
 
         console.log('[ROTEIRO] Renderizando cidades no container...');
-        container.innerHTML = cidades.map(cidade => `
-            <div class="cidade-item ${this.estadoRoteiro.cidadeSelecionada === cidade.rot_cid_id ? 'cidade-ativa' : ''}" data-id="${cidade.rot_cid_id}">
-                <input type="checkbox" class="cidade-checkbox" data-id="${cidade.rot_cid_id}">
-                <div class="cidade-item-info" data-acao="selecionar-cidade" data-id="${cidade.rot_cid_id}">
-                    <span class="cidade-item-nome">${cidade.rot_cidade}</span>
+
+        if (semControleDia) {
+            // Simplified city rendering for agencies without day control (no order)
+            container.innerHTML = cidades.map(cidade => `
+                <div class="cidade-item ${this.estadoRoteiro.cidadeSelecionada === cidade.rot_cid_id ? 'cidade-ativa' : ''}" data-id="${cidade.rot_cid_id}">
+                    <input type="checkbox" class="cidade-checkbox" data-id="${cidade.rot_cid_id}">
+                    <div class="cidade-item-info" data-acao="selecionar-cidade" data-id="${cidade.rot_cid_id}">
+                        <span class="cidade-item-nome">${cidade.rot_cidade}</span>
+                    </div>
+                    <div class="cidade-item-acoes">
+                        <button class="btn-icon btn-remover-cidade" data-acao="remover-cidade" data-id="${cidade.rot_cid_id}" title="Remover cidade">🗑️</button>
+                    </div>
                 </div>
-                <div class="cidade-item-ordem" onclick="event.stopPropagation()">
-                    <input type="number" class="input-ordem-cidade" data-id="${cidade.rot_cid_id}" value="${cidade.rot_ordem_cidade || ''}" placeholder="-" min="1">
+            `).join('');
+        } else {
+            // Normal city rendering with order
+            container.innerHTML = cidades.map(cidade => `
+                <div class="cidade-item ${this.estadoRoteiro.cidadeSelecionada === cidade.rot_cid_id ? 'cidade-ativa' : ''}" data-id="${cidade.rot_cid_id}">
+                    <input type="checkbox" class="cidade-checkbox" data-id="${cidade.rot_cid_id}">
+                    <div class="cidade-item-info" data-acao="selecionar-cidade" data-id="${cidade.rot_cid_id}">
+                        <span class="cidade-item-nome">${cidade.rot_cidade}</span>
+                    </div>
+                    <div class="cidade-item-ordem" onclick="event.stopPropagation()">
+                        <input type="number" class="input-ordem-cidade" data-id="${cidade.rot_cid_id}" value="${cidade.rot_ordem_cidade || ''}" placeholder="-" min="1">
+                    </div>
+                    <div class="cidade-item-acoes">
+                        <button class="btn-icon btn-remover-cidade" data-acao="remover-cidade" data-id="${cidade.rot_cid_id}" title="Remover cidade">🗑️</button>
+                    </div>
                 </div>
-                <div class="cidade-item-acoes">
-                    <button class="btn-icon btn-remover-cidade" data-acao="remover-cidade" data-id="${cidade.rot_cid_id}" title="Remover cidade">🗑️</button>
-                </div>
-            </div>
-        `).join('');
+            `).join('');
+        }
 
         // Botão Selecionar Todas
         const btnSelecionarTodas = document.getElementById('btnSelecionarTodasCidades');
@@ -4392,44 +4444,48 @@ class App {
             btnRemoverSelecionadas.onclick = () => this.removerCidadesSelecionadas();
         }
 
-        container.querySelectorAll('.input-ordem-cidade').forEach(input => {
-            input.dataset.valorAnterior = input.value || '';
-            const handler = async () => {
-                const valor = input.value ? Number(input.value) : null;
-                if (!valor || Number.isNaN(valor) || valor < 1) {
-                    this.showNotification('Informe uma ordem válida (maior que zero) para a cidade.', 'warning');
-                    input.value = input.dataset.valorAnterior || '';
-                    input.focus();
-                    return;
-                }
+        if (!semControleDia) {
+            container.querySelectorAll('.input-ordem-cidade').forEach(input => {
+                input.dataset.valorAnterior = input.value || '';
+                const handler = async () => {
+                    const valor = input.value ? Number(input.value) : null;
+                    if (!valor || Number.isNaN(valor) || valor < 1) {
+                        this.showNotification('Informe uma ordem válida (maior que zero) para a cidade.', 'warning');
+                        input.value = input.dataset.valorAnterior || '';
+                        input.focus();
+                        return;
+                    }
 
-                try {
-                    await this.atualizarOrdemCidade(Number(input.dataset.id), valor);
-                    await this.carregarCidadesRoteiro();
-                } catch (error) {
-                    this.showNotification(error.message || 'Erro ao atualizar ordem da cidade.', 'error');
-                }
-            };
+                    try {
+                        await this.atualizarOrdemCidade(Number(input.dataset.id), valor);
+                        await this.carregarCidadesRoteiro();
+                    } catch (error) {
+                        this.showNotification(error.message || 'Erro ao atualizar ordem da cidade.', 'error');
+                    }
+                };
 
-            input.addEventListener('blur', handler);
-            input.addEventListener('keydown', (event) => {
-                if (event.key === 'Enter') {
-                    event.preventDefault();
-                    input.blur();
+                input.addEventListener('blur', handler);
+                input.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        input.blur();
                 }
             });
         });
+        }
 
-        // Atualizar campo de ordem baseado no dia selecionado
-        const campoOrdemCidade = document.getElementById('roteiroCidadeOrdem');
-        if (campoOrdemCidade) {
-            const maiorOrdem = Math.max(...cidades.map(c => Number(c.rot_ordem_cidade) || 0), 0);
-            const proximaOrdem = (maiorOrdem + 1).toString();
+        // Atualizar campo de ordem baseado no dia selecionado (only for normal mode)
+        if (!semControleDia) {
+            const campoOrdemCidade = document.getElementById('roteiroCidadeOrdem');
+            if (campoOrdemCidade) {
+                const maiorOrdem = Math.max(...cidades.map(c => Number(c.rot_ordem_cidade) || 0), 0);
+                const proximaOrdem = (maiorOrdem + 1).toString();
 
-            // Se o campo está vazio OU mudou de dia, atualizar com a próxima ordem
-            if (!campoOrdemCidade.value || campoOrdemCidade.dataset.diaCadastro !== dia) {
-                campoOrdemCidade.value = proximaOrdem;
-                campoOrdemCidade.dataset.diaCadastro = dia;
+                // Se o campo está vazio OU mudou de dia, atualizar com a próxima ordem
+                if (!campoOrdemCidade.value || campoOrdemCidade.dataset.diaCadastro !== dia) {
+                    campoOrdemCidade.value = proximaOrdem;
+                    campoOrdemCidade.dataset.diaCadastro = dia;
+                }
             }
         }
 
@@ -4844,10 +4900,13 @@ class App {
         if (!tabela) return;
 
         const dia = this.estadoRoteiro.diaSelecionado;
+        const semControleDia = this.isAgenciaSemControleDia();
         if (!dia) {
             tabela.innerHTML = '';
             this.resetarFormularioClienteRoteiro();
-            if (mensagem) mensagem.textContent = 'Selecione um dia de trabalho para configurar o roteiro.';
+            if (mensagem) mensagem.textContent = semControleDia
+                ? 'Adicione uma cidade para visualizar os clientes.'
+                : 'Selecione um dia de trabalho para configurar o roteiro.';
             return;
         }
 
@@ -4855,7 +4914,9 @@ class App {
         if (!cidadeAtiva) {
             tabela.innerHTML = '';
             this.resetarFormularioClienteRoteiro();
-            if (mensagem) mensagem.textContent = 'Cadastre uma cidade para este dia para visualizar os clientes.';
+            if (mensagem) mensagem.textContent = semControleDia
+                ? 'Adicione uma cidade para visualizar os clientes.'
+                : 'Cadastre uma cidade para este dia para visualizar os clientes.';
             return;
         }
 
@@ -4920,7 +4981,7 @@ class App {
         }
 
         tabela.innerHTML = `
-            <table class="roteiro-clientes-table">
+            <table class="roteiro-clientes-table ${semControleDia ? 'roteiro-sem-ordem' : ''}">
                 <thead class="desktop-only">
                     <tr>
                         <th class="col-ordem-visita">SEQ</th>
@@ -5345,7 +5406,10 @@ class App {
             this.clientesCachePorCidade[cidadeAtiva.rot_cidade] = clientesCidade;
         }
 
-        await this.atualizarContextoOrdemCidade();
+        const semControleDia = this.isAgenciaSemControleDia();
+        if (!semControleDia) {
+            await this.atualizarContextoOrdemCidade();
+        }
 
         const modal = document.getElementById('modalAdicionarCliente');
         this.buscaClientesModal = '';
@@ -5383,10 +5447,19 @@ class App {
         const cidadeAtiva = this.cidadesRoteiroCache?.find(c => c.rot_cid_id === this.estadoRoteiro.cidadeSelecionada);
         if (!cidadeAtiva) return;
 
-        const ordemInformada = this.formClienteRoteiro.ordemSelecionada || Number(document.getElementById('modalOrdemCliente')?.value);
-        if (!ordemInformada || Number.isNaN(ordemInformada) || ordemInformada < 1) {
-            this.showNotification('Informe a ordem de atendimento antes de incluir o cliente.', 'warning');
-            return;
+        const semControleDia = this.isAgenciaSemControleDia();
+        let ordemInformada;
+
+        if (semControleDia) {
+            // Auto-assign order for agencies without day control
+            const selecionados = this.clientesSelecionadosCidadeAtual || [];
+            ordemInformada = selecionados.length + 1;
+        } else {
+            ordemInformada = this.formClienteRoteiro.ordemSelecionada || Number(document.getElementById('modalOrdemCliente')?.value);
+            if (!ordemInformada || Number.isNaN(ordemInformada) || ordemInformada < 1) {
+                this.showNotification('Informe a ordem de atendimento antes de incluir o cliente.', 'warning');
+                return;
+            }
         }
 
         try {
@@ -5394,9 +5467,11 @@ class App {
                 ordemVisita: ordemInformada
             });
 
-            this.formClienteRoteiro.ordemEditadaManualmente = false;
-            this.formClienteRoteiro.ordemSelecionada = (ordemInformada || 0) + 1;
-            await this.atualizarContextoOrdemCidade();
+            if (!semControleDia) {
+                this.formClienteRoteiro.ordemEditadaManualmente = false;
+                this.formClienteRoteiro.ordemSelecionada = (ordemInformada || 0) + 1;
+                await this.atualizarContextoOrdemCidade();
+            }
             this.renderModalClientesCidade();
             this.showNotification('Cliente adicionado ao roteiro.', 'success');
 
@@ -7319,17 +7394,23 @@ class App {
                 campoVinculo.checked = repositor.repo_vinculo === 'agencia';
             }
 
+            // Controle dia da semana (apenas para agências)
+            const campoControleDia = document.getElementById('repo_controle_dia_semana');
+            if (campoControleDia) {
+                campoControleDia.checked = repositor.repo_vinculo === 'agencia'
+                    ? (repositor.repo_controle_dia_semana === 1 || repositor.repo_controle_dia_semana === '1' || repositor.repo_controle_dia_semana === true)
+                    : true;
+            }
+
             // Marcar dias trabalhados
-            const dias = repositor.repo_vinculo === 'agencia'
-                ? []
-                : (repositor.dias_trabalhados || 'seg,ter,qua,qui,sex').split(',');
+            const dias = (repositor.dias_trabalhados || 'seg,ter,qua,qui,sex').split(',');
             document.querySelectorAll('.dia-trabalho').forEach(checkbox => {
                 checkbox.checked = dias.includes(checkbox.value);
             });
 
             // Marcar jornada
-            const jornada = repositor.repo_vinculo === 'agencia' ? null : (repositor.rep_jornada_tipo || repositor.jornada?.toUpperCase() || 'INTEGRAL');
-            const campoJornada = jornada ? (document.querySelector(`input[name="rep_jornada_tipo"][value="${jornada}"]`) || document.querySelector('input[name="rep_jornada_tipo"][value="INTEGRAL"]')) : null;
+            const jornada = repositor.rep_jornada_tipo || repositor.jornada?.toUpperCase() || 'INTEGRAL';
+            const campoJornada = document.querySelector(`input[name="rep_jornada_tipo"][value="${jornada}"]`) || document.querySelector('input[name="rep_jornada_tipo"][value="INTEGRAL"]');
             if (campoJornada) campoJornada.checked = true;
 
             // Verificar se repositor já tem usuário PWA

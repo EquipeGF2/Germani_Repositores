@@ -2907,6 +2907,23 @@ tbody td {
     min-width: 200px;
 }
 
+/* Simplified roteiro for agencies without day control */
+.roteiro-sem-ordem .col-ordem-visita {
+    display: none !important;
+}
+
+.roteiro-layout-simples {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+@media (max-width: 768px) {
+    .roteiro-layout-simples {
+        grid-template-columns: 1fr;
+    }
+}
+
 .roteiro-coluna {
     display: flex;
     flex-direction: column;
