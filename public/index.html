@@ -345,7 +345,7 @@
                 loginForm.addEventListener('submit', async (e) => {
                     e.preventDefault();
 
-                    const username = document.getElementById('loginUsername').value;
+                    const username = document.getElementById('loginUsername').value.trim();
                     const password = document.getElementById('loginPassword').value;
                     const errorDiv = document.getElementById('loginError');
                     const submitBtn = e.target.querySelector('button[type="submit"]');

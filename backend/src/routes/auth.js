@@ -8,7 +8,11 @@ const router = express.Router();
 // POST /api/auth/login - Login de usuário PWA
 router.post('/login', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    let { username, password } = req.body;
+
+    // Normalizar - remover espaços em branco
+    username = username ? String(username).trim() : '';
+    password = password ? String(password) : '';
 
     if (!username || !password) {
       return res.status(400).json({
@@ -19,10 +23,47 @@ router.post('/login', async (req, res) => {
     }
 
     // Buscar usuário
-    console.log(`[LOGIN] Tentativa de login - username: "${username}"`);
+    console.log(`[LOGIN] Tentativa de login - username: "${username}" (tamanho: ${username.length})`);
     const usuario = await tursoService.buscarUsuarioPorUsername(username);
 
     if (!usuario) {
+      // Tentar busca case-insensitive como fallback
+      const usuarioCI = await tursoService.buscarUsuarioPorUsernameFlex(username);
+      if (usuarioCI) {
+        console.log(`[LOGIN] Usuário encontrado via busca flexível: ID=${usuarioCI.usuario_id}, username="${usuarioCI.username}"`);
+        // Usar o usuário encontrado
+        const senhaValida = await authService.comparePassword(password, usuarioCI.password_hash);
+        if (!senhaValida) {
+          console.log(`[LOGIN] Senha inválida para usuário: "${username}" (via busca flexível)`);
+          return res.status(401).json({
+            ok: false,
+            code: 'INVALID_CREDENTIALS',
+            message: 'Usuário ou senha incorretos'
+          });
+        }
+
+        console.log(`[LOGIN] Login bem-sucedido (via busca flexível): "${username}"`);
+        await tursoService.registrarUltimoLogin(usuarioCI.usuario_id);
+        const token = authService.generateToken(usuarioCI);
+        const permissoes = authService.getPermissoesPerfil(usuarioCI.perfil);
+
+        return res.json({
+          ok: true,
+          token,
+          permissoes,
+          usuario: {
+            usuario_id: usuarioCI.usuario_id,
+            username: usuarioCI.username,
+            nome_completo: usuarioCI.nome_completo,
+            email: usuarioCI.email,
+            perfil: usuarioCI.perfil,
+            rep_id: usuarioCI.rep_id,
+            repo_nome: usuarioCI.repo_nome,
+            permissoes
+          }
+        });
+      }
+
       console.log(`[LOGIN] Usuário não encontrado: "${username}"`);
       return res.status(401).json({
         ok: false,
@@ -31,7 +72,7 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    console.log(`[LOGIN] Usuário encontrado: ID=${usuario.usuario_id}, perfil=${usuario.perfil}, ativo=${usuario.ativo}, tem_hash=${!!usuario.password_hash}`);
+    console.log(`[LOGIN] Usuário encontrado: ID=${usuario.usuario_id}, perfil=${usuario.perfil}, ativo=${usuario.ativo}, tem_hash=${!!usuario.password_hash}, hash_len=${(usuario.password_hash || '').length}`);
 
     // Verificar senha
     const senhaValida = await authService.comparePassword(password, usuario.password_hash);

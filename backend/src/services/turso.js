@@ -1903,8 +1903,16 @@ class TursoService {
   }
 
   async buscarUsuarioPorUsername(username) {
+    const usernameNorm = username ? String(username).trim() : '';
     const sql = 'SELECT * FROM cc_usuarios WHERE username = ? AND ativo = 1';
-    const result = await this.execute(sql, [username]);
+    const result = await this.execute(sql, [usernameNorm]);
+    return result.rows[0] || null;
+  }
+
+  async buscarUsuarioPorUsernameFlex(username) {
+    const usernameNorm = username ? String(username).trim() : '';
+    const sql = 'SELECT * FROM cc_usuarios WHERE LOWER(TRIM(username)) = LOWER(?) AND ativo = 1';
+    const result = await this.execute(sql, [usernameNorm]);
     return result.rows[0] || null;
   }
 
