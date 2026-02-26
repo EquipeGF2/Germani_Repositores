@@ -210,8 +210,9 @@ class AuthManager {
 
       // Salvar sessão (permissoes pode estar no top-level ou dentro de usuario)
       const permissoes = data.permissoes || data.usuario?.permissoes || [];
-      this.salvarSessao(data.token, data.usuario, permissoes);
-      console.log('[AUTH] Login PWA bem-sucedido!', { usuario: data.usuario.username });
+      const telas = data.telas || [];
+      this.salvarSessao(data.token, data.usuario, permissoes, telas);
+      console.log('[AUTH] Login PWA bem-sucedido!', { usuario: data.usuario.username, telasCount: telas.length });
 
       return { success: true, usuario: data.usuario };
     } catch (error) {
@@ -885,14 +886,33 @@ class AuthManager {
       if (pwaScreen) pwaScreen.classList.remove('hidden');
       document.body.classList.add('pwa-mode');
 
-      // Inicializar PWA app controller
-      if (typeof pwaApp !== 'undefined' && pwaApp.init) {
-        pwaApp.init();
-      } else {
-        // pwa-app.js ainda não carregou - deferrir init até scripts carregarem
+      // Inicializar PWA app controller com fallback robusto
+      const tentarInitPWA = () => {
+        if (typeof pwaApp !== 'undefined' && pwaApp.init) {
+          console.log('[AUTH] Inicializando pwaApp...');
+          pwaApp.init();
+          return true;
+        }
+        return false;
+      };
+
+      if (!tentarInitPWA()) {
+        // pwa-app.js ainda não carregou - tentar no load e com polling
+        console.log('[AUTH] pwaApp não disponível ainda, aguardando...');
         window.addEventListener('load', () => {
-          if (typeof pwaApp !== 'undefined' && pwaApp.init) {
-            pwaApp.init();
+          if (!tentarInitPWA()) {
+            // Polling como fallback final (tentativas a cada 100ms, max 3s)
+            let tentativas = 0;
+            const intervalo = setInterval(() => {
+              tentativas++;
+              if (tentarInitPWA() || tentativas >= 30) {
+                clearInterval(intervalo);
+                if (tentativas >= 30) {
+                  console.error('[AUTH] pwaApp não carregou após 3s - recarregando...');
+                  window.location.reload();
+                }
+              }
+            }, 100);
           }
         });
       }

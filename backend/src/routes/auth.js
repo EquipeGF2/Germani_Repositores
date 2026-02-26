@@ -73,10 +73,32 @@ router.post('/login', async (req, res) => {
         const token = authService.generateToken(usuarioCI);
         const permissoes = authService.getPermissoesPerfil(usuarioCI.perfil);
 
+        // Buscar telas do usuário para PWA
+        let telas = [];
+        try {
+          if (usuarioCI.perfil === 'admin') {
+            telas = await tursoService.listarTelasWeb();
+          } else {
+            telas = await tursoService.listarTelasUsuario(usuarioCI.usuario_id);
+            if (!telas || telas.length === 0) {
+              telas = await tursoService.listarTelasWeb();
+            }
+          }
+        } catch (e) {
+          console.warn('[LOGIN] Erro ao buscar telas (flex):', e.message);
+        }
+
         return res.json({
           ok: true,
           token,
           permissoes,
+          telas: telas.map(t => ({
+            id: t.tela_id,
+            titulo: t.tela_titulo,
+            categoria: t.tela_categoria,
+            icone: t.tela_icone,
+            pode_editar: t.pode_editar || (usuarioCI.perfil === 'admin' ? 1 : 0)
+          })),
           usuario: {
             usuario_id: usuarioCI.usuario_id,
             username: usuarioCI.username,
@@ -123,10 +145,32 @@ router.post('/login', async (req, res) => {
     // Obter permissões
     const permissoes = authService.getPermissoesPerfil(usuario.perfil);
 
+    // Buscar telas do usuário para PWA
+    let telas = [];
+    try {
+      if (usuario.perfil === 'admin') {
+        telas = await tursoService.listarTelasWeb();
+      } else {
+        telas = await tursoService.listarTelasUsuario(usuario.usuario_id);
+        if (!telas || telas.length === 0) {
+          telas = await tursoService.listarTelasWeb();
+        }
+      }
+    } catch (e) {
+      console.warn('[LOGIN] Erro ao buscar telas:', e.message);
+    }
+
     return res.json({
       ok: true,
       token,
       permissoes,
+      telas: telas.map(t => ({
+        id: t.tela_id,
+        titulo: t.tela_titulo,
+        categoria: t.tela_categoria,
+        icone: t.tela_icone,
+        pode_editar: t.pode_editar || (usuario.perfil === 'admin' ? 1 : 0)
+      })),
       usuario: {
         usuario_id: usuario.usuario_id,
         username: usuario.username,

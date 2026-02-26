@@ -40,7 +40,11 @@
         isInitialized = true;
 
         pwaContent = document.getElementById('pwaContent');
-        if (!pwaContent) return;
+        if (!pwaContent) {
+            console.error('[PWA] pwaContent não encontrado no DOM! Verificar index.html');
+            isInitialized = false; // Permitir retry
+            return;
+        }
 
         // Ativar modo PWA no body
         document.body.classList.add('pwa-mode');
