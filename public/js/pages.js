@@ -3767,12 +3767,6 @@ export const pages = {
                                 </select>
                             </div>
 
-                            <div class="form-group">
-                                <label for="usuarioSenhaConfig">Senha <span id="labelSenhaOpcionalConfig">(opcional para edição)</span></label>
-                                <input type="password" id="usuarioSenhaConfig" minlength="6">
-                                <small class="text-muted">Mínimo 6 caracteres</small>
-                            </div>
-
                             <div class="form-group" style="display: none;" id="grupoUsuarioAtivoConfig">
                                 <label>
                                     <input type="checkbox" id="usuarioAtivoConfig" checked>
@@ -4116,12 +4110,6 @@ export const pages = {
                                     <option value="repositor">Repositor</option>
                                     <option value="admin">Admin</option>
                                 </select>
-                            </div>
-
-                            <div class="form-group">
-                                <label for="usuarioSenha">Senha <span id="labelSenhaOpcional">(opcional para edição)</span></label>
-                                <input type="password" id="usuarioSenha" minlength="6">
-                                <small class="text-muted">Mínimo 6 caracteres</small>
                             </div>
 
                             <div class="form-group" style="display: none;" id="grupoUsuarioAtivo">

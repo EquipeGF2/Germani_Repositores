@@ -1805,8 +1805,6 @@ class App {
         titulo.textContent = usuario ? 'Editar Usuário' : 'Novo Usuário';
         form.reset();
         document.getElementById('usuarioIdConfig').value = '';
-        document.getElementById('labelSenhaOpcionalConfig').style.display = usuario ? 'inline' : 'none';
-        document.getElementById('usuarioSenhaConfig').required = !usuario;
         document.getElementById('grupoUsuarioAtivoConfig').style.display = usuario ? 'block' : 'none';
 
         if (usuario) {
@@ -1845,16 +1843,10 @@ class App {
         const email = document.getElementById('usuarioEmailConfig')?.value?.trim();
         const rep_id = document.getElementById('usuarioRepositorConfig')?.value || null;
         const perfil = document.getElementById('usuarioPerfilConfig')?.value;
-        const senha = document.getElementById('usuarioSenhaConfig')?.value;
         const ativo = document.getElementById('usuarioAtivoConfig')?.checked ? 1 : 0;
 
         if (!username || !nome_completo || !perfil) {
             this.showNotification('Preencha os campos obrigatórios.', 'warning');
-            return;
-        }
-
-        if (!id && !senha) {
-            this.showNotification('Senha é obrigatória para novos usuários.', 'warning');
             return;
         }
 
@@ -1864,13 +1856,13 @@ class App {
             const method = id ? 'PUT' : 'POST';
 
             const body = { username, nome_completo, email, rep_id, perfil };
+            let senhaGerada = null;
             if (id) {
-                // Edição: backend espera 'nova_senha' para atualizar senha
-                if (senha) body.nova_senha = senha;
                 body.ativo = ativo;
             } else {
-                // Criação: backend espera 'password'
-                if (senha) body.password = senha;
+                // Criação: gerar senha aleatória automaticamente
+                senhaGerada = this.gerarSenhaAleatoria();
+                body.password = senhaGerada;
             }
 
             const headers = { 'Content-Type': 'application/json' };
@@ -1883,7 +1875,10 @@ class App {
             });
 
             if (data.ok || data.success || data.usuario) {
-                this.showNotification(`Usuário ${id ? 'atualizado' : 'criado'} com sucesso!`, 'success');
+                if (senhaGerada) {
+                    alert(`Usuário criado com sucesso!\n\nUsername: ${username}\nSenha: ${senhaGerada}\n\nAnote a senha, ela não será exibida novamente.`);
+                }
+                this.showNotification(`Usuário ${id ? 'atualizado' : 'criado'} com sucesso!${senhaGerada ? ` Senha: ${senhaGerada}` : ''}`, 'success', 15000);
                 this.fecharModalUsuarioConfig();
                 await this.carregarUsuariosConfig();
             } else {
@@ -1922,34 +1917,87 @@ class App {
     }
 
     async resetarSenhaUsuarioConfig(usuarioId, username) {
-        const novaSenha = prompt(`Informe a nova senha para o usuário "${username}":\n(mínimo 6 caracteres)`);
-        if (!novaSenha) return;
+        // Criar modal estilizado para reset de senha
+        const existente = document.getElementById('modalResetSenha');
+        if (existente) existente.remove();
 
-        if (novaSenha.length < 6) {
-            this.showNotification('A senha deve ter no mínimo 6 caracteres.', 'warning');
-            return;
-        }
+        const modal = document.createElement('div');
+        modal.id = 'modalResetSenha';
+        modal.className = 'modal active';
+        modal.style.display = 'flex';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 440px;">
+                <div class="modal-header">
+                    <h3>Resetar Senha</h3>
+                    <button class="modal-close" id="btnFecharResetSenha">&times;</button>
+                </div>
+                <div class="modal-body" style="overflow-y: visible;">
+                    <p style="margin-bottom: 16px; color: var(--gray-600); font-size: 0.9rem;">
+                        Informe a nova senha para o usuário <strong>${username}</strong>
+                    </p>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label for="inputResetSenha">Nova Senha *</label>
+                        <input type="password" id="inputResetSenha" minlength="6" placeholder="Mínimo 6 caracteres" style="width: 100%;">
+                        <small class="text-muted">Mínimo 6 caracteres</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="btnCancelarResetSenha">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="btnConfirmarResetSenha">Salvar</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
 
-        try {
-            const token = localStorage.getItem('auth_token');
-            const headers = { 'Content-Type': 'application/json' };
-            if (token) headers['Authorization'] = `Bearer ${token}`;
+        const inputSenha = document.getElementById('inputResetSenha');
+        inputSenha.focus();
 
-            const data = await fetchJson(`${API_BASE_URL}/api/usuarios/${usuarioId}`, {
-                method: 'PUT',
-                headers,
-                body: JSON.stringify({ nova_senha: novaSenha })
-            });
+        const fecharModal = () => modal.remove();
 
-            if (data.ok || data.success) {
-                this.showNotification(`Senha do usuário "${username}" resetada com sucesso! Nova senha: ${novaSenha}`, 'success', 10000);
-            } else {
-                throw new Error(data.message || 'Erro ao resetar senha');
+        document.getElementById('btnFecharResetSenha').addEventListener('click', fecharModal);
+        document.getElementById('btnCancelarResetSenha').addEventListener('click', fecharModal);
+        modal.addEventListener('click', (e) => { if (e.target === modal) fecharModal(); });
+
+        document.getElementById('btnConfirmarResetSenha').addEventListener('click', async () => {
+            const novaSenha = inputSenha.value;
+            if (!novaSenha) {
+                this.showNotification('Informe a nova senha.', 'warning');
+                return;
             }
-        } catch (error) {
-            console.error('Erro ao resetar senha:', error);
-            this.showNotification('Erro ao resetar senha: ' + error.message, 'error');
-        }
+            if (novaSenha.length < 6) {
+                this.showNotification('A senha deve ter no mínimo 6 caracteres.', 'warning');
+                return;
+            }
+
+            try {
+                const token = localStorage.getItem('auth_token');
+                const headers = { 'Content-Type': 'application/json' };
+                if (token) headers['Authorization'] = `Bearer ${token}`;
+
+                const data = await fetchJson(`${API_BASE_URL}/api/usuarios/${usuarioId}`, {
+                    method: 'PUT',
+                    headers,
+                    body: JSON.stringify({ nova_senha: novaSenha })
+                });
+
+                if (data.ok || data.success) {
+                    fecharModal();
+                    this.showNotification(`Senha do usuário "${username}" resetada com sucesso! Nova senha: ${novaSenha}`, 'success', 10000);
+                } else {
+                    throw new Error(data.message || 'Erro ao resetar senha');
+                }
+            } catch (error) {
+                console.error('Erro ao resetar senha:', error);
+                this.showNotification('Erro ao resetar senha: ' + error.message, 'error');
+            }
+        });
+
+        // Enter para confirmar
+        inputSenha.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('btnConfirmarResetSenha')?.click();
+            }
+        });
     }
 
     // ==================== ABA CONTROLE DE ACESSOS (CONFIG) ====================
@@ -3094,8 +3142,6 @@ class App {
         // Resetar form
         form.reset();
         document.getElementById('usuarioId').value = '';
-        document.getElementById('labelSenhaOpcional').style.display = usuario ? 'inline' : 'none';
-        document.getElementById('usuarioSenha').required = !usuario;
         document.getElementById('grupoUsuarioAtivo').style.display = usuario ? 'block' : 'none';
 
         // Preencher dados se for edição
@@ -3176,18 +3222,13 @@ class App {
             perfil: document.getElementById('usuarioPerfil').value
         };
 
-        const senha = document.getElementById('usuarioSenha').value;
-        if (senha) {
-            dados.password = senha;
-        } else if (!isEdicao) {
-            this.showNotification('Senha é obrigatória para novos usuários', 'warning');
-            return;
-        }
-
+        let senhaGerada = null;
         if (isEdicao) {
             dados.ativo = document.getElementById('usuarioAtivo').checked ? 1 : 0;
-            dados.nova_senha = senha || undefined;
-            delete dados.password;
+        } else {
+            // Criação: gerar senha aleatória automaticamente
+            senhaGerada = this.gerarSenhaAleatoria();
+            dados.password = senhaGerada;
         }
 
         try {
@@ -3209,9 +3250,12 @@ class App {
                 body: JSON.stringify(dados)
             });
 
+            if (senhaGerada) {
+                alert(`Usuário criado com sucesso!\n\nUsername: ${dados.username}\nSenha: ${senhaGerada}\n\nAnote a senha, ela não será exibida novamente.`);
+            }
             this.showNotification(
-                isEdicao ? 'Usuário atualizado com sucesso!' : 'Usuário criado com sucesso!',
-                'success'
+                isEdicao ? 'Usuário atualizado com sucesso!' : `Usuário criado com sucesso!${senhaGerada ? ` Senha: ${senhaGerada}` : ''}`,
+                'success', senhaGerada ? 15000 : undefined
             );
 
             this.fecharModalUsuario();
