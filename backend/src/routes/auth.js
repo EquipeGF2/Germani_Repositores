@@ -5,6 +5,33 @@ import { requireAuth, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
 
+// Verificar senha com fallback para texto plano (migra automaticamente para bcrypt)
+async function verificarSenhaComFallback(password, usuario) {
+  const hash = usuario.password_hash || '';
+
+  // Tentar bcrypt primeiro (hash começa com $2a$ ou $2b$)
+  if (hash.startsWith('$2')) {
+    const valida = await authService.comparePassword(password, hash);
+    return { valida, upgraded: false };
+  }
+
+  // Fallback: senha pode estar em texto plano
+  console.log(`[LOGIN] Hash não é bcrypt (len=${hash.length}). Tentando comparação direta.`);
+  if (hash === password || hash.trim() === password.trim()) {
+    // Migrar para bcrypt automaticamente
+    try {
+      const novoHash = await authService.hashPassword(password);
+      await tursoService.atualizarUsuario(usuario.usuario_id, { passwordHash: novoHash });
+      console.log(`[LOGIN] Senha do usuário ID=${usuario.usuario_id} migrada para bcrypt com sucesso.`);
+    } catch (err) {
+      console.error(`[LOGIN] Erro ao migrar senha para bcrypt:`, err);
+    }
+    return { valida: true, upgraded: true };
+  }
+
+  return { valida: false, upgraded: false };
+}
+
 // POST /api/auth/login - Login de usuário PWA
 router.post('/login', async (req, res) => {
   try {
@@ -31,10 +58,9 @@ router.post('/login', async (req, res) => {
       const usuarioCI = await tursoService.buscarUsuarioPorUsernameFlex(username);
       if (usuarioCI) {
         console.log(`[LOGIN] Usuário encontrado via busca flexível: ID=${usuarioCI.usuario_id}, username="${usuarioCI.username}"`);
-        // Usar o usuário encontrado
-        const senhaValida = await authService.comparePassword(password, usuarioCI.password_hash);
-        if (!senhaValida) {
-          console.log(`[LOGIN] Senha inválida para usuário: "${username}" (via busca flexível)`);
+        const loginResult = await verificarSenhaComFallback(password, usuarioCI);
+        if (!loginResult.valida) {
+          console.log(`[LOGIN] Senha inválida para usuário: "${username}" (via busca flexível) - hash_len=${(usuarioCI.password_hash || '').length}, eh_bcrypt=${(usuarioCI.password_hash || '').startsWith('$2')}`);
           return res.status(401).json({
             ok: false,
             code: 'INVALID_CREDENTIALS',
@@ -42,7 +68,7 @@ router.post('/login', async (req, res) => {
           });
         }
 
-        console.log(`[LOGIN] Login bem-sucedido (via busca flexível): "${username}"`);
+        console.log(`[LOGIN] Login bem-sucedido (via busca flexível): "${username}"${loginResult.upgraded ? ' [senha migrada para bcrypt]' : ''}`);
         await tursoService.registrarUltimoLogin(usuarioCI.usuario_id);
         const token = authService.generateToken(usuarioCI);
         const permissoes = authService.getPermissoesPerfil(usuarioCI.perfil);
@@ -72,12 +98,12 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    console.log(`[LOGIN] Usuário encontrado: ID=${usuario.usuario_id}, perfil=${usuario.perfil}, ativo=${usuario.ativo}, tem_hash=${!!usuario.password_hash}, hash_len=${(usuario.password_hash || '').length}`);
+    console.log(`[LOGIN] Usuário encontrado: ID=${usuario.usuario_id}, perfil=${usuario.perfil}, ativo=${usuario.ativo}, tem_hash=${!!usuario.password_hash}, hash_len=${(usuario.password_hash || '').length}, eh_bcrypt=${(usuario.password_hash || '').startsWith('$2')}`);
 
-    // Verificar senha
-    const senhaValida = await authService.comparePassword(password, usuario.password_hash);
+    // Verificar senha (com fallback para senha em texto plano)
+    const loginResult = await verificarSenhaComFallback(password, usuario);
 
-    if (!senhaValida) {
+    if (!loginResult.valida) {
       console.log(`[LOGIN] Senha inválida para usuário: "${username}"`);
       return res.status(401).json({
         ok: false,
@@ -86,7 +112,7 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    console.log(`[LOGIN] Login bem-sucedido: "${username}"`);
+    console.log(`[LOGIN] Login bem-sucedido: "${username}"${loginResult.upgraded ? ' [senha migrada para bcrypt]' : ''}`);
 
     // Registrar último login
     await tursoService.registrarUltimoLogin(usuario.usuario_id);
