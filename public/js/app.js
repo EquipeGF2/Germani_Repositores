@@ -1708,6 +1708,9 @@ class App {
                                 <button class="btn btn-sm btn-primary" onclick="app.editarUsuarioConfig(${usuario.usuario_id})" title="Editar" style="margin-right: 4px;">
                                     ✏️
                                 </button>
+                                <button class="btn btn-sm btn-secondary" onclick="app.resetarSenhaUsuarioConfig(${usuario.usuario_id}, '${(usuario.username || '').replace(/'/g, "\\'")}')" title="Resetar Senha" style="margin-right: 4px;">
+                                    🔑
+                                </button>
                                 <button class="btn btn-sm ${usuario.ativo ? 'btn-danger' : 'btn-success'}"
                                         onclick="app.toggleStatusUsuarioConfig(${usuario.usuario_id}, ${usuario.ativo})"
                                         title="${usuario.ativo ? 'Desativar' : 'Ativar'}">
@@ -1775,6 +1778,9 @@ class App {
                             <div class="usuario-card-footer">
                                 <button class="btn btn-primary" onclick="app.editarUsuarioConfig(${usuario.usuario_id})">
                                     ✏️ Editar
+                                </button>
+                                <button class="btn btn-secondary" onclick="app.resetarSenhaUsuarioConfig(${usuario.usuario_id}, '${(usuario.username || '').replace(/'/g, "\\'")}')" title="Resetar Senha">
+                                    🔑 Senha
                                 </button>
                                 <button class="btn ${usuario.ativo ? 'btn-danger' : 'btn-success'}"
                                         onclick="app.toggleStatusUsuarioConfig(${usuario.usuario_id}, ${usuario.ativo})">
@@ -1912,6 +1918,37 @@ class App {
         } catch (error) {
             console.error('Erro ao alterar status:', error);
             this.showNotification('Erro: ' + error.message, 'error');
+        }
+    }
+
+    async resetarSenhaUsuarioConfig(usuarioId, username) {
+        const novaSenha = prompt(`Informe a nova senha para o usuário "${username}":\n(mínimo 6 caracteres)`);
+        if (!novaSenha) return;
+
+        if (novaSenha.length < 6) {
+            this.showNotification('A senha deve ter no mínimo 6 caracteres.', 'warning');
+            return;
+        }
+
+        try {
+            const token = localStorage.getItem('auth_token');
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+
+            const data = await fetchJson(`${API_BASE_URL}/api/usuarios/${usuarioId}`, {
+                method: 'PUT',
+                headers,
+                body: JSON.stringify({ nova_senha: novaSenha })
+            });
+
+            if (data.ok || data.success) {
+                this.showNotification(`Senha do usuário "${username}" resetada com sucesso! Nova senha: ${novaSenha}`, 'success', 10000);
+            } else {
+                throw new Error(data.message || 'Erro ao resetar senha');
+            }
+        } catch (error) {
+            console.error('Erro ao resetar senha:', error);
+            this.showNotification('Erro ao resetar senha: ' + error.message, 'error');
         }
     }
 
@@ -3026,9 +3063,12 @@ class App {
                     <td>${perfilBadge}</td>
                     <td>${statusBadge}</td>
                     <td style="font-size: 13px;">${ultimoLogin}</td>
-                    <td>
-                        <button class="btn btn-sm btn-primary" onclick="app.editarUsuario(${usuario.usuario_id})" title="Editar">
+                    <td style="white-space: nowrap;">
+                        <button class="btn btn-sm btn-primary" onclick="app.editarUsuario(${usuario.usuario_id})" title="Editar" style="margin-right: 4px;">
                             ✏️
+                        </button>
+                        <button class="btn btn-sm btn-secondary" onclick="app.resetarSenhaUsuarioConfig(${usuario.usuario_id}, '${(usuario.username || '').replace(/'/g, "\\'")}')" title="Resetar Senha" style="margin-right: 4px;">
+                            🔑
                         </button>
                         <button class="btn btn-sm ${usuario.ativo ? 'btn-danger' : 'btn-success'}"
                                 onclick="app.toggleStatusUsuario(${usuario.usuario_id}, ${usuario.ativo})"
@@ -3254,10 +3294,12 @@ class App {
             // Verificar se foi reativação de usuário existente
             if (result?.message?.includes('reativado')) {
                 console.log('Usuário reativado para repositor', repoCod);
-                this.showNotification(`Usuário reativado! Username: ${repoCod}, Nova senha: ${senhaAleatoria}`, 'success', 8000);
+                this.showNotification(`Usuário reativado! Username: ${repoCod} | Nova senha: ${senhaAleatoria}`, 'success', 15000);
+                alert(`ATENÇÃO - Anote a senha!\n\nUsuário: ${repoCod}\nSenha: ${senhaAleatoria}\n\nEsta senha será necessária para o primeiro acesso no aplicativo mobile.`);
             } else {
                 console.log('Usuário criado automaticamente para repositor', repoCod);
-                this.showNotification(`Usuário criado! Username: ${repoCod}, Senha: ${senhaAleatoria}`, 'success', 8000);
+                this.showNotification(`Usuário criado! Username: ${repoCod} | Senha: ${senhaAleatoria}`, 'success', 15000);
+                alert(`ATENÇÃO - Anote a senha!\n\nUsuário: ${repoCod}\nSenha: ${senhaAleatoria}\n\nEsta senha será necessária para o primeiro acesso no aplicativo mobile.`);
             }
         } catch (error) {
             // Se o usuário já existe e está ativo
