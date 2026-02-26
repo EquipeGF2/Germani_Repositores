@@ -242,6 +242,7 @@ router.put('/:id', async (req, res) => {
     if (rep_id !== undefined) dadosAtualizacao.repId = rep_id;
 
     // Atualizar senha se fornecida
+    let senhaVerificada = null;
     if (nova_senha) {
       if (nova_senha.length < 6) {
         return res.status(400).json({
@@ -251,13 +252,31 @@ router.put('/:id', async (req, res) => {
         });
       }
       dadosAtualizacao.passwordHash = await authService.hashPassword(nova_senha);
+      console.log(`[Atualizar usuário] Senha hasheada para ID=${id}, hash_len=${dadosAtualizacao.passwordHash.length}, prefixo=${dadosAtualizacao.passwordHash.substring(0, 7)}`);
     }
 
     await tursoService.atualizarUsuario(id, dadosAtualizacao);
 
+    // Verificar se a senha foi salva corretamente (ler de volta e comparar)
+    if (nova_senha) {
+      try {
+        const usuarioAtualizado = await tursoService.buscarUsuarioPorIdSemFiltro(id);
+        if (usuarioAtualizado && usuarioAtualizado.password_hash) {
+          senhaVerificada = await authService.comparePassword(nova_senha, usuarioAtualizado.password_hash);
+          console.log(`[Atualizar usuário] Verificação pós-reset ID=${id}: senha_verificada=${senhaVerificada}, hash_len=${usuarioAtualizado.password_hash.length}, eh_bcrypt=${usuarioAtualizado.password_hash.startsWith('$2')}`);
+        } else {
+          console.log(`[Atualizar usuário] Verificação pós-reset ID=${id}: usuário não encontrado ou sem hash`);
+          senhaVerificada = false;
+        }
+      } catch (verifyErr) {
+        console.error(`[Atualizar usuário] Erro na verificação pós-reset:`, verifyErr);
+      }
+    }
+
     return res.json({
       ok: true,
-      message: 'Usuário atualizado com sucesso'
+      message: 'Usuário atualizado com sucesso',
+      senha_verificada: senhaVerificada
     });
   } catch (error) {
     console.error('Erro ao atualizar usuário:', error);
