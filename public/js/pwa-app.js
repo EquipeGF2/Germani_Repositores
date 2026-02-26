@@ -362,8 +362,12 @@
         `;
 
         // Carregar conteudo da pagina existente via app.js
+        const container = document.getElementById('pwaRegistroRotaContent');
         if (typeof window.app !== 'undefined' && window.app.navigateTo) {
-            window.app.navigateTo('registro-rota', {}, { replaceHistory: true, pwaMode: true });
+            window.app.navigateTo('registro-rota', {}, { replaceHistory: true, pwaMode: true, pwaContainer: container });
+        } else {
+            console.warn('[PWA] window.app não disponível para registro-rota');
+            if (container) container.innerHTML = '<div style="text-align:center; padding:20px; color:#6b7280;">Carregando módulo...</div>';
         }
     }
 
@@ -380,8 +384,12 @@
             </div>
         `;
 
+        const container = document.getElementById('pwaDocumentosContent');
         if (typeof window.app !== 'undefined' && window.app.navigateTo) {
-            window.app.navigateTo('documentos', {}, { replaceHistory: true, pwaMode: true });
+            window.app.navigateTo('documentos', {}, { replaceHistory: true, pwaMode: true, pwaContainer: container });
+        } else {
+            console.warn('[PWA] window.app não disponível para documentos');
+            if (container) container.innerHTML = '<div style="text-align:center; padding:20px; color:#6b7280;">Carregando módulo...</div>';
         }
     }
 
@@ -416,8 +424,12 @@
             </div>
         `;
 
+        const container = document.getElementById('pwaConsultaContent');
         if (typeof window.app !== 'undefined' && window.app.navigateTo) {
-            window.app.navigateTo(consultaId, {}, { replaceHistory: true, pwaMode: true });
+            window.app.navigateTo(consultaId, {}, { replaceHistory: true, pwaMode: true, pwaContainer: container });
+        } else {
+            console.warn('[PWA] window.app não disponível para', consultaId);
+            if (container) container.innerHTML = '<div style="text-align:center; padding:20px; color:#6b7280;">Carregando módulo...</div>';
         }
     }
 
