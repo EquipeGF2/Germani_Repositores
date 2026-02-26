@@ -2288,6 +2288,21 @@ tbody td {
     min-width: 140px;
 }
 
+/* Modal Usuário - sem rolagem vertical */
+#modalUsuarioConfig .modal-content,
+#modalUsuario .modal-content,
+#modalResetSenha .modal-content {
+    max-height: none;
+    overflow: visible;
+}
+
+#modalUsuarioConfig .modal-body,
+#modalUsuario .modal-body,
+#modalResetSenha .modal-body {
+    overflow-y: visible;
+    overflow: visible;
+}
+
 .btn-visualizar-cadastro {
     white-space: nowrap;
 }
