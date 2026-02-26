@@ -148,6 +148,33 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// GET /api/auth/diagnostico/:username - Diagnosticar estado do usuário no banco
+router.get('/diagnostico/:username', async (req, res) => {
+  try {
+    const { username } = req.params;
+    const resultado = await tursoService.diagnosticarUsuario(username);
+
+    return res.json({
+      ok: true,
+      username_buscado: username,
+      encontrado_cc_usuarios: resultado.cc_usuarios.length,
+      encontrado_users_web: resultado.users_web.length,
+      cc_usuarios: resultado.cc_usuarios,
+      users_web: resultado.users_web,
+      dica: resultado.cc_usuarios.length === 0
+        ? 'Usuario NAO existe na tabela cc_usuarios (login mobile). Crie o usuario primeiro.'
+        : resultado.cc_usuarios.some(u => !u.eh_bcrypt && u.tem_hash)
+          ? 'ATENCAO: Hash da senha NAO eh bcrypt! Use o botao Resetar Senha na web.'
+          : resultado.cc_usuarios.some(u => u.ativo === 0)
+            ? 'Usuario existe mas esta INATIVO. Ative o usuario primeiro.'
+            : 'Usuario encontrado e hash parece correto.'
+    });
+  } catch (error) {
+    console.error('Erro no diagnóstico:', error);
+    return res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
 // POST /api/auth/login-web - Login de usuário Web
 // Autenticação via tabela users (username, password em texto plano)
 router.post('/login-web', async (req, res) => {

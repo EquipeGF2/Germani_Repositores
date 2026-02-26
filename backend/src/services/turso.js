@@ -1916,6 +1916,48 @@ class TursoService {
     return result.rows[0] || null;
   }
 
+  async diagnosticarUsuario(username) {
+    const usernameNorm = username ? String(username).trim() : '';
+
+    // Buscar em cc_usuarios (todas as linhas, incluindo inativos)
+    const sqlPwa = 'SELECT usuario_id, username, nome_completo, rep_id, perfil, ativo, password_hash, ultimo_login, criado_em FROM cc_usuarios WHERE LOWER(TRIM(username)) = LOWER(?)';
+    const resultPwa = await this.execute(sqlPwa, [usernameNorm]);
+
+    // Buscar em users_web
+    const sqlWeb = 'SELECT id, username, full_name, active, created_at FROM users_web WHERE LOWER(TRIM(username)) = LOWER(?)';
+    let resultWeb = { rows: [] };
+    try {
+      resultWeb = await this.execute(sqlWeb, [usernameNorm]);
+    } catch (e) {
+      // tabela pode não existir
+    }
+
+    const pwUsers = resultPwa.rows.map(u => ({
+      usuario_id: u.usuario_id,
+      username: u.username,
+      nome_completo: u.nome_completo,
+      rep_id: u.rep_id,
+      perfil: u.perfil,
+      ativo: u.ativo,
+      tem_hash: !!u.password_hash,
+      hash_len: (u.password_hash || '').length,
+      eh_bcrypt: (u.password_hash || '').startsWith('$2'),
+      hash_prefixo: (u.password_hash || '').substring(0, 7),
+      ultimo_login: u.ultimo_login,
+      criado_em: u.criado_em
+    }));
+
+    const webUsers = resultWeb.rows.map(u => ({
+      id: u.id,
+      username: u.username,
+      full_name: u.full_name,
+      active: u.active,
+      created_at: u.created_at
+    }));
+
+    return { cc_usuarios: pwUsers, users_web: webUsers };
+  }
+
   // Busca usuário por username incluindo inativos (para validação de duplicidade)
   async buscarUsuarioPorUsernameIncluindoInativos(username) {
     // Normalizar o username para garantir comparação correta
@@ -1972,6 +2014,12 @@ class TursoService {
       LEFT JOIN cad_repositor r ON u.rep_id = r.repo_cod
       WHERE u.usuario_id = ? AND u.ativo = 1
     `;
+    const result = await this.execute(sql, [usuarioId]);
+    return result.rows[0] || null;
+  }
+
+  async buscarUsuarioPorIdSemFiltro(usuarioId) {
+    const sql = 'SELECT * FROM cc_usuarios WHERE usuario_id = ?';
     const result = await this.execute(sql, [usuarioId]);
     return result.rows[0] || null;
   }

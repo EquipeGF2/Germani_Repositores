@@ -1982,7 +1982,24 @@ class App {
 
                 if (data.ok || data.success) {
                     fecharModal();
-                    this.showNotification(`Senha do usuário "${username}" resetada com sucesso! Nova senha: ${novaSenha}`, 'success', 10000);
+                    const verificacao = data.senha_verificada === true
+                        ? ' (verificada com sucesso)'
+                        : data.senha_verificada === false
+                            ? ' (ATENCAO: falha na verificacao!)'
+                            : '';
+                    this.showNotification(`Senha do usuário "${username}" resetada com sucesso${verificacao}! Nova senha: ${novaSenha}`, 'success', 15000);
+
+                    // Diagnóstico automático: verificar estado do usuário no banco
+                    try {
+                        const diag = await fetchJson(`${API_BASE_URL}/api/auth/diagnostico/${username}`);
+                        console.log(`[RESET SENHA] Diagnóstico pós-reset para "${username}":`, diag);
+                        if (diag.cc_usuarios && diag.cc_usuarios.length > 0) {
+                            const u = diag.cc_usuarios[0];
+                            console.log(`[RESET SENHA] Estado: ativo=${u.ativo}, tem_hash=${u.tem_hash}, eh_bcrypt=${u.eh_bcrypt}, hash_len=${u.hash_len}`);
+                        }
+                    } catch (diagErr) {
+                        console.warn('[RESET SENHA] Erro no diagnóstico:', diagErr);
+                    }
                 } else {
                     throw new Error(data.message || 'Erro ao resetar senha');
                 }
