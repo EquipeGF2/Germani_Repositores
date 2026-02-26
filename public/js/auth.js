@@ -888,6 +888,13 @@ class AuthManager {
       // Inicializar PWA app controller
       if (typeof pwaApp !== 'undefined' && pwaApp.init) {
         pwaApp.init();
+      } else {
+        // pwa-app.js ainda não carregou - deferrir init até scripts carregarem
+        window.addEventListener('load', () => {
+          if (typeof pwaApp !== 'undefined' && pwaApp.init) {
+            pwaApp.init();
+          }
+        });
       }
     } else {
       if (appScreen) appScreen.classList.remove('hidden');

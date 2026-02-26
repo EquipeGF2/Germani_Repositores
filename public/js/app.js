@@ -505,9 +505,10 @@ class App {
         this.aplicarInformacoesUsuario();
         this.configurarVisibilidadeConfiguracoes();
 
-        // Verificar se usuário tem acesso a alguma tela
+        // Verificar se usuário tem acesso a alguma tela (admin ignora esta verificação)
         const telasPermitidas = authManager?.telas || [];
-        if (telasPermitidas.length === 0 && authManager?.isAuthenticated()) {
+        const isAdmin = authManager?.usuario?.perfil === 'admin';
+        if (telasPermitidas.length === 0 && authManager?.isAuthenticated() && !isAdmin) {
             this.elements.pageTitle.textContent = 'Sem permissões';
             this.elements.contentBody.innerHTML = `
                 <div class="acesso-negado">
