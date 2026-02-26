@@ -3426,17 +3426,20 @@ class App {
     }
 
     async navigateTo(pageName, params = {}, options = {}) {
-        const { skipHistory = false, replaceHistory = false } = options;
+        const { skipHistory = false, replaceHistory = false, pwaMode = false, pwaContainer = null } = options;
         if (!this.usuarioLogado) {
             const temSessao = await this.ensureUsuarioLogado();
             if (!temSessao) return;
         }
 
-        // Verificar permissão de acesso à tela
-        if (!this.usuarioTemPermissao(pageName)) {
+        // Em modo PWA, pular verificação de permissões (gerenciado pelo pwa-app.js)
+        if (!pwaMode && !this.usuarioTemPermissao(pageName)) {
             this.renderAcessoNegado(pageName);
             return;
         }
+
+        // Container de renderização: PWA container ou contentBody padrão
+        const renderTarget = (pwaMode && pwaContainer) ? pwaContainer : this.elements.contentBody;
 
         // Atualiza navegação ativa
         document.querySelectorAll('[data-page]').forEach(link => {
@@ -3446,15 +3449,17 @@ class App {
             }
         });
 
-        // Atualiza título
-        this.elements.pageTitle.textContent = this.obterTituloPagina(pageName);
+        // Atualiza título (skip no PWA mode - pwa-app.js cuida do titulo)
+        if (!pwaMode && this.elements.pageTitle) {
+            this.elements.pageTitle.textContent = this.obterTituloPagina(pageName);
+        }
 
-        if (!skipHistory) {
+        if (!pwaMode && !skipHistory) {
             this.registrarEstadoNavegacao(pageName, params, replaceHistory);
         }
 
         // Mostra loading
-        this.elements.contentBody.innerHTML = `
+        renderTarget.innerHTML = `
             <div class="loading-screen">
                 <div class="spinner"></div>
                 <p>Carregando...</p>
@@ -3470,7 +3475,7 @@ class App {
             }
 
             const pageContent = await pageRenderer();
-            this.elements.contentBody.innerHTML = pageContent;
+            renderTarget.innerHTML = pageContent;
             this.currentPage = pageName;
             this.atualizarTituloPaginaAtual();
 
@@ -3529,7 +3534,7 @@ class App {
             }
         } catch (error) {
             console.error('Erro ao carregar página:', error);
-            this.elements.contentBody.innerHTML = `
+            renderTarget.innerHTML = `
                 <div class="empty-state">
                     <div class="empty-state-icon">❌</div>
                     <p>Erro ao carregar página</p>
