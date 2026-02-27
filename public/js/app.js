@@ -10528,15 +10528,15 @@ class App {
 
                         return `
                             <div class="aviso-cliente-item" data-cliente-id="${clienteId}">
-                                <div class="aviso-cliente-info">
+                                <div class="aviso-cliente-nome">
                                     <strong>${clienteNome}</strong>
-                                    ${cidade ? `<small>${cidade}</small>` : ''}
                                 </div>
+                                ${cidade ? `<div class="aviso-cliente-cidade">${cidade}</div>` : ''}
                                 <div class="aviso-cliente-acoes">
-                                    <button class="btn btn-sm btn-primary" onclick="app.incluirClientePendenteNoRoteiro('${clienteId}', '${clienteNome.replace(/'/g, "\\'")}', ${repId}, '${dataAtual}', '${dataPendente}')" style="padding: 6px 10px; font-size: 0.8rem;">
+                                    <button class="btn btn-sm btn-primary" onclick="app.incluirClientePendenteNoRoteiro('${clienteId}', '${clienteNome.replace(/'/g, "\\'")}', ${repId}, '${dataAtual}', '${dataPendente}')">
                                         ✅ Hoje
                                     </button>
-                                    <button class="btn btn-sm btn-secondary" onclick="app.ignorarClientePendente('${clienteId}', ${repId}, '${dataAtual}')" style="padding: 6px 10px; font-size: 0.8rem;">
+                                    <button class="btn btn-sm btn-secondary" onclick="app.ignorarClientePendente('${clienteId}', ${repId}, '${dataAtual}')">
                                         ❌ Ignorar
                                     </button>
                                 </div>
@@ -10561,36 +10561,68 @@ class App {
 
     async incluirClientePendenteNoRoteiro(clienteId, clienteNome, repId, dataAtual, dataPendente) {
         try {
-            // Calcular dia da semana
-            const data = new Date(dataAtual + 'T12:00:00');
-            const diaNumero = data.getDay();
-            const diasMap = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
-            const diaSemana = diasMap[diaNumero];
+            const container = document.getElementById('roteiroContainer');
+            if (!container) return;
 
-            // Buscar roteiro do dia atual
-            const roteiro = await db.carregarRoteiroRepositorDia(repId, diaSemana);
+            const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
+            const cliId = normalizeClienteId(clienteId);
 
-            // Verificar se cliente já está no roteiro
-            const jaExiste = roteiro.some(c => String(c.cli_codigo).trim() === clienteId);
-
-            if (jaExiste) {
+            // Verificar se já existe no roteiro visível
+            const jaExisteVisual = container.querySelector(`.route-item[data-cliente-id="${cliId}"]`);
+            if (jaExisteVisual) {
                 this.showNotification('Cliente já está no roteiro de hoje', 'info');
                 this.ignorarClientePendente(clienteId, repId, dataAtual);
                 return;
             }
 
-            // Adicionar marcador de atrasado
-            this.showNotification(`Cliente ${clienteNome} será incluído como ATRASADO no roteiro`, 'warning');
+            // Buscar dados completos do cliente no banco
+            const clientesMap = await db.getClientesPorCodigo([clienteId]);
+            const clienteDados = clientesMap[clienteId] || {};
 
-            // Marcar como ignorado para não mostrar novamente
+            const cliNome = clienteDados.nome || clienteDados.fantasia || clienteNome || 'Cliente';
+            const cidadeUF = [clienteDados.cidade || '', clienteDados.estado || ''].filter(Boolean).join('/');
+            const enderecoPartes = [
+                clienteDados.endereco || '',
+                clienteDados.num_endereco || '',
+                clienteDados.bairro || ''
+            ].filter(Boolean);
+            const enderecoTexto = enderecoPartes.join(', ');
+            const linhaEndereco = [cidadeUF, enderecoTexto].filter(Boolean).join(' • ');
+            const enderecoCadastro = [cidadeUF, enderecoTexto].filter(Boolean).join(' - ');
+
+            const nomeEsc = cliNome.replace(/'/g, "\\'");
+            const endEsc = linhaEndereco.replace(/'/g, "\\'");
+            const cadastroEsc = enderecoCadastro.replace(/'/g, "\\'");
+
+            // Registrar no resumo como pendente
+            this.registroRotaState.resumoVisitas.set(cliId, { status: 'sem_checkin' });
+
+            // Criar card do cliente no roteiro (idêntico ao carregarRoteiroRepositor)
+            const item = document.createElement('div');
+            item.className = 'route-item';
+            item.dataset.clienteId = cliId;
+            item.dataset.repId = repId;
+            item.dataset.dataVisita = dataAtual;
+            item.dataset.clienteNome = cliNome;
+            item.dataset.enderecoLinha = linhaEndereco;
+            item.dataset.enderecoCadastro = enderecoCadastro;
+            item.innerHTML = `
+                <div class="route-item-info">
+                    <div class="route-item-name">${cliId} - ${cliNome} <span style="background:#f59e0b;color:white;padding:2px 6px;border-radius:4px;font-size:11px;margin-left:6px;">PENDENTE DIA ANTERIOR</span></div>
+                    <div class="route-item-address">${linhaEndereco}</div>
+                </div>
+                <div class="route-item-actions">
+                    <span class="route-status status-pending">Pendente</span>
+                    <button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataAtual}', 'checkin', '${cadastroEsc}')" class="btn-small">✅ Check-in</button>
+                    <button onclick="app.abrirModalNaoAtendimento(${repId}, '${cliId}', '${nomeEsc}', '${dataAtual}')" class="btn-small" style="background:#1f2937;color:white;" title="Registrar não atendimento">⛔ Não atendimento</button>
+                </div>
+            `;
+            container.appendChild(item);
+
+            // Remover da lista de pendentes
             this.ignorarClientePendente(clienteId, repId, dataAtual);
 
-            // Nota: Como não temos acesso direto ao roteiro para adicionar,
-            // vamos apenas notificar o usuário que este cliente está atrasado
-            // O repositor precisará incluir manualmente via cadastro de roteiro
-            this.showNotification(`Atenção: Inclua ${clienteNome} manualmente no cadastro de roteiro marcando como atrasado`, 'info');
-
-            await this.carregarRoteiroRepositor();
+            this.showNotification(`${cliNome} adicionado ao roteiro de hoje`, 'success');
         } catch (error) {
             console.error('Erro ao incluir cliente pendente:', error);
             this.showNotification('Erro ao processar cliente: ' + error.message, 'error');
