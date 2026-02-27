@@ -1357,7 +1357,17 @@ export const pages = {
             db.getRepresentantesComercial()
         ]);
 
-        const repositorOptions = repositores.map(repo => `
+        // PWA com repositor logado: mostrar apenas o repositor logado
+        const isPWA = window.authManager?.isPWA;
+        const repIdLogado = window.authManager?.getRepId?.();
+        const perfilLogado = window.authManager?.usuario?.perfil;
+        const filtrarParaRepositor = isPWA && perfilLogado === 'repositor' && repIdLogado;
+
+        const repositoresFiltrados = filtrarParaRepositor
+            ? repositores.filter(repo => String(repo.repo_cod) === String(repIdLogado))
+            : repositores;
+
+        const repositorOptions = repositoresFiltrados.map(repo => `
             <option value="${repo.repo_cod}">${repo.repo_cod} - ${repo.repo_nome}</option>
         `).join('');
 
@@ -1366,6 +1376,10 @@ export const pages = {
         const representanteOptions = representantes.map(rep => `
             <option value="${rep.representante}">${rep.representante} - ${rep.desc_representante}</option>
         `).join('');
+
+        // Se é PWA com repositor filtrado, pré-selecionar e desabilitar
+        const selectDisabled = filtrarParaRepositor ? 'disabled' : '';
+        const defaultOption = filtrarParaRepositor ? '' : '<option value="">Selecione</option>';
 
         return `
             <div class="card">
@@ -1381,8 +1395,8 @@ export const pages = {
                         </div>
                         <div class="filter-group">
                             <label for="filtro_repositor_consulta_roteiro">Repositor</label>
-                            <select id="filtro_repositor_consulta_roteiro">
-                                <option value="">Selecione</option>
+                            <select id="filtro_repositor_consulta_roteiro" ${selectDisabled}>
+                                ${defaultOption}
                                 ${repositorOptions}
                             </select>
                         </div>
@@ -2039,11 +2053,26 @@ export const pages = {
 
     'registro-rota': async () => {
         const repositores = await db.getAllRepositors();
-        const repositorOptions = repositores
+
+        // PWA com repositor logado: mostrar apenas o repositor logado
+        const isPWA = window.authManager?.isPWA;
+        const repIdLogado = window.authManager?.getRepId?.();
+        const perfilLogado = window.authManager?.usuario?.perfil;
+        const filtrarParaRepositor = isPWA && perfilLogado === 'repositor' && repIdLogado;
+
+        const repositoresFiltrados = filtrarParaRepositor
+            ? repositores.filter(repo => String(repo.repo_cod) === String(repIdLogado))
+            : repositores;
+
+        const repositorOptions = repositoresFiltrados
             .map(repo => `<option value="${repo.repo_cod}">${repo.repo_cod} - ${repo.repo_nome}</option>`)
             .join('');
 
         const hoje = new Date().toISOString().split('T')[0];
+
+        // Se há apenas um repositor (PWA filtrado), pré-selecionar
+        const selectDisabled = filtrarParaRepositor ? 'disabled' : '';
+        const defaultOption = filtrarParaRepositor ? '' : '<option value="">Selecione...</option>';
 
         return `
             <div class="card">
@@ -2051,8 +2080,8 @@ export const pages = {
                     <div class="filter-bar">
                         <div class="filter-group">
                             <label for="registroRepositor">Repositor *</label>
-                            <select id="registroRepositor" required>
-                                <option value="">Selecione...</option>
+                            <select id="registroRepositor" required ${selectDisabled}>
+                                ${defaultOption}
                                 ${repositorOptions}
                             </select>
                         </div>
@@ -2480,12 +2509,27 @@ export const pages = {
 
     'consulta-visitas': async () => {
         const repositores = await db.getAllRepositors();
-        const repositorOptions = repositores
+
+        // PWA com repositor logado: mostrar apenas o repositor logado
+        const isPWA = window.authManager?.isPWA;
+        const repIdLogado = window.authManager?.getRepId?.();
+        const perfilLogado = window.authManager?.usuario?.perfil;
+        const filtrarParaRepositor = isPWA && perfilLogado === 'repositor' && repIdLogado;
+
+        const repositoresFiltrados = filtrarParaRepositor
+            ? repositores.filter(repo => String(repo.repo_cod) === String(repIdLogado))
+            : repositores;
+
+        const repositorOptions = repositoresFiltrados
             .map(repo => `<option value="${repo.repo_cod}">${repo.repo_cod} - ${repo.repo_nome}</option>`)
             .join('');
 
         const hoje = new Date().toISOString().split('T')[0];
         const dataInicio = hoje; // Default to today
+
+        // Se é PWA com repositor filtrado, pré-selecionar e desabilitar
+        const selectDisabled = filtrarParaRepositor ? 'disabled' : '';
+        const defaultOption = filtrarParaRepositor ? '' : '<option value="">Todos</option>';
 
         return `
             <div class="card">
@@ -2495,8 +2539,8 @@ export const pages = {
                         <div class="filter-bar" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; align-items: end;">
                             <div class="filter-group">
                                 <label for="consultaRepositor">Repositor</label>
-                                <select id="consultaRepositor">
-                                    <option value="">Todos</option>
+                                <select id="consultaRepositor" ${selectDisabled}>
+                                    ${defaultOption}
                                     ${repositorOptions}
                                 </select>
                             </div>
@@ -4212,9 +4256,24 @@ export const pages = {
 
     'documentos': async () => {
         const repositores = await db.getAllRepositors();
-        const repositorOptions = repositores
+
+        // PWA com repositor logado: mostrar apenas o repositor logado
+        const isPWA = window.authManager?.isPWA;
+        const repIdLogado = window.authManager?.getRepId?.();
+        const perfilLogado = window.authManager?.usuario?.perfil;
+        const filtrarParaRepositor = isPWA && perfilLogado === 'repositor' && repIdLogado;
+
+        const repositoresFiltrados = filtrarParaRepositor
+            ? repositores.filter(repo => String(repo.repo_cod) === String(repIdLogado))
+            : repositores;
+
+        const repositorOptions = repositoresFiltrados
             .map(repo => `<option value="${repo.repo_cod}">${repo.repo_cod} - ${repo.repo_nome}</option>`)
             .join('');
+
+        // Se há apenas um repositor (PWA filtrado), pré-selecionar
+        const selectDisabled = filtrarParaRepositor ? 'disabled' : '';
+        const defaultOption = filtrarParaRepositor ? '' : '<option value="">Selecione...</option>';
 
         return `
             <div class="card">
@@ -4223,8 +4282,8 @@ export const pages = {
                         <div class="doc-form-grid">
                             <div class="filter-group">
                                 <label for="uploadRepositor">Repositor *</label>
-                                <select id="uploadRepositor" required>
-                                    <option value="">Selecione...</option>
+                                <select id="uploadRepositor" required ${selectDisabled}>
+                                    ${defaultOption}
                                     ${repositorOptions}
                                 </select>
                             </div>
@@ -4752,7 +4811,18 @@ export const pages = {
 
     'consulta-documentos': async () => {
         const repositores = await db.getAllRepositors();
-        const repositorOptions = repositores
+
+        // PWA com repositor logado: mostrar apenas o repositor logado
+        const isPWA = window.authManager?.isPWA;
+        const repIdLogado = window.authManager?.getRepId?.();
+        const perfilLogado = window.authManager?.usuario?.perfil;
+        const filtrarParaRepositor = isPWA && perfilLogado === 'repositor' && repIdLogado;
+
+        const repositoresFiltrados = filtrarParaRepositor
+            ? repositores.filter(repo => String(repo.repo_cod) === String(repIdLogado))
+            : repositores;
+
+        const repositorOptions = repositoresFiltrados
             .map(repo => `<option value="${repo.repo_cod}">${repo.repo_cod} - ${repo.repo_nome}</option>`)
             .join('');
 
@@ -4760,6 +4830,10 @@ export const pages = {
         const umMesAtras = new Date();
         umMesAtras.setMonth(umMesAtras.getMonth() - 1);
         const dataInicio = umMesAtras.toISOString().split('T')[0];
+
+        // Se é PWA com repositor filtrado, pré-selecionar e desabilitar
+        const selectDisabled = filtrarParaRepositor ? 'disabled' : '';
+        const defaultOption = filtrarParaRepositor ? '' : '<option value="">Todos</option>';
 
         return `
             <div class="card">
@@ -4780,8 +4854,8 @@ export const pages = {
                             </div>
                             <div class="filter-group">
                                 <label for="consultaRepositor">Repositor <span style="color: #6b7280; font-weight: 400;">(opcional se tipo informado)</span></label>
-                                <select id="consultaRepositor">
-                                    <option value="">Todos</option>
+                                <select id="consultaRepositor" ${selectDisabled}>
+                                    ${defaultOption}
                                     ${repositorOptions}
                                 </select>
                             </div>
@@ -5533,7 +5607,18 @@ export const pages = {
     },
     'consulta-campanha': async () => {
         const repositores = await db.getAllRepositors();
-        const repositorOptions = repositores
+
+        // PWA com repositor logado: mostrar apenas o repositor logado
+        const isPWA = window.authManager?.isPWA;
+        const repIdLogado = window.authManager?.getRepId?.();
+        const perfilLogado = window.authManager?.usuario?.perfil;
+        const filtrarParaRepositor = isPWA && perfilLogado === 'repositor' && repIdLogado;
+
+        const repositoresFiltrados = filtrarParaRepositor
+            ? repositores.filter(repo => String(repo.repo_cod) === String(repIdLogado))
+            : repositores;
+
+        const repositorOptions = repositoresFiltrados
             .map(repo => `<option value="${repo.repo_cod}">${repo.repo_cod} - ${repo.repo_nome}</option>`)
             .join('');
 
@@ -5541,6 +5626,10 @@ export const pages = {
         const umMesAtras = new Date();
         umMesAtras.setMonth(umMesAtras.getMonth() - 1);
         const dataInicio = umMesAtras.toISOString().split('T')[0];
+
+        // Se é PWA com repositor filtrado, pré-selecionar e desabilitar
+        const selectDisabled = filtrarParaRepositor ? 'disabled' : '';
+        const defaultOption = filtrarParaRepositor ? '' : '<option value="">Todos</option>';
 
         return `
             <div class="card">
@@ -5554,8 +5643,8 @@ export const pages = {
                     <div class="performance-filters" style="margin-bottom: 18px; background:#f9fafb; padding:14px 16px; border:1px solid #e5e7eb; border-radius:12px; display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:10px; align-items:end;">
                         <div class="filter-group">
                             <label for="perfRepositor">Repositor</label>
-                            <select id="perfRepositor">
-                                <option value="">Todos</option>
+                            <select id="perfRepositor" ${selectDisabled}>
+                                ${defaultOption}
                                 ${repositorOptions}
                             </select>
                         </div>
