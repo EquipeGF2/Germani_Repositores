@@ -36,6 +36,10 @@
                 <h1>Sistema de Repositores</h1>
                 <h2>Germani Alimentos</h2>
 
+                <div id="loginServerStatusPWA" class="login-server-status connecting">
+                    <span class="login-status-dot"></span> Conectando ao servidor...
+                </div>
+
                 <form id="loginForm" class="login-form">
                     <div class="form-group">
                         <label for="loginUsername">Usuário</label>
@@ -327,12 +331,12 @@
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
     <!-- Scripts -->
-    <script src="js/auth.js?v=20260226_01"></script>
-    <script src="js/offline-db.js?v=20260226_01"></script>
-    <script src="js/sync-service.js?v=20260226_01"></script>
-    <script src="js/pwa-app.js?v=20260226_01"></script>
-    <script type="module" src="js/db.js?v=20260226_01"></script>
-    <script type="module" src="js/app.js?v=20260226_01"></script>
+    <script src="js/auth.js?v=20260227_01"></script>
+    <script src="js/offline-db.js?v=20260227_01"></script>
+    <script src="js/sync-service.js?v=20260227_01"></script>
+    <script src="js/pwa-app.js?v=20260227_01"></script>
+    <script type="module" src="js/db.js?v=20260227_01"></script>
+    <script type="module" src="js/app.js?v=20260227_01"></script>
 
     <!-- Handler do formulário de login -->
     <script>
@@ -353,8 +357,21 @@
                     try {
                         // Mostrar loading
                         submitBtn.disabled = true;
-                        submitBtn.textContent = 'Entrando...';
                         errorDiv.classList.add('hidden');
+
+                        // Se servidor ainda não respondeu, aguardar pre-warm
+                        if (!authManager.servidorPronto) {
+                            submitBtn.textContent = 'Aguardando servidor...';
+                            authManager.atualizarStatusServidorPWA('connecting');
+                            const pronto = await authManager.preWarmServer();
+                            if (!pronto) {
+                                authManager.atualizarStatusServidorPWA('error');
+                                throw new Error('Servidor indisponível. Tente novamente em alguns instantes.');
+                            }
+                            authManager.atualizarStatusServidorPWA('ready');
+                        }
+
+                        submitBtn.textContent = 'Entrando...';
 
                         // Fazer login
                         await authManager.login(username, password);
