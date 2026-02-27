@@ -40,6 +40,16 @@ class TursoDatabase {
     }
 
     /**
+     * Garante que o mainClient está conectado antes de executar qualquer operação.
+     * Chame este método no início de qualquer método que use this.mainClient.
+     */
+    async ensureConnected() {
+        if (!this.mainClient) {
+            await this.connect();
+        }
+    }
+
+    /**
      * Conecta ao banco comercial (APENAS LEITURA)
      *
      * IMPORTANTE: Este banco NÃO deve ser modificado por esta aplicação.
@@ -128,6 +138,7 @@ class TursoDatabase {
     // Registrar mudança no histórico
     async registrarHistorico(repoCod, campo, valorAnterior, valorNovo) {
         try {
+            await this.connect();
             await this.mainClient.execute({
                 sql: 'INSERT INTO hist_repositor (hist_repo_cod, hist_campo_alterado, hist_valor_anterior, hist_valor_novo) VALUES (?, ?, ?, ?)',
                 args: [repoCod, campo, valorAnterior || '', valorNovo || '']
@@ -142,6 +153,7 @@ class TursoDatabase {
     // Buscar histórico de um repositor
     async getHistoricoRepositor(repoCod) {
         try {
+            await this.connect();
             const result = await this.mainClient.execute({
                 sql: 'SELECT * FROM hist_repositor WHERE hist_repo_cod = ? ORDER BY hist_data_alteracao DESC',
                 args: [repoCod]
@@ -156,6 +168,7 @@ class TursoDatabase {
     // Buscar todos os motivos de alteração
     async getMotivosAlteracao() {
         try {
+            await this.ensureConnected();
             const result = await this.mainClient.execute('SELECT * FROM cad_mot_alteracoes ORDER BY mot_descricao');
             return result.rows;
         } catch (error) {
@@ -263,6 +276,7 @@ class TursoDatabase {
 
     // ==================== REPOSITOR ====================
     async nomeRepositorJaExiste(nome, ignorarCod = null) {
+        await this.ensureConnected();
         const nomeNormalizado = normalizarTextoCadastro(nome);
 
         const resultado = await this.mainClient.execute({
@@ -280,6 +294,7 @@ class TursoDatabase {
 
     async createRepositor(nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo = 'repositor', repSupervisor = null, diasTrabalhados = 'seg,ter,qua,qui,sex', repJornadaTipo = 'INTEGRAL', telefone = null, email = null, controleDiaSemana = 1) {
         try {
+            await this.ensureConnected();
             const nomeNormalizado = normalizarTextoCadastro(nome);
             const cidadeNormalizada = normalizarTextoCadastro(cidadeRef);
             const jornadaNormalizada = repJornadaTipo || 'INTEGRAL';
@@ -332,6 +347,7 @@ class TursoDatabase {
 
     async getAllRepositors() {
         try {
+            await this.ensureConnected();
             const result = await withTimeout(
                 this.mainClient.execute('SELECT * FROM cad_repositor ORDER BY repo_nome'),
                 this.queryTimeout,
@@ -347,6 +363,7 @@ class TursoDatabase {
 
     async getCidadesReferencia() {
         try {
+            await this.ensureConnected();
             const result = await this.mainClient.execute(`
                 SELECT DISTINCT repo_cidade_ref
                 FROM cad_repositor
@@ -362,6 +379,7 @@ class TursoDatabase {
 
     async getRepositor(cod) {
         try {
+            await this.ensureConnected();
             const result = await this.mainClient.execute({
                 sql: 'SELECT * FROM cad_repositor WHERE repo_cod = ?',
                 args: [cod]
@@ -374,6 +392,7 @@ class TursoDatabase {
     }
 
     async atualizarCodigoRepresentanteSeFaltante(repoCod, codigo) {
+        await this.ensureConnected();
         if (!repoCod || !codigo) return;
 
         try {
@@ -392,6 +411,7 @@ class TursoDatabase {
 
     async updateRepositor(cod, nome, dataInicio, dataFim, cidadeRef, repCodigo, repNome, vinculo = 'repositor', repSupervisor = null, diasTrabalhados = 'seg,ter,qua,qui,sex', repJornadaTipo = 'INTEGRAL', telefone = null, email = null, controleDiaSemana = 1) {
         try {
+            await this.ensureConnected();
             // Buscar dados antigos para comparação
             const dadosAntigos = await this.getRepositor(cod);
 
@@ -480,6 +500,7 @@ class TursoDatabase {
 
     async deleteRepositor(cod) {
         try {
+            await this.ensureConnected();
             await this.mainClient.execute({
                 sql: 'DELETE FROM cad_repositor WHERE repo_cod = ?',
                 args: [cod]
@@ -545,6 +566,7 @@ class TursoDatabase {
 
     async getCidadesRoteiroDistintas() {
         try {
+            await this.ensureConnected();
             const resultado = await this.mainClient.execute(`
                 SELECT DISTINCT rot_cidade
                 FROM rot_roteiro_cidade
@@ -682,6 +704,7 @@ class TursoDatabase {
     // Buscar cidades do roteiro (banco principal)
     async getCidadesDoRoteiro() {
         try {
+            await this.ensureConnected();
             const resultado = await this.mainClient.execute(`
                 SELECT DISTINCT rot_cidade as cidade
                 FROM rot_roteiro_cidade
@@ -699,6 +722,7 @@ class TursoDatabase {
     // Buscar clientes do roteiro (banco principal + comercial para nomes)
     async getClientesDoRoteiro() {
         try {
+            await this.ensureConnected();
             const resultado = await this.mainClient.execute(`
                 SELECT DISTINCT
                     cli.rot_cliente_codigo as cliente,
@@ -1089,6 +1113,7 @@ class TursoDatabase {
 
     async getRoteiroCidadePorId(rotCidId) {
         try {
+            await this.ensureConnected();
             const resultado = await this.mainClient.execute({
                 sql: 'SELECT * FROM rot_roteiro_cidade WHERE rot_cid_id = ?',
                 args: [rotCidId]
@@ -1101,6 +1126,7 @@ class TursoDatabase {
     }
 
     async registrarAuditoriaRoteiro({ usuario = '', repositorId, diaSemana = null, cidade = null, clienteCodigo = null, acao, detalhes = '' }) {
+        await this.ensureConnected();
         if (!repositorId || !acao) return;
 
         try {
@@ -1119,6 +1145,7 @@ class TursoDatabase {
     }
 
     async getRoteiroCidades(repositorId, diaSemana) {
+        await this.ensureConnected();
         if (!repositorId || !diaSemana) {
             console.warn('[DB] getRoteiroCidades: repositorId ou diaSemana não fornecido');
             return [];
@@ -1147,6 +1174,7 @@ class TursoDatabase {
 
     async adicionarCidadeRoteiro(repositorId, diaSemana, cidade, usuario = '', ordemCidade = null) {
         try {
+            await this.ensureConnected();
             const ordemValida = ordemCidade ? Math.max(1, Math.floor(Number(ordemCidade))) : null;
             if (!ordemValida) {
                 throw new Error('Informe uma ordem válida para a cidade.');
@@ -1183,6 +1211,7 @@ class TursoDatabase {
 
     async atualizarOrdemCidade(rotCidId, ordem, usuario = '') {
         try {
+            await this.ensureConnected();
             const cidadeAnterior = await this.getRoteiroCidadePorId(rotCidId);
 
             await this.mainClient.execute({
@@ -1211,6 +1240,7 @@ class TursoDatabase {
 
     async atualizarOrdemVisita(rotCliId, ordem, usuario = '') {
         try {
+            await this.ensureConnected();
             const detalhes = await this.mainClient.execute({
                 sql: `
                     SELECT cli.rot_cliente_codigo, cid.rot_repositor_id, cid.rot_dia_semana, cid.rot_cidade, cid.rot_cid_id, cli.rot_ordem_visita
@@ -1277,6 +1307,7 @@ class TursoDatabase {
 
     async removerCidadeRoteiro(rotCidId, usuario = '') {
         try {
+            await this.ensureConnected();
             const cidade = await this.getRoteiroCidadePorId(rotCidId);
             let totalClientes = 0;
 
@@ -1318,6 +1349,7 @@ class TursoDatabase {
 
     async getRoteiroClientes(rotCidId) {
         try {
+            await this.ensureConnected();
             const result = await this.mainClient.execute({
                 sql: `
                     SELECT
@@ -1347,6 +1379,7 @@ class TursoDatabase {
     }
 
     async obterResumoOrdemCidade(rotCidId) {
+        await this.ensureConnected();
         if (!rotCidId) return { ultimaOrdem: 0, sugestao: 1, possuiHistorico: false };
 
         try {
@@ -1541,6 +1574,7 @@ class TursoDatabase {
     }
 
     async getUltimaAtualizacaoRoteiro(repositorId) {
+        await this.ensureConnected();
         if (!repositorId) return null;
 
         try {
@@ -1623,6 +1657,7 @@ class TursoDatabase {
 
     async removerClienteRoteiro(rotCidId, clienteCodigo, usuario = '') {
         try {
+            await this.ensureConnected();
             const cidade = await this.getRoteiroCidadePorId(rotCidId);
 
             // Verificar se o cliente tem rateio ativo para este repositor
@@ -1724,6 +1759,7 @@ class TursoDatabase {
     }
 
     async verificarClienteVinculadoARoteiro(clienteCodigo) {
+        await this.ensureConnected();
         if (!clienteCodigo) return false;
 
         try {
@@ -1740,6 +1776,7 @@ class TursoDatabase {
     }
 
     async possuiRateioClienteRepositor(clienteCodigo, repositorId) {
+        await this.ensureConnected();
         if (!clienteCodigo || !repositorId) return false;
 
         try {
@@ -1761,6 +1798,7 @@ class TursoDatabase {
     }
 
     async garantirRateioClienteRepositor(clienteCodigo, repositorId, usuario = '') {
+        await this.ensureConnected();
         if (!clienteCodigo || !repositorId) return;
 
         try {
@@ -1801,6 +1839,7 @@ class TursoDatabase {
     }
 
     async removerRateioClienteRepositor(clienteCodigo, repositorId, usuario = '') {
+        await this.ensureConnected();
         if (!clienteCodigo || !repositorId) return;
 
         try {
@@ -1908,6 +1947,7 @@ class TursoDatabase {
     }
 
     async atualizarVendaCentralizada(rotCliId, ativo, usuario = '') {
+        await this.ensureConnected();
         if (!rotCliId) throw new Error('Cliente não informado para atualizar venda centralizada.');
 
         try {
@@ -1952,6 +1992,7 @@ class TursoDatabase {
 
     // ==================== RATEIO ====================
     async listarRateioPorCliente(clienteCodigo) {
+        await this.ensureConnected();
         if (!clienteCodigo) return [];
 
         try {
@@ -1974,6 +2015,7 @@ class TursoDatabase {
 
     async listarTodosClientesComRateio() {
         try {
+            await this.ensureConnected();
             const resultado = await this.mainClient.execute({
                 sql: `
                     SELECT
@@ -2367,6 +2409,7 @@ class TursoDatabase {
     }
 
     async calcularTotalRateioClientes(clienteCodigos = []) {
+        await this.ensureConnected();
         if (!clienteCodigos.length) return {};
 
         const placeholders = clienteCodigos.map(() => '?').join(',');
@@ -2411,6 +2454,7 @@ class TursoDatabase {
     }
 
     async salvarRateioCliente(clienteCodigo, linhas = [], usuario = '') {
+        await this.ensureConnected();
         if (!clienteCodigo) throw new Error('Cliente não informado para salvar o rateio.');
         if (!linhas || linhas.length === 0) throw new Error('Inclua pelo menos um repositor no rateio.');
 
@@ -2665,6 +2709,7 @@ class TursoDatabase {
 
     async getClientesDoRepositor(repId) {
         try {
+            await this.ensureConnected();
             const result = await this.mainClient.execute({
                 sql: `
                     SELECT DISTINCT rc.rot_cliente_codigo, rci.rot_cidade as cidade,
@@ -2685,6 +2730,7 @@ class TursoDatabase {
 
     async getRepositorInfo(repId) {
         try {
+            await this.ensureConnected();
             const result = await this.mainClient.execute({
                 sql: `SELECT repo_cod, repo_nome, repo_data_inicio, repo_data_fim FROM cad_repositor WHERE repo_cod = ? LIMIT 1`,
                 args: [repId]
@@ -2698,6 +2744,7 @@ class TursoDatabase {
 
     async getRateiosDoRepositor(repId) {
         try {
+            await this.ensureConnected();
             const result = await this.mainClient.execute({
                 sql: `
                     SELECT rat_cliente_codigo, rat_repositor_id, rat_percentual,
@@ -2716,6 +2763,7 @@ class TursoDatabase {
 
     async getAuditoriaRepositor(repId, dataInicio) {
         try {
+            await this.ensureConnected();
             const result = await this.mainClient.execute({
                 sql: `
                     SELECT rot_aud_data_hora, rot_aud_repositor_id, rot_aud_cidade,
@@ -2735,6 +2783,7 @@ class TursoDatabase {
     }
 
     async getVendasCentralizadas(codigosClientes) {
+        await this.ensureConnected();
         if (!codigosClientes?.length) return [];
         try {
             const placeholders = codigosClientes.map(() => '?').join(',');
@@ -2754,6 +2803,7 @@ class TursoDatabase {
     }
 
     async getCustosRepositorPorMes(repId, periodoInicio, periodoFim) {
+        await this.ensureConnected();
         // periodoInicio/periodoFim no formato 'YYYY-MM'
         const custosMap = {}; // chave: 'MM_YY' → valor total do custo
         try {
@@ -2806,6 +2856,7 @@ class TursoDatabase {
 
     async salvarHistoricoPerformance(repId, competencia, faturamento, pesoLiq, custo) {
         try {
+            await this.ensureConnected();
             await this.mainClient.execute({
                 sql: `INSERT INTO cc_performance_historico (ph_rep_id, ph_competencia, ph_total_faturamento, ph_total_peso_liq, ph_total_custo)
                       VALUES (?, ?, ?, ?, ?)
@@ -2823,6 +2874,7 @@ class TursoDatabase {
 
     async getHistoricoPerformance(repId, periodoInicio, periodoFim) {
         try {
+            await this.ensureConnected();
             const result = await this.mainClient.execute({
                 sql: `SELECT ph_rep_id, ph_competencia, ph_total_faturamento, ph_total_peso_liq, ph_total_custo
                       FROM cc_performance_historico
@@ -2838,6 +2890,7 @@ class TursoDatabase {
     }
 
     async getHistoricoPerformanceMultiplos(repIds, periodoInicio, periodoFim) {
+        await this.ensureConnected();
         if (!repIds.length) return [];
         try {
             const placeholders = repIds.map(() => '?').join(',');
@@ -3027,6 +3080,7 @@ class TursoDatabase {
 
     async getRepositoresPorClientesOuGrupos(clientesCodigos = [], gruposDesc = []) {
         try {
+            await this.ensureConnected();
             // Se não há filtros, retornar todos os repositores ativos
             if (clientesCodigos.length === 0 && gruposDesc.length === 0) {
                 return await this.getRepositoresDetalhados({ status: 'ativos' });
@@ -3087,6 +3141,7 @@ class TursoDatabase {
 
     async getRepositoresPorClientesOuCidades(clientesCodigos = [], cidadesNomes = []) {
         try {
+            await this.ensureConnected();
             // Se não há filtros, retornar todos os repositores ativos
             if (clientesCodigos.length === 0 && cidadesNomes.length === 0) {
                 return await this.getRepositoresDetalhados({ status: 'ativos' });
@@ -3878,6 +3933,7 @@ class TursoDatabase {
 
     async carregarRoteiroRepositorDia(repositorId, diaSemana) {
         try {
+            await this.ensureConnected();
             // 1. Buscar roteiro do repositor no banco principal
             const resultado = await this.mainClient.execute({
                 sql: `
@@ -3975,6 +4031,7 @@ class TursoDatabase {
 
     async getPesquisaPorId(pesId) {
         try {
+            await this.ensureConnected();
             const result = await this.mainClient.execute({
                 sql: `SELECT * FROM cc_pesquisas WHERE pes_id = ?`,
                 args: [pesId]
@@ -4033,6 +4090,7 @@ class TursoDatabase {
 
     async criarPesquisa(dados) {
         try {
+            await this.ensureConnected();
             const { titulo, descricao, obrigatorio, fotoObrigatoria, dataInicio, dataFim, campos, repositores, grupos, clientes, cidades } = dados;
 
             // Criar pesquisa
@@ -4109,6 +4167,7 @@ class TursoDatabase {
 
     async atualizarPesquisa(pesId, dados) {
         try {
+            await this.ensureConnected();
             const { titulo, descricao, obrigatorio, fotoObrigatoria, dataInicio, dataFim, ativa, campos, repositores, grupos, clientes, cidades } = dados;
 
             await this.mainClient.execute({
@@ -4209,6 +4268,7 @@ class TursoDatabase {
 
     async excluirPesquisa(pesId) {
         try {
+            await this.ensureConnected();
             // Campos e repositores são deletados em cascata
             await this.mainClient.execute({
                 sql: `DELETE FROM cc_pesquisas WHERE pes_id = ?`,
@@ -4223,6 +4283,7 @@ class TursoDatabase {
 
     async getPesquisasPendentesRepositor(repId, clienteCodigo = null) {
         try {
+            await this.ensureConnected();
             const hoje = new Date().toISOString().split('T')[0];
 
             // Se um cliente for fornecido, buscar seu grupo e cidade
@@ -4377,6 +4438,7 @@ class TursoDatabase {
 
     async salvarRespostaPesquisa(dados) {
         try {
+            await this.ensureConnected();
             const { pesId, repId, clienteCodigo, visitaId, respostas, fotoUrl } = dados;
             // Usar data local (não UTC) para evitar problemas de timezone
             const agora = new Date();
@@ -4537,6 +4599,7 @@ class TursoDatabase {
 
     async verificarPesquisaRespondida(pesId, repId, clienteCodigo, data) {
         try {
+            await this.ensureConnected();
             const result = await this.mainClient.execute({
                 sql: `
                     SELECT COUNT(*) as total
@@ -4559,6 +4622,7 @@ class TursoDatabase {
      */
     async getPesquisasRespondidas(repId, clienteCodigo, data) {
         try {
+            await this.ensureConnected();
             // Normalizar cliente: remover .0 do final e garantir string
             const clienteNorm = clienteCodigo ? String(clienteCodigo).trim().replace(/\.0$/, '') : null;
 
@@ -4583,6 +4647,7 @@ class TursoDatabase {
 
     async getDrivePastaRepositor(repId) {
         try {
+            await this.ensureConnected();
             const result = await this.mainClient.execute({
                 sql: `SELECT * FROM cc_repositor_drive WHERE rpd_repositor_id = ?`,
                 args: [repId]
