@@ -182,6 +182,20 @@ router.post('/sessao', async (req, res) => {
     const repId = req.user.rep_id;
     const sessao = req.body;
 
+    if (!repId) {
+      return res.status(400).json({
+        ok: false,
+        message: 'Usuário não vinculado a um repositor'
+      });
+    }
+
+    if (!sessao.cliente_id) {
+      return res.status(400).json({
+        ok: false,
+        message: 'cliente_id é obrigatório'
+      });
+    }
+
     console.log(`[Sync] Recebendo sessão de rep_id ${repId}:`, {
       cliente: sessao.cliente_id,
       checkin: sessao.checkin_at,
@@ -200,16 +214,16 @@ router.post('/sessao', async (req, res) => {
     const resultado = await tursoService.criarOuAtualizarSessaoVisita({
       rep_id: repId,
       cliente_id: sessao.cliente_id,
-      checkin_at: sessao.checkin_at, // Timestamp do dispositivo
-      checkin_lat: sessao.checkin_lat,
-      checkin_lng: sessao.checkin_lng,
-      checkout_at: sessao.checkout_at, // Timestamp do dispositivo
-      checkout_lat: sessao.checkout_lat,
-      checkout_lng: sessao.checkout_lng,
+      cliente_nome: sessao.cliente_nome || null,
+      endereco_cliente: sessao.endereco_cliente || null,
+      endereco_checkin: sessao.endereco_checkin || null,
+      endereco_checkout: sessao.endereco_checkout || null,
+      checkin_at: sessao.checkin_at,
+      checkout_at: sessao.checkout_at,
       data_planejada: sessao.data_planejada,
       observacoes: sessao.observacoes,
       origem: 'pwa_offline',
-      localId: sessao.localId // Para rastreabilidade
+      localId: sessao.localId
     });
 
     return res.json({
@@ -235,13 +249,25 @@ router.post('/registro', async (req, res) => {
     const repId = req.user.rep_id;
     const registro = req.body;
 
+    if (!repId) {
+      return res.status(400).json({ ok: false, message: 'Usuário não vinculado a um repositor' });
+    }
+
+    if (!registro.cliente_id) {
+      return res.status(400).json({ ok: false, message: 'cliente_id é obrigatório' });
+    }
+
+    if (!registro.tipo) {
+      return res.status(400).json({ ok: false, message: 'tipo é obrigatório' });
+    }
+
     const resultado = await tursoService.criarRegistroVisita({
       rep_id: repId,
       cliente_id: registro.cliente_id,
       sessao_id: registro.sessao_id,
       tipo: registro.tipo,
       descricao: registro.descricao,
-      data_hora: registro.data_hora, // Timestamp do dispositivo
+      data_hora: registro.data_hora || new Date().toISOString(),
       latitude: registro.latitude,
       longitude: registro.longitude,
       origem: 'pwa_offline'
@@ -270,13 +296,25 @@ router.post('/foto', async (req, res) => {
     const repId = req.user.rep_id;
     const foto = req.body;
 
+    if (!repId) {
+      return res.status(400).json({ ok: false, message: 'Usuário não vinculado a um repositor' });
+    }
+
+    if (!foto.cliente_id) {
+      return res.status(400).json({ ok: false, message: 'cliente_id é obrigatório' });
+    }
+
+    if (!foto.base64) {
+      return res.status(400).json({ ok: false, message: 'base64 da foto é obrigatório' });
+    }
+
     const resultado = await tursoService.salvarFoto({
       rep_id: repId,
       sessao_id: foto.sessao_id,
       cliente_id: foto.cliente_id,
       tipo: foto.tipo,
       base64: foto.base64,
-      data_hora: foto.data_hora, // Timestamp do dispositivo
+      data_hora: foto.data_hora || new Date().toISOString(),
       latitude: foto.latitude,
       longitude: foto.longitude,
       origem: 'pwa_offline'
@@ -305,13 +343,25 @@ router.post('/rotas', async (req, res) => {
     const repId = req.user.rep_id;
     const { rotas } = req.body;
 
+    if (!repId) {
+      return res.status(400).json({ ok: false, message: 'Usuário não vinculado a um repositor' });
+    }
+
+    if (!Array.isArray(rotas) || rotas.length === 0) {
+      return res.status(400).json({ ok: false, message: 'Array de rotas é obrigatório e não pode ser vazio' });
+    }
+
     let salvos = 0;
     for (const rota of rotas) {
+      if (!rota.latitude || !rota.longitude) {
+        console.warn('[Sync] Rota sem coordenadas, ignorando:', rota);
+        continue;
+      }
       await tursoService.salvarRegistroRota({
         rep_id: repId,
         latitude: rota.latitude,
         longitude: rota.longitude,
-        data_hora: rota.data_hora, // Timestamp do dispositivo
+        data_hora: rota.data_hora || new Date().toISOString(),
         precisao: rota.precisao,
         origem: 'pwa_offline'
       });

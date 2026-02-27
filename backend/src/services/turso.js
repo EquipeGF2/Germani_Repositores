@@ -3112,6 +3112,11 @@ class TursoService {
    */
   async criarOuAtualizarSessaoVisita(dados) {
     try {
+      // Garantir colunas extras existam
+      await this.execute(`ALTER TABLE cc_visita_sessao ADD COLUMN local_id TEXT`, []).catch(() => {});
+      await this.execute(`ALTER TABLE cc_visita_sessao ADD COLUMN origem TEXT DEFAULT 'web'`, []).catch(() => {});
+      await this.execute(`ALTER TABLE cc_visita_sessao ADD COLUMN observacoes TEXT`, []).catch(() => {});
+
       // Verificar se já existe sessão com esse localId
       if (dados.localId) {
         const existing = await this.execute(
@@ -3123,54 +3128,94 @@ class TursoService {
           await this.execute(`
             UPDATE cc_visita_sessao SET
               checkout_at = COALESCE(?, checkout_at),
-              checkout_lat = COALESCE(?, checkout_lat),
-              checkout_lng = COALESCE(?, checkout_lng),
+              endereco_checkout = COALESCE(?, endereco_checkout),
               observacoes = COALESCE(?, observacoes),
-              atualizado_em = datetime('now')
+              status = CASE WHEN ? IS NOT NULL THEN 'FECHADA' ELSE status END
             WHERE local_id = ?
           `, [
             dados.checkout_at,
-            dados.checkout_lat,
-            dados.checkout_lng,
+            dados.endereco_checkout || null,
             dados.observacoes,
+            dados.checkout_at,
             dados.localId
           ]);
           return { sessao_id: existing.rows[0].sessao_id };
         }
       }
 
-      // Adicionar coluna local_id se não existir
-      await this.execute(`
-        ALTER TABLE cc_visita_sessao ADD COLUMN local_id TEXT
-      `, []).catch(() => {}); // Ignora se já existe
+      // Verificar se já existe sessão aberta para este repositor/cliente
+      const clienteIdNorm = normalizeClienteId(dados.cliente_id);
+      const sessaoAberta = await this.obterSessaoEmAndamento(dados.rep_id, clienteIdNorm);
+      if (sessaoAberta) {
+        // Se já tem sessão aberta e estamos recebendo checkout, atualizar
+        if (dados.checkout_at) {
+          const tempoMinutos = sessaoAberta.checkin_at
+            ? Math.round((new Date(dados.checkout_at).getTime() - new Date(sessaoAberta.checkin_at).getTime()) / 60000)
+            : null;
+          await this.execute(`
+            UPDATE cc_visita_sessao SET
+              checkout_at = ?,
+              endereco_checkout = COALESCE(?, endereco_checkout),
+              tempo_minutos = ?,
+              observacoes = COALESCE(?, observacoes),
+              status = 'FECHADA'
+            WHERE sessao_id = ?
+          `, [
+            dados.checkout_at,
+            dados.endereco_checkout || null,
+            tempoMinutos,
+            dados.observacoes,
+            sessaoAberta.sessao_id
+          ]);
+        }
+        return { sessao_id: sessaoAberta.sessao_id };
+      }
 
-      await this.execute(`
-        ALTER TABLE cc_visita_sessao ADD COLUMN origem TEXT DEFAULT 'web'
-      `, []).catch(() => {});
+      // Gerar sessao_id (TEXT PRIMARY KEY, NÃO é autoincrement)
+      const { randomUUID } = await import('node:crypto');
+      const sessaoId = dados.sessao_id || randomUUID();
 
-      // Criar nova sessão
-      const result = await this.execute(`
+      // Determinar data_planejada
+      const dataPlanejada = dados.data_planejada || (dados.checkin_at ? dados.checkin_at.split('T')[0] : new Date().toISOString().split('T')[0]);
+
+      // Criar nova sessão - usando colunas que existem no schema
+      await this.execute(`
         INSERT INTO cc_visita_sessao (
-          rep_id, cliente_id, checkin_at, checkin_lat, checkin_lng,
-          checkout_at, checkout_lat, checkout_lng, data_planejada,
-          observacoes, origem, local_id, criado_em
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+          sessao_id, rep_id, cliente_id, cliente_nome,
+          endereco_cliente, endereco_checkin,
+          data_planejada, checkin_at,
+          status, observacoes, origem, local_id, criado_em
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ABERTA', ?, ?, ?, datetime('now'))
       `, [
+        sessaoId,
         dados.rep_id,
-        dados.cliente_id,
+        clienteIdNorm,
+        dados.cliente_nome || null,
+        dados.endereco_cliente || null,
+        dados.endereco_checkin || null,
+        dataPlanejada,
         dados.checkin_at,
-        dados.checkin_lat,
-        dados.checkin_lng,
-        dados.checkout_at,
-        dados.checkout_lat,
-        dados.checkout_lng,
-        dados.data_planejada,
-        dados.observacoes,
+        dados.observacoes || null,
         dados.origem || 'pwa_offline',
-        dados.localId
+        dados.localId || null
       ]);
 
-      return { sessao_id: result.lastInsertRowid };
+      // Se já veio com checkout, atualizar imediatamente
+      if (dados.checkout_at) {
+        const tempoMinutos = dados.checkin_at
+          ? Math.round((new Date(dados.checkout_at).getTime() - new Date(dados.checkin_at).getTime()) / 60000)
+          : null;
+        await this.execute(`
+          UPDATE cc_visita_sessao SET
+            checkout_at = ?,
+            endereco_checkout = ?,
+            tempo_minutos = ?,
+            status = 'FECHADA'
+          WHERE sessao_id = ?
+        `, [dados.checkout_at, dados.endereco_checkout || null, tempoMinutos, sessaoId]);
+      }
+
+      return { sessao_id: sessaoId };
     } catch (error) {
       console.error('[TursoService] Erro ao criar sessão:', error);
       throw error;
@@ -3309,7 +3354,7 @@ class TursoService {
       await this.criarTabelaForcaSync();
 
       // Buscar todos os repositores
-      const result = await this.execute('SELECT repo_cod FROM cadRepositor WHERE repo_ativo = 1', []);
+      const result = await this.execute('SELECT repo_cod FROM cad_repositor', []);
       const repositores = result?.rows || result || [];
 
       for (const repo of repositores) {
@@ -4248,6 +4293,195 @@ class TursoService {
       console.warn('cc_custos_repositor_mensal não disponível:', e.message);
     }
     return custosMap;
+  }
+
+  // ==================== MÉTODOS SYNC PWA ====================
+
+  /**
+   * Listar tipos de documento (para sync PWA)
+   */
+  async listarTiposDocumento() {
+    try {
+      const result = await this.execute(
+        'SELECT dct_id, dct_codigo, dct_nome, dct_ativo, dct_ordem FROM cc_documento_tipos WHERE dct_ativo = 1 ORDER BY dct_ordem, dct_nome',
+        []
+      );
+      return result?.rows || [];
+    } catch (error) {
+      console.error('[TursoService] Erro ao listar tipos de documento:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Listar tipos de gasto/rubrica (para sync PWA)
+   */
+  async listarTiposGasto() {
+    try {
+      // Garantir que a tabela existe
+      await this.execute(`
+        CREATE TABLE IF NOT EXISTS cc_gasto_tipos (
+          gst_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          gst_codigo TEXT NOT NULL,
+          gst_nome TEXT NOT NULL,
+          gst_ativo INTEGER NOT NULL DEFAULT 1,
+          gst_ordem INTEGER NOT NULL DEFAULT 0,
+          gst_criado_em TEXT NOT NULL DEFAULT (datetime('now')),
+          gst_atualizado_em TEXT
+        )
+      `, []).catch(() => {});
+
+      const result = await this.execute(
+        'SELECT gst_id, gst_codigo, gst_nome, gst_ativo, gst_ordem FROM cc_gasto_tipos WHERE gst_ativo = 1 ORDER BY gst_ordem, gst_nome',
+        []
+      );
+      return result?.rows || [];
+    } catch (error) {
+      console.error('[TursoService] Erro ao listar tipos de gasto:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Criar registro de visita (para sync PWA offline)
+   */
+  async criarRegistroVisita({ rep_id, cliente_id, sessao_id, tipo, descricao, data_hora, latitude, longitude, origem }) {
+    try {
+      // Garantir que a tabela existe
+      await this.execute(`
+        CREATE TABLE IF NOT EXISTS cc_registro_visita (
+          rv_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          rep_id INTEGER NOT NULL,
+          cliente_id TEXT NOT NULL,
+          rv_sessao_id TEXT,
+          sessao_id TEXT,
+          rv_tipo TEXT NOT NULL DEFAULT 'checkin',
+          rv_descricao TEXT,
+          data_hora TEXT NOT NULL,
+          rv_data_planejada TEXT,
+          latitude REAL,
+          longitude REAL,
+          origem TEXT DEFAULT 'web',
+          criado_em TEXT DEFAULT (datetime('now'))
+        )
+      `, []).catch(() => {});
+
+      const clienteIdNorm = normalizeClienteId(cliente_id);
+      const dataHora = data_hora || new Date().toISOString();
+
+      const result = await this.execute(`
+        INSERT INTO cc_registro_visita (
+          rep_id, cliente_id, rv_sessao_id, sessao_id, rv_tipo, rv_descricao,
+          data_hora, latitude, longitude, origem, criado_em
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      `, [
+        rep_id,
+        clienteIdNorm,
+        sessao_id || null,
+        sessao_id || null,
+        tipo || 'checkin',
+        descricao || null,
+        dataHora,
+        latitude || null,
+        longitude || null,
+        origem || 'pwa_offline'
+      ]);
+
+      return { registro_id: result?.lastInsertRowid?.toString() || null };
+    } catch (error) {
+      console.error('[TursoService] Erro ao criar registro de visita:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Salvar foto de visita (para sync PWA offline)
+   */
+  async salvarFoto({ rep_id, sessao_id, cliente_id, tipo, base64, data_hora, latitude, longitude, origem }) {
+    try {
+      // Garantir que a tabela de fotos existe
+      await this.execute(`
+        CREATE TABLE IF NOT EXISTS cc_visita_fotos (
+          foto_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          rep_id INTEGER NOT NULL,
+          sessao_id TEXT,
+          cliente_id TEXT,
+          tipo TEXT DEFAULT 'campanha',
+          foto_base64 TEXT,
+          data_hora TEXT,
+          latitude REAL,
+          longitude REAL,
+          origem TEXT DEFAULT 'pwa_offline',
+          criado_em TEXT DEFAULT (datetime('now'))
+        )
+      `, []).catch(() => {});
+
+      const clienteIdNorm = normalizeClienteId(cliente_id);
+      const dataHora = data_hora || new Date().toISOString();
+
+      const result = await this.execute(`
+        INSERT INTO cc_visita_fotos (
+          rep_id, sessao_id, cliente_id, tipo, foto_base64,
+          data_hora, latitude, longitude, origem, criado_em
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      `, [
+        rep_id,
+        sessao_id || null,
+        clienteIdNorm,
+        tipo || 'campanha',
+        base64 || null,
+        dataHora,
+        latitude || null,
+        longitude || null,
+        origem || 'pwa_offline'
+      ]);
+
+      return { foto_id: result?.lastInsertRowid?.toString() || null };
+    } catch (error) {
+      console.error('[TursoService] Erro ao salvar foto:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Salvar registro de rota/GPS (para sync PWA offline)
+   */
+  async salvarRegistroRota({ rep_id, latitude, longitude, data_hora, precisao, origem }) {
+    try {
+      // Garantir que a tabela de rotas existe
+      await this.execute(`
+        CREATE TABLE IF NOT EXISTS cc_registro_rota (
+          rota_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          rep_id INTEGER NOT NULL,
+          latitude REAL NOT NULL,
+          longitude REAL NOT NULL,
+          data_hora TEXT NOT NULL,
+          precisao REAL,
+          origem TEXT DEFAULT 'pwa_offline',
+          criado_em TEXT DEFAULT (datetime('now'))
+        )
+      `, []).catch(() => {});
+
+      const dataHora = data_hora || new Date().toISOString();
+
+      const result = await this.execute(`
+        INSERT INTO cc_registro_rota (
+          rep_id, latitude, longitude, data_hora, precisao, origem, criado_em
+        ) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+      `, [
+        rep_id,
+        latitude,
+        longitude,
+        dataHora,
+        precisao || null,
+        origem || 'pwa_offline'
+      ]);
+
+      return { rota_id: result?.lastInsertRowid?.toString() || null };
+    } catch (error) {
+      console.error('[TursoService] Erro ao salvar registro de rota:', error);
+      throw error;
+    }
   }
 }
 
