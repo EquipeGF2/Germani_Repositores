@@ -394,6 +394,52 @@ class AuthManager {
     if (loginScreen) loginScreen.classList.remove('hidden');
     if (appScreen) appScreen.classList.add('hidden');
     if (pwaScreen) pwaScreen.classList.add('hidden');
+
+    // Pre-warm do servidor em background enquanto o usuário digita
+    this.atualizarStatusServidorPWA('connecting');
+    this.preWarmServer().then(pronto => {
+      this.atualizarStatusServidorPWA(pronto ? 'ready' : 'error');
+    });
+  }
+
+  /**
+   * Atualizar indicador de status do servidor na tela de login PWA
+   */
+  atualizarStatusServidorPWA(status) {
+    const statusEl = document.getElementById('loginServerStatusPWA');
+    if (!statusEl) return;
+
+    statusEl.style.opacity = '1';
+
+    switch (status) {
+      case 'connecting':
+        statusEl.className = 'login-server-status connecting';
+        statusEl.innerHTML = '<span class="login-status-dot"></span> Conectando ao servidor...';
+        break;
+      case 'ready':
+        statusEl.className = 'login-server-status ready';
+        statusEl.innerHTML = '<span class="login-status-dot"></span> Servidor conectado';
+        setTimeout(() => {
+          if (statusEl.classList.contains('ready')) {
+            statusEl.style.opacity = '0';
+          }
+        }, 3000);
+        break;
+      case 'error':
+        statusEl.className = 'login-server-status error';
+        statusEl.innerHTML = '<span class="login-status-dot"></span> Servidor indisponível - tente novamente';
+        // Permitir re-tentar pre-warm ao clicar no status
+        statusEl.style.cursor = 'pointer';
+        statusEl.onclick = () => {
+          statusEl.onclick = null;
+          statusEl.style.cursor = '';
+          this.atualizarStatusServidorPWA('connecting');
+          this.preWarmServer().then(pronto => {
+            this.atualizarStatusServidorPWA(pronto ? 'ready' : 'error');
+          });
+        };
+        break;
+    }
   }
 
   /**
@@ -408,33 +454,40 @@ class AuthManager {
       const inicio = performance.now();
       console.log('[AUTH] Pre-warm: acordando servidor...');
 
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 120000); // 2min timeout
+      // Tentar até 2 vezes com timeout de 60s cada
+      for (let tentativa = 0; tentativa < 2; tentativa++) {
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
 
-        const response = await fetch(`${this.apiBaseUrl}/api/health`, {
-          signal: controller.signal
-        });
-        clearTimeout(timeout);
+          const response = await fetch(`${this.apiBaseUrl}/api/health`, {
+            signal: controller.signal
+          });
+          clearTimeout(timeout);
 
-        const duracao = ((performance.now() - inicio) / 1000).toFixed(1);
+          const duracao = ((performance.now() - inicio) / 1000).toFixed(1);
 
-        if (response.ok) {
-          this.servidorPronto = true;
-          console.log(`[AUTH] Pre-warm: servidor pronto em ${duracao}s`);
-          return true;
+          if (response.ok) {
+            this.servidorPronto = true;
+            console.log(`[AUTH] Pre-warm: servidor pronto em ${duracao}s`);
+            return true;
+          }
+
+          console.warn(`[AUTH] Pre-warm: servidor respondeu com status ${response.status} em ${duracao}s`);
+          // Se não foi OK, tentar novamente
+        } catch (error) {
+          const duracao = ((performance.now() - inicio) / 1000).toFixed(1);
+          console.warn(`[AUTH] Pre-warm: tentativa ${tentativa + 1} falhou após ${duracao}s -`, error.message);
+          // Se foi a primeira tentativa, tentar novamente
         }
-
-        console.warn(`[AUTH] Pre-warm: servidor respondeu com status ${response.status} em ${duracao}s`);
-        return false;
-      } catch (error) {
-        const duracao = ((performance.now() - inicio) / 1000).toFixed(1);
-        console.warn(`[AUTH] Pre-warm: falha após ${duracao}s -`, error.message);
-        return false;
-      } finally {
-        this._preWarmPromise = null;
       }
-    })();
+
+      const duracao = ((performance.now() - inicio) / 1000).toFixed(1);
+      console.warn(`[AUTH] Pre-warm: servidor não respondeu após ${duracao}s`);
+      return false;
+    })().finally(() => {
+      this._preWarmPromise = null;
+    });
 
     return this._preWarmPromise;
   }

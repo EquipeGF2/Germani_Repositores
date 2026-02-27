@@ -4289,6 +4289,61 @@ body.modal-open {
     text-align: center;
 }
 
+/* Status do servidor na tela de login PWA */
+.login-server-status {
+    text-align: center;
+    padding: 8px 12px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: opacity 0.5s ease;
+}
+
+.login-server-status .login-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.login-server-status.connecting {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.login-server-status.connecting .login-status-dot {
+    background: #f59e0b;
+    animation: login-pulse-dot 1.5s infinite;
+}
+
+.login-server-status.ready {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.login-server-status.ready .login-status-dot {
+    background: #10b981;
+}
+
+.login-server-status.error {
+    background: #fef2f2;
+    color: #991b1b;
+}
+
+.login-server-status.error .login-status-dot {
+    background: #ef4444;
+}
+
+@keyframes login-pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+}
+
 /* Informações do Usuário na Sidebar */
 .user-info-sidebar {
     text-align: center;
