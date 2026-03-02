@@ -1,14 +1,14 @@
 /**
- * PWA App Controller - Reestruturado
+ * PWA App Controller - v3.0
  * Motor de navegação e renderização para o modo mobile PWA
- * Prioridade: OFFLINE-FIRST, telas cheias, zero popups
+ * Prioridade: INLINE-FIRST, zero popups, tabs sempre visíveis
  *
  * Princípios:
- * 1. Dados do IndexedDB primeiro (instantâneo)
+ * 1. Dados do IndexedDB primeiro, fallback para API
  * 2. Sync com servidor em background
- * 3. Operações salvas localmente, enviadas no checkout quando online
- * 4. Telas cheias ao invés de modals/popups
- * 5. Repositor logado = filtro automático, sem select
+ * 3. TUDO renderizado inline no pwaContent (sem modais/popups)
+ * 4. Bottom tabs SEMPRE visíveis
+ * 5. Repositor logado = filtro automático
  */
 (function() {
     'use strict';
@@ -82,6 +82,7 @@
         setupConnectivity();
         setupSyncBadge();
         setupBackNavigation();
+        interceptModalCaptura();
 
         // Render home imediatamente
         navigate('pwa-home');
@@ -89,15 +90,50 @@
         // Carga inicial em background
         triggerInitialSync();
 
-        console.log('[PWA] App inicializado - modo telas cheias');
+        console.log('[PWA] App v3.0 inicializado - inline-first, zero popups');
     }
 
-    // ==================== DADOS OFFLINE-FIRST ====================
+    // ==================== INTERCEPTAR MODAL CAPTURA ====================
+    // Substitui o modal overlay do app.js por tela inline no PWA
 
-    /**
-     * Carregar dados do IndexedDB (instantâneo)
-     * Se não houver dados, retorna array vazio
-     */
+    function interceptModalCaptura() {
+        // Guardar referência original
+        const waitForApp = () => {
+            if (typeof window.app !== 'undefined' && window.app.abrirModalCaptura) {
+                const originalAbrir = window.app.abrirModalCaptura.bind(window.app);
+                const originalFechar = window.app.fecharModalCaptura.bind(window.app);
+
+                // Substituir por versão inline do PWA
+                window.app.abrirModalCaptura = function(repId, clienteId, clienteNome, enderecoLinha, dataVisita, tipoRegistro, enderecoCadastro, novaVisita) {
+                    if (authManager?.isPWA) {
+                        pwaApp.abrirCheckinTela(repId, clienteId, clienteNome, enderecoLinha, dataVisita, tipoRegistro, enderecoCadastro, novaVisita);
+                    } else {
+                        originalAbrir(repId, clienteId, clienteNome, enderecoLinha, dataVisita, tipoRegistro, enderecoCadastro, novaVisita);
+                    }
+                };
+
+                window.app.fecharModalCaptura = function() {
+                    if (authManager?.isPWA) {
+                        pwaApp.voltarDeCheckin();
+                    } else {
+                        originalFechar();
+                    }
+                };
+
+                // Guardar original para uso interno
+                window.app._originalAbrirModalCaptura = originalAbrir;
+                window.app._originalFecharModalCaptura = originalFechar;
+
+                console.log('[PWA] Modal captura interceptado - será inline');
+            } else {
+                setTimeout(waitForApp, 200);
+            }
+        };
+        waitForApp();
+    }
+
+    // ==================== DADOS OFFLINE-FIRST + API FALLBACK ====================
+
     async function loadLocalData() {
         try {
             if (typeof offlineDB === 'undefined') return;
@@ -115,42 +151,62 @@
             cachedData.tiposDocumento = tiposDoc;
             cachedData.tiposGasto = tiposGasto;
 
-            console.log('[PWA] Dados locais carregados:', {
+            console.log('[PWA] Dados locais:', {
                 roteiro: roteiro.length,
-                clientes: clientes.length,
-                tiposDoc: tiposDoc.length,
-                tiposGasto: tiposGasto.length
+                clientes: clientes.length
             });
         } catch (e) {
-            console.error('[PWA] Erro ao carregar dados locais:', e);
+            console.error('[PWA] Erro dados locais:', e);
         }
     }
 
-    /**
-     * Obter roteiro do dia do cache local
-     */
     async function getRoteiroHoje() {
+        const hoje = getHojeBR();
+
+        // 1. Tentar IndexedDB
         try {
-            const hoje = getHojeBR();
             if (typeof offlineDB !== 'undefined' && offlineDB.getRoteiroDia) {
                 await offlineDB.init();
-                return await offlineDB.getRoteiroDia(hoje);
+                const roteiro = await offlineDB.getRoteiroDia(hoje);
+                if (roteiro && roteiro.length > 0) return roteiro;
             }
         } catch (e) {
-            console.warn('[PWA] Erro ao buscar roteiro local:', e);
+            console.warn('[PWA] Erro IndexedDB roteiro:', e);
         }
 
-        // Fallback: filtrar do cache geral
-        if (cachedData.roteiro) {
-            const hoje = getHojeBR();
-            return cachedData.roteiro.filter(r => r.data_visita === hoje);
+        // 2. Fallback: cache geral
+        if (cachedData.roteiro && cachedData.roteiro.length > 0) {
+            const filtrado = cachedData.roteiro.filter(r => r.data_visita === hoje);
+            if (filtrado.length > 0) return filtrado;
         }
+
+        // 3. Fallback: buscar direto da API
+        if (navigator.onLine) {
+            try {
+                const token = localStorage.getItem('auth_token');
+                const resp = await fetch(`${API_BASE_URL}/api/sync/roteiro`, {
+                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                });
+                const data = await resp.json();
+                if (data.ok && data.roteiro && data.roteiro.length > 0) {
+                    // Salvar no IndexedDB para próxima vez
+                    if (typeof offlineDB !== 'undefined') {
+                        try {
+                            await offlineDB.init();
+                            await offlineDB.salvarRoteiro(data.roteiro);
+                        } catch (e) { /* silent */ }
+                    }
+                    cachedData.roteiro = data.roteiro;
+                    return data.roteiro.filter(r => r.data_visita === hoje);
+                }
+            } catch (e) {
+                console.warn('[PWA] Erro API roteiro:', e);
+            }
+        }
+
         return [];
     }
 
-    /**
-     * Obter tipos de documentos (do IndexedDB)
-     */
     async function getTiposDocumento() {
         try {
             if (typeof offlineDB !== 'undefined') {
@@ -158,11 +214,8 @@
                 const tipos = await offlineDB.getTiposDocumento();
                 if (tipos && tipos.length > 0) return tipos;
             }
-        } catch (e) {
-            console.warn('[PWA] Erro ao buscar tipos doc local:', e);
-        }
+        } catch (e) { /* silent */ }
 
-        // Fallback: tentar API se online
         if (navigator.onLine) {
             try {
                 const token = localStorage.getItem('auth_token');
@@ -171,15 +224,12 @@
                 });
                 const data = await resp.json();
                 if (data.tipos && data.tipos.length > 0) {
-                    // Salvar no cache local
                     if (typeof offlineDB !== 'undefined') {
                         await offlineDB.salvarTiposDocumento(data.tipos);
                     }
                     return data.tipos;
                 }
-            } catch (e) {
-                console.warn('[PWA] Erro ao buscar tipos doc da API:', e);
-            }
+            } catch (e) { /* silent */ }
         }
 
         return cachedData.tiposDocumento || [];
@@ -192,7 +242,6 @@
         initialSyncDone = true;
 
         try {
-            // Carregar dados locais primeiro (instantâneo)
             await loadLocalData();
 
             const hoje = getHojeBR();
@@ -200,7 +249,6 @@
 
             if (ultimoSyncDia === hoje) {
                 console.log('[PWA] Sync do dia já realizado');
-                // Re-render home com dados locais
                 if (currentTab === 'pwa-home') renderHome();
                 return;
             }
@@ -215,24 +263,19 @@
             showSyncIndicator(true);
 
             if (navigator.onLine) {
-                console.log('[PWA] Iniciando carga inicial do dia...');
+                console.log('[PWA] Iniciando carga do dia...');
                 const result = await syncService.sincronizarDownload();
                 if (result && result.ok) {
                     localStorage.setItem('pwa_ultimo_sync_dia', hoje);
                     localStorage.setItem('ultimo_sync', new Date().toISOString());
-                    // Recarregar dados locais após sync
                     await loadLocalData();
-                    console.log('[PWA] Carga inicial concluída');
                 }
-            } else {
-                console.log('[PWA] Offline - usando dados locais');
             }
 
             showSyncIndicator(false);
-
             if (currentTab === 'pwa-home') renderHome();
         } catch (e) {
-            console.error('[PWA] Erro na carga inicial:', e);
+            console.error('[PWA] Erro sync inicial:', e);
             showSyncIndicator(false);
             if (currentTab === 'pwa-home') renderHome();
         }
@@ -268,30 +311,35 @@
         previousTab = currentTab;
         currentTab = tabId;
 
-        // Gerenciar histórico de navegação
         if (!skipHistory) {
             navigationStack.push(tabId);
-            // Limitar tamanho do stack
             if (navigationStack.length > 20) navigationStack.shift();
-            // Adicionar estado ao histórico do navegador
             history.pushState({ pwaTab: tabId }, '', '');
         }
 
-        // Update tab active state
+        // Update tab active state - SEMPRE visível
         document.querySelectorAll('.pwa-tab').forEach(t => {
             t.classList.toggle('active', t.dataset.pwaTab === tabId ||
                 (tabId.startsWith('consulta-') && t.dataset.pwaTab === 'pwa-consultas'));
         });
 
-        // Scroll to top
+        // Garantir tabs visíveis
+        showBottomTabs(true);
+
         if (pwaContent) pwaContent.scrollTop = 0;
 
-        // Render page
         const pageConfig = PWA_TABS[tabId];
         if (pageConfig) {
             pageConfig.render();
         } else if (tabId.startsWith('consulta-')) {
             renderConsultaDetalhe(tabId);
+        }
+    }
+
+    function showBottomTabs(visible) {
+        const tabs = document.querySelector('.pwa-tabs');
+        if (tabs) {
+            tabs.style.display = visible ? '' : 'none';
         }
     }
 
@@ -332,7 +380,6 @@
                     await loadLocalData();
                     showSyncIndicator(false);
                     showToast('Sincronizado com sucesso');
-                    // Atualizar a home se estiver nela
                     if (currentTab === 'pwa-home') renderHome();
                 } catch (e) {
                     showSyncIndicator(false);
@@ -344,20 +391,17 @@
         setInterval(updatePendingCount, 30000);
     }
 
-    // ==================== BACK NAVIGATION (evitar fechar app) ====================
+    // ==================== BACK NAVIGATION ====================
 
     function setupBackNavigation() {
-        // Adicionar estado inicial ao histórico
         history.replaceState({ pwaTab: 'pwa-home' }, '', '');
 
         window.addEventListener('popstate', function(e) {
-            // Remover último item do stack
             if (navigationStack.length > 1) {
                 navigationStack.pop();
                 const prevTab = navigationStack[navigationStack.length - 1];
-                navigate(prevTab, true); // skipHistory = true para não duplicar
+                navigate(prevTab, true);
             } else {
-                // Se já está na home, re-adicionar estado para evitar fechar o app
                 history.pushState({ pwaTab: 'pwa-home' }, '', '');
                 if (currentTab !== 'pwa-home') {
                     navigate('pwa-home', true);
@@ -415,7 +459,6 @@
     }
 
     function showToast(msg, type = 'success') {
-        // Limpar timer anterior se existir
         if (toastTimer) {
             clearTimeout(toastTimer);
             toastTimer = null;
@@ -434,7 +477,6 @@
 
         toastTimer = setTimeout(() => {
             toast.classList.remove('pwa-toast-show');
-            // Garantir que o toast suma completamente após a animação
             setTimeout(() => {
                 toast.style.display = 'none';
             }, 400);
@@ -537,22 +579,44 @@
 
                 container.innerHTML = items;
 
-                // Atualizar contadores
                 const visitasEl = document.getElementById('pwaVisitasHoje');
                 const pendentesEl = document.getElementById('pwaPendentesHoje');
                 if (visitasEl) visitasEl.textContent = visitados;
                 if (pendentesEl) pendentesEl.textContent = roteiro.length - visitados;
             } else {
+                // Sem dados - mostrar botão de retry se online
                 container.innerHTML = `
                     <div class="pwa-empty-state">
                         <div class="pwa-empty-icon">&#128203;</div>
                         <div class="pwa-empty-text">Nenhum roteiro para hoje</div>
-                        <div class="pwa-empty-hint">Sincronize para atualizar os dados</div>
+                        <div class="pwa-empty-hint">${navigator.onLine ? 'Toque para sincronizar' : 'Conecte-se para sincronizar'}</div>
                     </div>
                 `;
+                if (navigator.onLine) {
+                    container.style.cursor = 'pointer';
+                    container.onclick = async () => {
+                        container.onclick = null;
+                        container.style.cursor = '';
+                        container.innerHTML = '<div class="pwa-loading-inline"><div class="pwa-spinner-small"></div><span>Sincronizando...</span></div>';
+                        try {
+                            if (typeof syncService !== 'undefined') {
+                                showSyncIndicator(true);
+                                await syncService.sincronizarDownload();
+                                await loadLocalData();
+                                localStorage.setItem('pwa_ultimo_sync_dia', getHojeBR());
+                                localStorage.setItem('ultimo_sync', new Date().toISOString());
+                                showSyncIndicator(false);
+                            }
+                            await loadRoteiroHome();
+                        } catch (e) {
+                            showSyncIndicator(false);
+                            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Erro ao sincronizar. Tente novamente.</div></div>';
+                        }
+                    };
+                }
             }
         } catch (e) {
-            console.error('[PWA] Erro ao carregar roteiro:', e);
+            console.error('[PWA] Erro roteiro home:', e);
             container.innerHTML = `
                 <div class="pwa-empty-state">
                     <div class="pwa-empty-icon">&#128203;</div>
@@ -563,7 +627,6 @@
     }
 
     // ==================== PÁGINA: REGISTRO DE ROTA ====================
-    // Delega para o app.js existente - mas em tela cheia dentro do PWA container
 
     function renderRegistroRota() {
         pwaContent.innerHTML = `
@@ -585,13 +648,12 @@
         if (typeof window.app !== 'undefined' && window.app.navigateTo) {
             window.app.navigateTo('registro-rota', {}, { replaceHistory: true, pwaMode: true, pwaContainer: container });
         } else {
-            console.warn('[PWA] window.app não disponível para registro-rota');
-            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">M\u00f3dulo de rota carregando...</div></div>';
+            console.warn('[PWA] window.app não disponível');
+            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Módulo carregando...</div></div>';
         }
     }
 
     // ==================== PÁGINA: DOCUMENTOS ====================
-    // Carrega tipos do IndexedDB, tela cheia
 
     function renderDocumentos() {
         pwaContent.innerHTML = `
@@ -603,7 +665,7 @@
                 <div id="pwaDocumentosContent" class="pwa-page-body">
                     <div class="pwa-loading-inline">
                         <div class="pwa-spinner-small"></div>
-                        <span>Carregando tipos de documentos...</span>
+                        <span>Carregando...</span>
                     </div>
                 </div>
             </div>
@@ -611,32 +673,24 @@
 
         const container = document.getElementById('pwaDocumentosContent');
 
-        // Pré-carregar tipos de documentos do IndexedDB antes de delegar ao app.js
         preloadTiposDocumentos().then(() => {
             if (typeof window.app !== 'undefined' && window.app.navigateTo) {
                 window.app.navigateTo('documentos', {}, { replaceHistory: true, pwaMode: true, pwaContainer: container });
             } else {
-                container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Módulo de documentos carregando...</div></div>';
+                container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Módulo carregando...</div></div>';
             }
         });
     }
 
-    /**
-     * Pré-carrega tipos de documentos no state do app.js a partir do IndexedDB
-     * Isso resolve o problema de tipos não carregando no PWA
-     */
     async function preloadTiposDocumentos() {
         try {
             const tipos = await getTiposDocumento();
             if (tipos && tipos.length > 0 && typeof window.app !== 'undefined') {
-                // Injetar no state do app.js para que carregarSelectsTiposDocumentos funcione
                 if (window.app.documentosState) {
                     window.app.documentosState.tipos = tipos;
                 }
             }
-        } catch (e) {
-            console.warn('[PWA] Erro ao pré-carregar tipos de documentos:', e);
-        }
+        } catch (e) { /* silent */ }
     }
 
     // ==================== PÁGINA: CONSULTAS ====================
@@ -679,29 +733,23 @@
         if (typeof window.app !== 'undefined' && window.app.navigateTo) {
             window.app.navigateTo(consultaId, {}, { replaceHistory: true, pwaMode: true, pwaContainer: container });
 
-            // Após renderizar, aplicar ajustes PWA nos filtros
             setTimeout(() => {
                 ajustarFiltrosPWA(container);
                 esconderSelectRepositor(container);
             }, 500);
         } else {
-            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Carregando módulo...</div></div>';
+            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Carregando...</div></div>';
         }
     }
 
-    /**
-     * Ajustar filtros para o PWA: torná-los colapsáveis
-     */
     function ajustarFiltrosPWA(container) {
         if (!container) return;
 
-        // Encontrar barras de filtro
         const filterBars = container.querySelectorAll('.filter-bar, .doc-filter-section, .performance-filters');
         filterBars.forEach(bar => {
             if (bar.dataset.pwaAjustado) return;
             bar.dataset.pwaAjustado = 'true';
 
-            // Wrap em container colapsável
             const wrapper = document.createElement('div');
             wrapper.className = 'pwa-filtros-wrapper';
 
@@ -719,21 +767,16 @@
             bar.parentNode.insertBefore(toggleBtn, wrapper);
             wrapper.appendChild(bar);
 
-            // Iniciar colapsado
             wrapper.classList.remove('pwa-filtros-aberto');
         });
     }
 
-    /**
-     * Esconder select de repositor no PWA - usa repositor logado automaticamente
-     */
     function esconderSelectRepositor(container) {
         if (!container) return;
 
         const repId = getRepId();
         if (!repId) return;
 
-        // Encontrar e esconder todos os selects de repositor
         const selectIds = [
             'consultaRepositor', 'perfRepositor', 'filtro_repositor_consulta_roteiro',
             'uploadRepositor', 'registroRepositor'
@@ -742,9 +785,7 @@
         selectIds.forEach(id => {
             const select = container.querySelector(`#${id}`) || document.getElementById(id);
             if (select) {
-                // Setar valor para o repositor logado
                 select.value = String(repId);
-                // Esconder o grupo do filtro
                 const group = select.closest('.form-group, .filter-group');
                 if (group) {
                     group.style.display = 'none';
@@ -753,9 +794,6 @@
         });
     }
 
-    /**
-     * Toggle filtros visíveis/ocultos (chamado pelo botão)
-     */
     function toggleFiltros() {
         const wrapper = document.querySelector('.pwa-filtros-wrapper');
         if (wrapper) {
@@ -763,11 +801,7 @@
         }
     }
 
-    /**
-     * Buscar consulta (placeholder para ação do botão)
-     */
     function buscarConsulta(tipo) {
-        // Delega para o app.js
         if (typeof window.app !== 'undefined') {
             switch (tipo) {
                 case 'visitas':
@@ -783,14 +817,16 @@
         }
     }
 
-    // ==================== NÃO ATENDIMENTO - TELA CHEIA (OFFLINE-FIRST) ====================
+    // ==================== NÃO ATENDIMENTO - INLINE ====================
 
-    /**
-     * Abrir tela cheia de não atendimento (substitui modal/popup)
-     */
     function abrirNaoAtendimento(repId, clienteId, clienteNome, dataVisita) {
-        // Guardar tab anterior para voltar
         const tabAnterior = currentTab;
+
+        // Esconder tabs durante esta tela
+        showBottomTabs(false);
+
+        navigationStack.push('pwa-nao-atendimento');
+        history.pushState({ pwaTab: 'pwa-nao-atendimento' }, '', '');
 
         pwaContent.innerHTML = `
             <div class="pwa-page pwa-fullscreen-page">
@@ -830,10 +866,6 @@
         `;
     }
 
-    /**
-     * Confirmar não atendimento - OFFLINE-FIRST
-     * Salva localmente e tenta enviar se online
-     */
     async function confirmarNaoAtendimento(repId, clienteId, clienteNome, dataVisita) {
         const motivo = document.getElementById('pwaMotivoNaoAtendimento')?.value?.trim();
         const btn = document.getElementById('pwaBtnConfirmarNA');
@@ -860,10 +892,8 @@
         };
 
         try {
-            // 1. Salvar localmente primeiro (sempre funciona)
             await salvarNaoAtendimentoLocal(dados);
 
-            // 2. Atualizar status visual no app.js se disponível
             if (typeof window.app !== 'undefined' && window.app.atualizarStatusClienteLocal) {
                 const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
                 window.app.atualizarStatusClienteLocal(normalizeClienteId(clienteId), {
@@ -873,7 +903,6 @@
                 });
             }
 
-            // 3. Tentar enviar ao servidor se online
             let enviadoAoServidor = false;
             if (navigator.onLine) {
                 try {
@@ -891,28 +920,26 @@
                         enviadoAoServidor = true;
                         await marcarNaoAtendimentoEnviado(dados);
                     }
-                } catch (e) {
-                    console.warn('[PWA] Erro ao enviar NA ao servidor (será reenviado):', e);
-                }
+                } catch (e) { /* será reenviado */ }
             }
 
             if (statusDiv) {
                 statusDiv.style.display = 'block';
                 statusDiv.innerHTML = enviadoAoServidor
                     ? '<div class="pwa-alert-success">Não atendimento registrado e sincronizado.</div>'
-                    : '<div class="pwa-alert-warning">Não atendimento salvo localmente. Será enviado na próxima sincronização.</div>';
+                    : '<div class="pwa-alert-warning">Salvo localmente. Será enviado na próxima sincronização.</div>';
             }
 
-            showToast('Não atendimento registrado', 'success');
+            showToast('Não atendimento registrado');
 
-            // Voltar após 1.5s
             setTimeout(() => {
+                showBottomTabs(true);
                 navigate('registro-rota');
             }, 1500);
 
         } catch (error) {
-            console.error('[PWA] Erro ao registrar não atendimento:', error);
-            showToast('Erro: ' + (error.message || 'Falha ao registrar'), 'error');
+            console.error('[PWA] Erro ao registrar NA:', error);
+            showToast('Erro: ' + (error.message || 'Falha'), 'error');
             if (btn) {
                 btn.disabled = false;
                 btn.textContent = 'Confirmar Não Atendimento';
@@ -920,9 +947,6 @@
         }
     }
 
-    /**
-     * Salvar não atendimento no IndexedDB para envio posterior
-     */
     async function salvarNaoAtendimentoLocal(dados) {
         try {
             if (typeof offlineDB !== 'undefined') {
@@ -933,14 +957,10 @@
                     syncStatus: 'pending'
                 });
             }
-
-            // Backup em localStorage como fallback
             const pendentes = JSON.parse(localStorage.getItem('pwa_na_pendentes') || '[]');
             pendentes.push(dados);
             localStorage.setItem('pwa_na_pendentes', JSON.stringify(pendentes));
         } catch (e) {
-            console.error('[PWA] Erro ao salvar NA local:', e);
-            // Pelo menos salvar no localStorage
             const pendentes = JSON.parse(localStorage.getItem('pwa_na_pendentes') || '[]');
             pendentes.push(dados);
             localStorage.setItem('pwa_na_pendentes', JSON.stringify(pendentes));
@@ -949,18 +969,16 @@
 
     async function marcarNaoAtendimentoEnviado(dados) {
         try {
-            // Remover do localStorage
             const pendentes = JSON.parse(localStorage.getItem('pwa_na_pendentes') || '[]');
             const filtrados = pendentes.filter(p =>
                 !(p.cliente_id === dados.cliente_id && p.data_visita === dados.data_visita)
             );
             localStorage.setItem('pwa_na_pendentes', JSON.stringify(filtrados));
-        } catch (e) {
-            console.warn('[PWA] Erro ao marcar NA como enviado:', e);
-        }
+        } catch (e) { /* silent */ }
     }
 
     function voltarDeNaoAtendimento(tabAnterior) {
+        showBottomTabs(true);
         if (tabAnterior && tabAnterior !== 'pwa-home') {
             navigate(tabAnterior);
         } else {
@@ -968,16 +986,16 @@
         }
     }
 
-    // ==================== CHECK-IN TELA CHEIA (substitui popup) ====================
+    // ==================== CHECK-IN/CHECKOUT INLINE (substitui modal overlay) ====================
 
     /**
-     * Intercepta o check-in no PWA e abre como tela cheia
-     * ao invés de modal/popup
+     * Renderiza a tela de checkin/checkout DENTRO do pwaContent
+     * Sem modal overlay - as tabs continuam visíveis
+     * O modal de captura do app.js é renderizado inline aqui
      */
     function abrirCheckinTela(repId, clienteId, clienteNome, enderecoLinha, dataVisita, tipoRegistro, enderecoCadastro, novaVisita) {
         previousTab = currentTab;
 
-        // Adicionar ao histórico para back funcionar
         navigationStack.push('pwa-checkin');
         history.pushState({ pwaTab: 'pwa-checkin' }, '', '');
 
@@ -986,6 +1004,7 @@
             : tipoRegistro === 'campanha' ? '#f59e0b'
             : '#3b82f6';
 
+        // Renderizar tela inline com área para o modal de captura
         pwaContent.innerHTML = `
             <div class="pwa-page pwa-fullscreen-page pwa-checkin-page">
                 <div class="pwa-page-header-bar">
@@ -998,34 +1017,89 @@
                     ${enderecoLinha ? `<div class="pwa-checkin-endereco">${escapeHtml(enderecoLinha)}</div>` : ''}
                     <div class="pwa-checkin-data">${formatarData(dataVisita)}</div>
                 </div>
-                <div class="pwa-checkin-status" id="pwaCheckinStatus">
-                    <div class="pwa-spinner-small"></div>
-                    <span>Obtendo localiza\u00e7\u00e3o...</span>
-                </div>
-                <div id="pwaCheckinModalContainer" class="pwa-checkin-modal-area">
-                    <!-- O modal de captura será renderizado aqui pelo app.js -->
+                <div id="pwaCheckinInlineArea" class="pwa-checkin-inline-area">
+                    <div class="pwa-loading-inline">
+                        <div class="pwa-spinner-small"></div>
+                        <span>Obtendo localização...</span>
+                    </div>
                 </div>
             </div>
         `;
 
-        // Delegar ao app.js para abrir o modal de captura
-        // O modal será renderizado com estilos de tela cheia via CSS
-        if (typeof window.app !== 'undefined' && window.app.abrirModalCaptura) {
-            window.app.abrirModalCaptura(repId, clienteId, clienteNome, enderecoLinha, dataVisita, tipoRegistro, enderecoCadastro, novaVisita);
-        }
+        // Agora chamar a lógica original do app.js diretamente
+        // Mas antes: mover o modal de captura para dentro do pwaContent em vez de overlay
+        setTimeout(() => {
+            injectCaptureModalInline();
+            // Chamar a lógica original do app.js
+            if (typeof window.app !== 'undefined' && window.app._originalAbrirModalCaptura) {
+                window.app._originalAbrirModalCaptura(repId, clienteId, clienteNome, enderecoLinha, dataVisita, tipoRegistro, enderecoCadastro, novaVisita);
+            }
+        }, 50);
+    }
+
+    /**
+     * Move o modal de captura para dentro da área inline do checkin
+     * Em vez de ficar como overlay sobre tudo
+     */
+    function injectCaptureModalInline() {
+        const modal = document.getElementById('modalCapturarVisita');
+        const inlineArea = document.getElementById('pwaCheckinInlineArea');
+        if (!modal || !inlineArea) return;
+
+        // Mover modal para dentro da área inline
+        inlineArea.innerHTML = '';
+        inlineArea.appendChild(modal);
+
+        // Forçar o modal a se comportar como conteúdo inline (sem overlay)
+        modal.classList.add('pwa-inline-modal');
     }
 
     function voltarDeCheckin() {
-        // Fechar a câmera/modal se estiver aberta
-        if (typeof window.app !== 'undefined' && window.app.fecharModalCaptura) {
-            window.app.fecharModalCaptura();
+        // Restaurar o modal para sua posição original no DOM
+        restoreCaptureModal();
+
+        // Fechar câmera
+        if (typeof window.app !== 'undefined') {
+            try {
+                window.app.pararStreamVideo?.();
+                // Limpar state sem chamar fecharModalCaptura (que chamaria voltarDeCheckin de novo)
+                const video = document.getElementById('videoPreview');
+                if (video) {
+                    video.srcObject = null;
+                    video.style.display = 'none';
+                }
+                const modal = document.getElementById('modalCapturarVisita');
+                if (modal) modal.classList.remove('active');
+            } catch (e) { /* silent */ }
         }
 
-        // Voltar para a tela anterior
+        showBottomTabs(true);
+
         if (navigationStack.length > 1) {
             navigationStack.pop();
         }
         navigate(previousTab || 'registro-rota');
+    }
+
+    /**
+     * Restaura o modal de captura para a posição original (dentro do contentBody)
+     * Para que funcione corretamente na próxima abertura
+     */
+    function restoreCaptureModal() {
+        const modal = document.getElementById('modalCapturarVisita');
+        if (!modal) return;
+
+        // Remover classe inline
+        modal.classList.remove('pwa-inline-modal');
+        modal.classList.remove('active');
+
+        // Mover de volta para o body ou contentBody original
+        const contentBody = document.getElementById('contentBody');
+        if (contentBody) {
+            contentBody.appendChild(modal);
+        } else {
+            document.body.appendChild(modal);
+        }
     }
 
     // ==================== PÁGINA: MAIS ====================
@@ -1039,7 +1113,6 @@
 
         pwaContent.innerHTML = `
             <div class="pwa-page">
-                <!-- Perfil -->
                 <div class="pwa-card" style="text-align:center; padding: 24px 16px;">
                     <div class="pwa-avatar">
                         ${(usuario.nome_completo || usuario.username || 'R')[0].toUpperCase()}
@@ -1078,7 +1151,7 @@
                 </div>
 
                 <div style="text-align:center; margin-top: 24px; font-size: 11px; color: #d1d5db;">
-                    v2.0 - PWA Offline-First
+                    v3.0 - PWA Inline-First
                 </div>
             </div>
         `;
@@ -1097,9 +1170,9 @@
 
                     await syncService.sincronizarAgora();
                     await loadLocalData();
+
                     showSyncIndicator(false);
 
-                    // Atualizar a UI sem re-renderizar toda a tela
                     if (syncLabel) syncLabel.textContent = 'Sincronizar agora';
                     if (syncValue) syncValue.textContent = 'Sincronizado';
                     const syncTimeEl = syncItem?.parentElement?.querySelector('.pwa-menu-item:nth-child(2) .pwa-menu-value');
