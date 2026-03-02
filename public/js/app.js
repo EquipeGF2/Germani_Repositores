@@ -11938,6 +11938,11 @@ class App {
         if (btnPermitirCamera) btnPermitirCamera.style.display = 'none';
 
         const modal = document.getElementById('modalCapturarVisita');
+        if (!modal) {
+            console.error('[abrirModalCaptura] Modal #modalCapturarVisita não encontrado no DOM');
+            this.showNotification('Erro ao abrir captura. Recarregue a página.', 'error');
+            return;
+        }
         modal.classList.add('active');
 
         if (!this.registroRotaState.resizeHandler) {
@@ -13175,7 +13180,8 @@ class App {
         const placeholder = document.getElementById('cameraPlaceholder');
         if (placeholder) placeholder.style.display = 'flex';
 
-        document.getElementById('modalCapturarVisita').classList.remove('active');
+        const modalCaptura = document.getElementById('modalCapturarVisita');
+        if (modalCaptura) modalCaptura.classList.remove('active');
 
         this.registroRotaState.clienteAtual = null;
         this.registroRotaState.gpsCoords = null;
@@ -13221,15 +13227,19 @@ class App {
         const clienteIdNorm = normalizeClienteId(clienteId);
 
         // Mostrar modal com loading
-        document.getElementById('modalAtividadesTitulo').textContent = clienteNome || 'Atividades';
-        document.getElementById('atividadesClienteInfo').textContent = `${clienteIdNorm} • ${clienteNome}`;
-        document.getElementById('modalAtividadesBody').innerHTML = `
+        const tituloAt = document.getElementById('modalAtividadesTitulo');
+        if (tituloAt) tituloAt.textContent = clienteNome || 'Atividades';
+        const infoAt = document.getElementById('atividadesClienteInfo');
+        if (infoAt) infoAt.textContent = `${clienteIdNorm} • ${clienteNome}`;
+        const bodyAt = document.getElementById('modalAtividadesBody');
+        if (bodyAt) bodyAt.innerHTML = `
             <div style="text-align: center; padding: 40px;">
                 <div class="spinner"></div>
                 <p style="margin-top: 12px; color: #6b7280;">Carregando atividades...</p>
             </div>
         `;
-        document.getElementById('modalAtividades').classList.add('active');
+        const modalAt = document.getElementById('modalAtividades');
+        if (modalAt) modalAt.classList.add('active');
 
         // Buscar sessão ativa - forçar refresh para evitar problemas de cache
         let sessaoAberta = await this.buscarSessaoAberta(repId, dataPlanejada, true);
@@ -13492,7 +13502,8 @@ class App {
     }
 
     fecharModalAtividades() {
-        document.getElementById('modalAtividades').classList.remove('active');
+        const modalAt = document.getElementById('modalAtividades');
+        if (modalAt) modalAt.classList.remove('active');
         this.registroRotaState.sessaoAtividades = null;
         this.registroRotaState.atividadesConfiguradas = null;
     }
