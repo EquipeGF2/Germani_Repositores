@@ -10155,7 +10155,15 @@ class App {
         cameraErro: null,
         resizeHandler: null,
         atendimentosAbertos: new Map(),
-        resumoColapsado: true
+        resumoColapsado: true,
+        // Cache PWA offline-first: evitar API calls durante navegação
+        _cacheRepId: null,
+        _cacheDataVisita: null,
+        _cacheCarregado: false,
+        // Checkin local pendente (aguardando envio no checkout)
+        _checkinLocal: null, // { repId, clienteId, clienteNome, foto, gps, endereco, dataVisita, timestamp }
+        // Atividades locais pendentes (aguardando envio no checkout)
+        _atividadesLocal: null // { sessaoId, clienteId, payload, repId }
     };
 
     getAtendimentoStorageKey(repId, clienteId) {
@@ -10710,13 +10718,37 @@ class App {
 
         const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
 
-        // Executar TODAS as chamadas em paralelo para máxima performance
-        const [roteiro, resumo, atendimentosAbertos, _sync] = await Promise.all([
-            db.carregarRoteiroRepositorDia(repId, diaSemana),
-            this.buscarResumoVisitas(repId, dataVisita),
-            this.buscarAtendimentosAbertos(repId),
-            this.syncAtendimentoAberto(repId) // Agora em paralelo
-        ]);
+        const isPWA = window.authManager?.isPWA;
+        const cacheValido = isPWA
+            && this.registroRotaState._cacheCarregado
+            && this.registroRotaState._cacheRepId === repId
+            && this.registroRotaState._cacheDataVisita === dataVisita;
+
+        let roteiro, resumo, atendimentosAbertos;
+
+        if (cacheValido) {
+            // PWA: reutilizar dados em cache - navegação instantânea
+            roteiro = await db.carregarRoteiroRepositorDia(repId, diaSemana);
+            resumo = [...this.registroRotaState.resumoVisitas.values()];
+            atendimentosAbertos = [...(this.registroRotaState.atendimentosAbertos?.values() || [])];
+        } else {
+            // Primeira carga ou modo web: buscar do servidor
+            const [_roteiro, _resumo, _atendimentosAbertos, _sync] = await Promise.all([
+                db.carregarRoteiroRepositorDia(repId, diaSemana),
+                this.buscarResumoVisitas(repId, dataVisita),
+                this.buscarAtendimentosAbertos(repId),
+                this.syncAtendimentoAberto(repId)
+            ]);
+            roteiro = _roteiro;
+            resumo = _resumo;
+            atendimentosAbertos = _atendimentosAbertos;
+
+            if (isPWA) {
+                this.registroRotaState._cacheCarregado = true;
+                this.registroRotaState._cacheRepId = repId;
+                this.registroRotaState._cacheDataVisita = dataVisita;
+            }
+        }
 
         if (!roteiro || roteiro.length === 0) {
             this.showNotification('Nenhum cliente no roteiro para este dia', 'info');
@@ -10726,8 +10758,8 @@ class App {
 
         // Buscar clientes com espaços cadastrados (em background, silencioso se falhar)
         const clienteIds = roteiro.map(c => normalizeClienteId(c.cli_codigo));
-        this.registroRotaState.clientesComEspaco = new Set();
-        fetch(`${API_BASE_URL}/api/espacos/clientes-com-espaco?clientes=${clienteIds.join(',')}`)
+        if (!cacheValido) this.registroRotaState.clientesComEspaco = new Set();
+        if (!cacheValido) fetch(`${API_BASE_URL}/api/espacos/clientes-com-espaco?clientes=${clienteIds.join(',')}`)
             .then(r => r.ok ? r.json() : null)
             .then(resp => {
                 if (resp?.ok && resp.data) {
@@ -10738,7 +10770,7 @@ class App {
             .catch(() => { /* silencioso */ });
 
         // Buscar não atendimentos do dia (silencioso se falhar)
-        fetch(`${API_BASE_URL}/api/registro-rota/nao-atendimentos?repositor_id=${repId}&data=${dataVisita}`)
+        if (!cacheValido) fetch(`${API_BASE_URL}/api/registro-rota/nao-atendimentos?repositor_id=${repId}&data=${dataVisita}`)
             .then(r => r.ok ? r.json() : null)
             .then(resp => {
                 if (resp?.ok && resp.data) {
@@ -10759,6 +10791,13 @@ class App {
                 }
             })
             .catch(() => { /* silencioso */ });
+
+        // PWA com cache válido: já temos os dados locais, pular processamento do backend
+        if (cacheValido) {
+            // Ir direto para renderização - dados já estão em registroRotaState
+            this.registroRotaState.roteiroAtual = roteiro;
+            // Jump to rendering (não reprocessar resumo/atendimentos)
+        } else {
 
         // Preservar dados locais atualizados antes de sobrescrever com dados do backend
         const resumoLocalAnterior = this.registroRotaState.resumoVisitas || new Map();
@@ -10822,6 +10861,7 @@ class App {
 
         // Guardar roteiro no state para uso posterior (refresh de distâncias)
         this.registroRotaState.roteiroAtual = roteiro;
+        } // fim do else (!cacheValido)
 
         container.innerHTML = '';
 
@@ -11563,6 +11603,37 @@ class App {
         const agora = Date.now();
         const cacheTTL = 15000; // 15 segundos
 
+        // PWA offline-first: usar estado local em vez de API
+        const isPWA = window.authManager?.isPWA;
+        if (isPWA && this.registroRotaState._cacheCarregado && !forceRefresh) {
+            // Derivar do estado local
+            const atendimentos = this.registroRotaState.atendimentosAbertos;
+            if (atendimentos instanceof Map && atendimentos.size > 0) {
+                const primeiro = atendimentos.values().next().value;
+                return {
+                    existe: true,
+                    rv_id: primeiro.rv_id,
+                    cliente_id: primeiro.cliente_id,
+                    cliente_nome: primeiro.cliente_nome || '',
+                    status: 'ABERTA',
+                    checkin_em: primeiro.checkin_em
+                };
+            }
+            // Verificar localStorage
+            const locais = this.listarAtendimentosLocais(repId);
+            if (locais.length > 0) {
+                const local = locais[0];
+                return {
+                    existe: true,
+                    rv_id: local.rv_id,
+                    cliente_id: local.clienteId,
+                    status: 'ABERTA',
+                    checkin_em: null
+                };
+            }
+            return { existe: false };
+        }
+
         // Verificar cache (a menos que force refresh)
         if (!forceRefresh && this._sessaoCache?.[cacheKey]) {
             const cached = this._sessaoCache[cacheKey];
@@ -11638,6 +11709,26 @@ class App {
         const cacheKey = `sessao_${repId}_${dataPlanejada || 'all'}`;
         const agora = Date.now();
         const cacheTTL = 15000; // 15 segundos
+
+        // PWA offline-first: usar estado local em vez de API
+        const isPWA = window.authManager?.isPWA;
+        if (isPWA && this.registroRotaState._cacheCarregado && !forceRefresh) {
+            const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
+            const atendimentos = this.registroRotaState.atendimentosAbertos;
+            if (atendimentos instanceof Map && atendimentos.size > 0) {
+                const primeiro = atendimentos.values().next().value;
+                return {
+                    sessao_id: primeiro.rv_id,
+                    rv_sessao_id: primeiro.rv_id,
+                    cliente_id: primeiro.cliente_id,
+                    cliente_nome: primeiro.cliente_nome || '',
+                    checkin_at: primeiro.checkin_em,
+                    atividades_count: primeiro.atividades_count || 0,
+                    data_planejada: dataPlanejada
+                };
+            }
+            return null;
+        }
 
         // Verificar cache (a menos que force refresh)
         if (!forceRefresh && this._sessaoCache?.[cacheKey]) {
@@ -11974,11 +12065,20 @@ class App {
 
             if (!resumoDiv || !conteudoDiv) return;
 
-            // Buscar sessão do cliente
-            const url = `${this.registroRotaState.backendUrl}/api/registro-rota/sessoes?data_inicio=${dataVisita}&data_fim=${dataVisita}&rep_id=${repId}&contexto=planejado`;
-            const result = await fetchJson(url);
-            const sessoes = result.sessoes || [];
-            const sessaoCliente = sessoes.find(s => String(s.cliente_id).trim() === String(clienteId).trim());
+            // PWA: usar atividades locais se existirem
+            const isPWA = window.authManager?.isPWA;
+            const atvLocal = this.registroRotaState._atividadesLocal;
+            let sessaoCliente = null;
+
+            if (isPWA && atvLocal?.clienteId === String(clienteId).trim()) {
+                sessaoCliente = atvLocal.payload;
+            } else {
+                // Buscar sessão do cliente do servidor
+                const url = `${this.registroRotaState.backendUrl}/api/registro-rota/sessoes?data_inicio=${dataVisita}&data_fim=${dataVisita}&rep_id=${repId}&contexto=planejado`;
+                const result = await fetchJson(url);
+                const sessoes = result.sessoes || [];
+                sessaoCliente = sessoes.find(s => String(s.cliente_id).trim() === String(clienteId).trim());
+            }
 
             if (!sessaoCliente) {
                 resumoDiv.style.display = 'none';
@@ -12131,6 +12231,27 @@ class App {
         if (cached && (Date.now() - cached.timestamp) < 600000) {
             console.log('📍 Geocodificação (cache local):', endereco);
             return cached.coords;
+        }
+
+        // PWA: tentar IndexedDB primeiro (coordenadas sincronizadas no download)
+        if (clienteId && typeof offlineDB !== 'undefined') {
+            try {
+                const coordOff = await offlineDB.getCoordenadas(clienteId);
+                if (coordOff && Number.isFinite(coordOff.latitude) && Number.isFinite(coordOff.longitude)) {
+                    const result = {
+                        lat: coordOff.latitude,
+                        lng: coordOff.longitude,
+                        aproximado: coordOff.aproximado || false,
+                        fonte: 'cache-offline',
+                        precisao: coordOff.precisao || 'desconhecida'
+                    };
+                    this.geocodeCache[cacheKey] = { coords: result, timestamp: Date.now() };
+                    console.log('📍 Geocodificação (IndexedDB offline):', coordOff.latitude, coordOff.longitude);
+                    return result;
+                }
+            } catch (e) {
+                console.warn('Erro ao buscar coordenadas offline:', e);
+            }
         }
 
         try {
@@ -12903,6 +13024,7 @@ class App {
         const repId = Number(atual.repId);
         const clienteId = normalizeClienteId(atual.clienteId);
         const clienteNome = String(atual.clienteNome || '');
+        const isPWA = window.authManager?.isPWA;
 
         try {
             const dataVisita = String(atual.dataVisita || '').trim();
@@ -12973,7 +13095,9 @@ class App {
             }
 
             // Para campanha e checkout, verificar se a sessão existe no backend
-            if (['campanha', 'checkout'].includes(tipoRegistro) && !rvSessaoId) {
+            // No PWA com checkin local pendente, pular essa verificação (será resolvido no envio batch)
+            const temCheckinLocalPendente = isPWA && this.registroRotaState._checkinLocal?.clienteId === clienteId;
+            if (['campanha', 'checkout'].includes(tipoRegistro) && !rvSessaoId && !temCheckinLocalPendente) {
                 const sessaoBackend = await this.buscarSessaoAberta(repId, dataVisita);
                 if (sessaoBackend && normalizeClienteId(sessaoBackend.cliente_id) === clienteId) {
                     this.reconciliarSessaoAbertaLocal(sessaoBackend, repId);
@@ -13037,8 +13161,109 @@ class App {
                 return;
             }
 
+            // === PWA OFFLINE-FIRST: Checkin salva apenas localmente ===
+            const isPWA = window.authManager?.isPWA;
+            if (isPWA && tipoRegistro === 'checkin') {
+                const localId = `LOCAL_${Date.now()}_${repId}_${clienteId}`;
+                const dataRegistro = new Date().toISOString();
+
+                // Armazenar foto e dados do checkin para envio posterior no checkout
+                this.registroRotaState._checkinLocal = {
+                    localId,
+                    repId,
+                    clienteId,
+                    clienteNome,
+                    fotoBlob: arquivos[0],
+                    gpsCoords: { ...gpsCoords },
+                    enderecoResolvido,
+                    enderecoRoteiro: this.registroRotaState.clienteAtual?.clienteEndereco || '',
+                    dataVisita,
+                    novaVisita: novaVisitaFlag,
+                    timestamp: dataRegistro
+                };
+
+                // Atualizar estado local imediatamente
+                this.atualizarStatusClienteLocal(clienteId, {
+                    status: 'em_atendimento',
+                    checkin_data_hora: dataRegistro,
+                    checkout_data_hora: null,
+                    atividades_count: 0,
+                    rv_id: localId,
+                    rep_id: repId
+                });
+
+                this.showNotification('Check-in registrado!', 'success');
+                this._sessaoCache = {};
+                await this.fecharModalCaptura();
+                this.atualizarCardCliente(clienteId);
+                return;
+            }
+
             if (btnSalvar) {
                 btnSalvar.textContent = 'Enviando...';
+            }
+
+            // === PWA: Antes do checkout, enviar checkin local pendente ===
+            let rvIdResolvido = rvSessaoId;
+            if (isPWA && tipoRegistro === 'checkout' && this.registroRotaState._checkinLocal) {
+                const checkin = this.registroRotaState._checkinLocal;
+                if (checkin.clienteId === clienteId) {
+                    if (btnSalvar) btnSalvar.textContent = 'Enviando check-in...';
+
+                    // 1. Enviar checkin pendente ao servidor
+                    const checkinForm = new FormData();
+                    checkinForm.append('rep_id', checkin.repId);
+                    checkinForm.append('cliente_id', checkin.clienteId);
+                    checkinForm.append('latitude', Number(checkin.gpsCoords.latitude));
+                    checkinForm.append('longitude', Number(checkin.gpsCoords.longitude));
+                    checkinForm.append('endereco_resolvido', checkin.enderecoResolvido || '');
+                    checkinForm.append('tipo', 'checkin');
+                    checkinForm.append('cliente_nome', checkin.clienteNome);
+                    checkinForm.append('cliente_endereco', checkin.enderecoRoteiro || '');
+                    if (checkin.dataVisita) checkinForm.append('data_planejada', checkin.dataVisita);
+                    if (checkin.novaVisita) checkinForm.append('allow_nova_visita', 'true');
+                    checkinForm.append('fotos', checkin.fotoBlob);
+
+                    const checkinResp = await fetchJson(`${this.registroRotaState.backendUrl}/api/registro-rota/visitas`, {
+                        method: 'POST',
+                        body: checkinForm
+                    });
+
+                    const rvCheckin = checkinResp?.rv_id || checkinResp?.sessao_id;
+                    if (!rvCheckin) {
+                        this.showNotification('Falha ao sincronizar check-in. Tente novamente.', 'error');
+                        return;
+                    }
+
+                    rvIdResolvido = rvCheckin;
+
+                    // Atualizar referência local com ID real do servidor
+                    this.atualizarStatusClienteLocal(clienteId, {
+                        status: 'em_atendimento',
+                        rv_id: rvCheckin,
+                        rep_id: repId
+                    });
+
+                    // 2. Se há atividades locais pendentes, enviar
+                    if (this.registroRotaState._atividadesLocal?.clienteId === clienteId) {
+                        if (btnSalvar) btnSalvar.textContent = 'Enviando atividades...';
+                        const atv = this.registroRotaState._atividadesLocal;
+                        try {
+                            await fetch(`${this.registroRotaState.backendUrl}/api/registro-rota/sessoes/${rvCheckin}/servicos`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(atv.payload)
+                            });
+                        } catch (atvError) {
+                            console.warn('Erro ao enviar atividades pendentes:', atvError);
+                        }
+                        this.registroRotaState._atividadesLocal = null;
+                    }
+
+                    // Limpar checkin local
+                    this.registroRotaState._checkinLocal = null;
+                    if (btnSalvar) btnSalvar.textContent = 'Enviando checkout...';
+                }
             }
 
             const formData = new FormData();
@@ -13055,7 +13280,7 @@ class App {
             if (novaVisitaFlag) {
                 formData.append('allow_nova_visita', 'true');
             }
-            if (rvSessaoId) formData.append('rv_id', rvSessaoId);
+            if (rvIdResolvido) formData.append('rv_id', rvIdResolvido);
 
             arquivos.forEach((arquivo) => formData.append('fotos', arquivo));
 
@@ -13241,29 +13466,53 @@ class App {
         const modalAt = document.getElementById('modalAtividades');
         if (modalAt) modalAt.classList.add('active');
 
-        // Buscar sessão ativa - forçar refresh para evitar problemas de cache
-        let sessaoAberta = await this.buscarSessaoAberta(repId, dataPlanejada, true);
+        // PWA: Se há checkin local pendente para este cliente, usar dados locais
+        const isPWA = window.authManager?.isPWA;
+        const statusLocal = this.registroRotaState.resumoVisitas.get(clienteIdNorm);
+        const sessaoIdLocal = statusLocal?.rv_id;
+        const ehSessaoLocal = isPWA && sessaoIdLocal && String(sessaoIdLocal).startsWith('LOCAL_');
 
-        // Se não encontrou pela data, buscar qualquer atendimento aberto (pode ser de outro dia)
-        if (!sessaoAberta || normalizeClienteId(sessaoAberta.cliente_id) !== clienteIdNorm) {
-            const atendimentoAberto = await this.buscarAtendimentoAberto(repId, true);
-            if (atendimentoAberto?.existe && atendimentoAberto?.rv_id &&
-                normalizeClienteId(atendimentoAberto.cliente_id) === clienteIdNorm) {
-                // Encontrou sessão aberta para o mesmo cliente (de outro dia)
-                sessaoAberta = {
-                    sessao_id: atendimentoAberto.rv_id,
-                    rv_sessao_id: atendimentoAberto.rv_id,
-                    cliente_id: atendimentoAberto.cliente_id,
-                    cliente_nome: atendimentoAberto.cliente_nome,
-                    qtd_frentes: atendimentoAberto.qtd_frentes,
-                    usou_merchandising: atendimentoAberto.usou_merchandising,
-                    serv_abastecimento: atendimentoAberto.serv_abastecimento,
-                    serv_espaco_loja: atendimentoAberto.serv_espaco_loja,
-                    serv_ruptura_loja: atendimentoAberto.serv_ruptura_loja,
-                    serv_pontos_extras: atendimentoAberto.serv_pontos_extras,
-                    qtd_pontos_extras: atendimentoAberto.qtd_pontos_extras,
-                    atividades_json: atendimentoAberto.atividades_json
-                };
+        let sessaoAberta;
+        if (ehSessaoLocal) {
+            // Sessão local: não precisa buscar no servidor
+            const atvLocal = this.registroRotaState._atividadesLocal;
+            sessaoAberta = {
+                sessao_id: sessaoIdLocal,
+                rv_sessao_id: sessaoIdLocal,
+                cliente_id: clienteIdNorm,
+                cliente_nome: clienteNome,
+                qtd_frentes: atvLocal?.payload?.qtd_frentes || null,
+                usou_merchandising: atvLocal?.payload?.usou_merchandising || null,
+                serv_abastecimento: atvLocal?.payload?.serv_abastecimento || null,
+                serv_espaco_loja: atvLocal?.payload?.serv_espaco_loja || null,
+                serv_ruptura_loja: atvLocal?.payload?.serv_ruptura_loja || null,
+                serv_pontos_extras: atvLocal?.payload?.serv_pontos_extras || null,
+                qtd_pontos_extras: atvLocal?.payload?.qtd_pontos_extras || null
+            };
+        } else {
+            // Buscar sessão ativa - forçar refresh para evitar problemas de cache
+            sessaoAberta = await this.buscarSessaoAberta(repId, dataPlanejada, true);
+
+            // Se não encontrou pela data, buscar qualquer atendimento aberto (pode ser de outro dia)
+            if (!sessaoAberta || normalizeClienteId(sessaoAberta.cliente_id) !== clienteIdNorm) {
+                const atendimentoAberto = await this.buscarAtendimentoAberto(repId, true);
+                if (atendimentoAberto?.existe && atendimentoAberto?.rv_id &&
+                    normalizeClienteId(atendimentoAberto.cliente_id) === clienteIdNorm) {
+                    sessaoAberta = {
+                        sessao_id: atendimentoAberto.rv_id,
+                        rv_sessao_id: atendimentoAberto.rv_id,
+                        cliente_id: atendimentoAberto.cliente_id,
+                        cliente_nome: atendimentoAberto.cliente_nome,
+                        qtd_frentes: atendimentoAberto.qtd_frentes,
+                        usou_merchandising: atendimentoAberto.usou_merchandising,
+                        serv_abastecimento: atendimentoAberto.serv_abastecimento,
+                        serv_espaco_loja: atendimentoAberto.serv_espaco_loja,
+                        serv_ruptura_loja: atendimentoAberto.serv_ruptura_loja,
+                        serv_pontos_extras: atendimentoAberto.serv_pontos_extras,
+                        qtd_pontos_extras: atendimentoAberto.qtd_pontos_extras,
+                        atividades_json: atendimentoAberto.atividades_json
+                    };
+                }
             }
         }
 
@@ -13605,15 +13854,29 @@ class App {
                 return;
             }
 
-            const response = await fetch(`${this.registroRotaState.backendUrl}/api/registro-rota/sessoes/${sessao.sessaoId}/servicos`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            const isPWA = window.authManager?.isPWA;
+            const sessaoLocal = isPWA && String(sessao.sessaoId || '').startsWith('LOCAL_');
 
-            if (!response.ok) {
-                const error = await this.extrairMensagemErro(response);
-                throw new Error(error || 'Erro ao salvar atividades');
+            if (isPWA && sessaoLocal) {
+                // PWA offline-first: salvar atividades localmente, enviar no checkout
+                this.registroRotaState._atividadesLocal = {
+                    sessaoId: sessao.sessaoId,
+                    clienteId: sessao.clienteId,
+                    repId: sessao.repId,
+                    payload
+                };
+            } else {
+                // Modo web ou sessão já sincronizada: enviar diretamente ao servidor
+                const response = await fetch(`${this.registroRotaState.backendUrl}/api/registro-rota/sessoes/${sessao.sessaoId}/servicos`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const error = await this.extrairMensagemErro(response);
+                    throw new Error(error || 'Erro ao salvar atividades');
+                }
             }
 
             const resumoAtual = this.registroRotaState.resumoVisitas.get(sessao.clienteId) || {};
