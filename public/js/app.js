@@ -10304,6 +10304,19 @@ class App {
         // Carregar lista de repositores (já está no HTML gerado)
 
         this.restaurarContextoRegistroRota();
+
+        // PWA: auto-carregar roteiro se repositor fixo
+        if (authManager?.isPWA && authManager?.usuario?.perfil === 'repositor') {
+            const selectRepositor = document.getElementById('registroRepositor');
+            const inputData = document.getElementById('registroData');
+            if (selectRepositor?.value && inputData?.value) {
+                // Esconder barra de filtro no PWA (repositor já fixo)
+                const filterBar = selectRepositor.closest('.filter-bar');
+                if (filterBar) filterBar.style.display = 'none';
+                // Auto-carregar
+                this.carregarRoteiroRepositor();
+            }
+        }
     }
 
     restaurarContextoRegistroRota() {
@@ -11248,6 +11261,12 @@ class App {
     }
 
     async abrirModalNaoAtendimento(repId, clienteId, clienteNome, dataVisita) {
+        // No PWA: usar tela cheia do pwaApp ao invés de modal
+        if (authManager?.isPWA && typeof pwaApp !== 'undefined' && pwaApp.abrirNaoAtendimento) {
+            pwaApp.abrirNaoAtendimento(repId, clienteId, clienteNome, dataVisita);
+            return;
+        }
+
         const conteudo = document.createElement('div');
         conteudo.className = 'modal-body-text';
         conteudo.innerHTML = `
@@ -14071,9 +14090,28 @@ class App {
             return this.documentosState.tipos;
         }
 
+        // No PWA: tentar IndexedDB primeiro (offline-first)
+        if (authManager?.isPWA && typeof offlineDB !== 'undefined') {
+            try {
+                await offlineDB.init();
+                const tiposLocal = await offlineDB.getTiposDocumento();
+                if (tiposLocal && tiposLocal.length > 0) {
+                    console.log('[PWA] Tipos de documentos carregados do IndexedDB:', tiposLocal.length);
+                    this.documentosState.tipos = tiposLocal;
+                    return tiposLocal;
+                }
+            } catch (e) {
+                console.warn('[PWA] Erro ao buscar tipos doc do IndexedDB:', e);
+            }
+        }
+
         try {
             const data = await fetchJson(`${API_BASE_URL}/api/documentos/tipos`);
             this.documentosState.tipos = data.tipos || [];
+            // Salvar no IndexedDB para uso offline futuro
+            if (typeof offlineDB !== 'undefined' && this.documentosState.tipos.length > 0) {
+                offlineDB.salvarTiposDocumento(this.documentosState.tipos).catch(() => {});
+            }
             return this.documentosState.tipos;
         } catch (error) {
             console.warn('Erro ao carregar tipos de documentos:', error);
