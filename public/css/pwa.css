@@ -218,6 +218,10 @@ body.pwa-mode #appScreen {
     font-size: 17px;
     font-weight: 700;
     color: #1f2937;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .pwa-back-btn {
@@ -230,6 +234,7 @@ body.pwa-mode #appScreen {
     line-height: 1;
     border-radius: 6px;
     -webkit-tap-highlight-color: transparent;
+    flex-shrink: 0;
 }
 
 .pwa-back-btn:active {
@@ -581,21 +586,207 @@ body.pwa-mode .pwa-filtros-wrapper .filter-bar-wide > * {
     max-width: 100% !important;
 }
 
-/* Override: ESCONDER modals no PWA, usar tela cheia */
+/* ==========================================
+   MODAL TELA CHEIA NO PWA
+   Modals do app.js abrem como tela cheia
+   ========================================== */
 body.pwa-mode .modal-backdrop,
 body.pwa-mode .modal-overlay {
-    /* Permitir modals do app.js mas garantir que fiquem acessíveis */
     z-index: 10001 !important;
 }
 
-body.pwa-mode .modal-container,
-body.pwa-mode .modal-content {
+/* Todos os modals no PWA: tela cheia */
+body.pwa-mode .modal.active {
+    z-index: 10001 !important;
+    padding: 0 !important;
+    align-items: stretch !important;
+}
+
+body.pwa-mode .modal-content,
+body.pwa-mode .modal-container {
     max-width: 100vw !important;
     width: 100vw !important;
     height: 100dvh !important;
     max-height: 100dvh !important;
     border-radius: 0 !important;
     margin: 0 !important;
+}
+
+/* Modal de captura (check-in/checkout): tela cheia otimizada */
+body.pwa-mode .modal-captura.active {
+    z-index: 10002 !important;
+    background: #fff !important;
+}
+
+body.pwa-mode .modal-captura .modal-content.captura-modal {
+    width: 100vw !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    max-width: 100vw !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+}
+
+/* Header do modal captura no PWA: estilo de tela dedicada */
+body.pwa-mode .captura-header {
+    padding: 12px 16px !important;
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+body.pwa-mode .captura-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+body.pwa-mode .captura-title-group {
+    flex: 1;
+    min-width: 0;
+}
+
+body.pwa-mode .captura-title-group h3 {
+    font-size: 16px !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Botão fechar do modal: estilo de botão voltar */
+body.pwa-mode .captura-close {
+    font-size: 28px !important;
+    padding: 4px 8px !important;
+    order: -1;
+}
+
+/* Camera area no PWA: maximizar espaço */
+body.pwa-mode .captura-body {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 8px 12px !important;
+}
+
+body.pwa-mode .camera-wrapper {
+    width: 100% !important;
+}
+
+body.pwa-mode .camera-area {
+    width: 100% !important;
+    max-height: 50vh !important;
+}
+
+body.pwa-mode #videoPreview,
+body.pwa-mode #canvasCaptura {
+    max-height: 50vh !important;
+    width: 100% !important;
+    object-fit: cover;
+}
+
+/* Footer do modal: botões empilhados no PWA */
+body.pwa-mode .captura-footer {
+    padding: 10px 12px !important;
+    gap: 8px !important;
+    flex-wrap: wrap;
+    border-top: 1px solid #e5e7eb;
+    background: #fff;
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+}
+
+body.pwa-mode .captura-actions-right {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    width: 100%;
+    justify-content: space-between;
+}
+
+body.pwa-mode .captura-actions-right .btn {
+    flex: 1;
+    min-width: 0;
+    padding: 12px 8px !important;
+    font-size: 13px !important;
+    text-align: center;
+    justify-content: center;
+}
+
+/* Localização no PWA */
+body.pwa-mode .captura-localizacao {
+    padding: 8px 12px 0 !important;
+}
+
+body.pwa-mode .gps-chip {
+    width: 100% !important;
+    padding: 8px 12px !important;
+}
+
+/* Resumo de atividades no PWA */
+body.pwa-mode .resumo-atividades {
+    margin: 0 12px !important;
+    border-radius: 8px;
+}
+
+/* ==========================================
+   CHECK-IN BADGE (tela dedicada)
+   ========================================== */
+.pwa-checkin-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+}
+
+.pwa-checkin-info {
+    padding: 10px 16px;
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.pwa-checkin-cliente {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.pwa-checkin-endereco {
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 2px;
+}
+
+.pwa-checkin-data {
+    font-size: 12px;
+    color: #9ca3af;
+    margin-top: 2px;
+}
+
+.pwa-checkin-status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px;
+    color: #6b7280;
+    font-size: 14px;
+}
+
+.pwa-checkin-modal-area {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.pwa-checkin-page {
+    height: 100%;
 }
 
 /* ==========================================
@@ -673,24 +864,28 @@ body.pwa-mode .modal-content {
 
 /* ==========================================
    TOAST (notificações flutuantes)
+   Posicionado acima das tabs, desaparece
+   automaticamente, sem bloquear cliques
    ========================================== */
 .pwa-toast {
     position: fixed;
-    bottom: 80px;
+    top: 60px;
     left: 50%;
-    transform: translateX(-50%) translateY(100px);
+    transform: translateX(-50%) translateY(-100px);
     background: #1f2937;
     color: #fff;
-    padding: 12px 24px;
+    padding: 10px 20px;
     border-radius: 10px;
     font-size: 14px;
     font-weight: 500;
     z-index: 20000;
-    transition: transform 0.3s ease;
+    transition: transform 0.3s ease, opacity 0.3s ease;
     box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     white-space: nowrap;
     max-width: 90vw;
     text-align: center;
+    pointer-events: none;
+    opacity: 0;
 }
 
 .pwa-toast-error {
@@ -699,6 +894,8 @@ body.pwa-mode .modal-content {
 
 .pwa-toast-show {
     transform: translateX(-50%) translateY(0);
+    opacity: 1;
+    display: block !important;
 }
 
 /* ==========================================
@@ -861,6 +1058,89 @@ body.pwa-mode .pwa-page-body .btn {
     font-size: 14px !important;
 }
 
+/* ==========================================
+   ROUTE ITEMS - Layout mobile otimizado
+   Cards de cliente no registro de rota
+   ========================================== */
+
+/* Card do cliente: layout em coluna para mobile */
+body.pwa-mode .route-item {
+    display: flex !important;
+    flex-direction: column !important;
+    padding: 14px !important;
+    margin-bottom: 8px !important;
+    border-radius: 10px !important;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+
+body.pwa-mode .route-item-info {
+    width: 100% !important;
+    margin-bottom: 10px;
+}
+
+body.pwa-mode .route-item-name {
+    font-size: 15px !important;
+    font-weight: 600 !important;
+    color: #1f2937;
+    line-height: 1.3;
+}
+
+body.pwa-mode .route-item-address {
+    font-size: 12px !important;
+    color: #6b7280;
+    margin-top: 4px;
+    line-height: 1.4;
+}
+
+body.pwa-mode .route-item-distance {
+    font-size: 12px !important;
+    color: #6b7280;
+    margin-top: 4px;
+}
+
+body.pwa-mode .route-item-time {
+    font-size: 12px !important;
+    color: #059669;
+    margin-top: 4px;
+}
+
+/* Status badge */
+body.pwa-mode .route-status {
+    display: inline-block;
+    padding: 4px 10px !important;
+    border-radius: 12px !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    margin-bottom: 8px;
+}
+
+/* Botões de ação: grid para aproveitamento do espaço */
+body.pwa-mode .route-item-actions {
+    width: 100% !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    margin-top: 0 !important;
+}
+
+body.pwa-mode .route-item-actions .btn-small {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 10px 8px !important;
+    font-size: 13px !important;
+    border-radius: 8px !important;
+    text-align: center;
+    justify-content: center;
+    white-space: nowrap;
+}
+
+/* Botão de Check-in: destaque */
+body.pwa-mode .route-item-actions .btn-small:first-child {
+    flex: 1 1 100%;
+}
+
 /* Cards de resultado no PWA: full width */
 body.pwa-mode .pwa-page-body .roteiro-card,
 body.pwa-mode .pwa-page-body .visita-item,
@@ -868,6 +1148,15 @@ body.pwa-mode .pwa-page-body .visit-item,
 body.pwa-mode .pwa-page-body .doc-item {
     width: 100% !important;
     max-width: 100% !important;
+}
+
+/* Container do roteiro no PWA */
+body.pwa-mode #roteiroContainer {
+    padding: 0 4px !important;
+}
+
+body.pwa-mode #roteiroContainer .empty-state {
+    padding: 30px 20px;
 }
 
 /* Tabelas no PWA: scroll horizontal */
@@ -899,4 +1188,24 @@ body.pwa-mode .pwa-page-body .doc-upload-section .form-row {
 body.pwa-mode .pwa-page-body .filter-bar[style*="sticky"],
 body.pwa-mode .pwa-page-body .filter-bar[style*="position: sticky"] {
     position: relative !important;
+}
+
+/* ==========================================
+   PWA ROTA BODY - Estilos da tela de rota
+   ========================================== */
+.pwa-rota-body {
+    padding: 0 !important;
+    background: #f5f5f5;
+}
+
+/* Notificações do app.js no PWA: posicionar no topo */
+body.pwa-mode .notification {
+    position: fixed !important;
+    top: 56px !important;
+    left: 8px !important;
+    right: 8px !important;
+    z-index: 10003 !important;
+    border-radius: 8px !important;
+    font-size: 13px !important;
+    padding: 10px 12px !important;
 }
