@@ -34,9 +34,12 @@
     ];
 
     let currentTab = 'pwa-home';
+    let previousTab = null;
+    let navigationStack = ['pwa-home'];
     let pwaContent = null;
     let isInitialized = false;
     let initialSyncDone = false;
+    let toastTimer = null;
     let cachedData = {
         roteiro: null,
         clientes: null,
@@ -57,7 +60,9 @@
         voltarDeNaoAtendimento,
         toggleFiltros,
         buscarConsulta,
-        voltarHome
+        voltarHome,
+        abrirCheckinTela,
+        voltarDeCheckin
     };
 
     function init() {
@@ -76,6 +81,7 @@
         updateHeader();
         setupConnectivity();
         setupSyncBadge();
+        setupBackNavigation();
 
         // Render home imediatamente
         navigate('pwa-home');
@@ -256,10 +262,20 @@
         });
     }
 
-    function navigate(tabId) {
+    function navigate(tabId, skipHistory) {
         if (!PWA_TABS[tabId] && !tabId.startsWith('consulta-')) return;
 
+        previousTab = currentTab;
         currentTab = tabId;
+
+        // Gerenciar histórico de navegação
+        if (!skipHistory) {
+            navigationStack.push(tabId);
+            // Limitar tamanho do stack
+            if (navigationStack.length > 20) navigationStack.shift();
+            // Adicionar estado ao histórico do navegador
+            history.pushState({ pwaTab: tabId }, '', '');
+        }
 
         // Update tab active state
         document.querySelectorAll('.pwa-tab').forEach(t => {
@@ -316,6 +332,8 @@
                     await loadLocalData();
                     showSyncIndicator(false);
                     showToast('Sincronizado com sucesso');
+                    // Atualizar a home se estiver nela
+                    if (currentTab === 'pwa-home') renderHome();
                 } catch (e) {
                     showSyncIndicator(false);
                     showToast('Erro ao sincronizar', 'error');
@@ -324,6 +342,28 @@
         });
         updatePendingCount();
         setInterval(updatePendingCount, 30000);
+    }
+
+    // ==================== BACK NAVIGATION (evitar fechar app) ====================
+
+    function setupBackNavigation() {
+        // Adicionar estado inicial ao histórico
+        history.replaceState({ pwaTab: 'pwa-home' }, '', '');
+
+        window.addEventListener('popstate', function(e) {
+            // Remover último item do stack
+            if (navigationStack.length > 1) {
+                navigationStack.pop();
+                const prevTab = navigationStack[navigationStack.length - 1];
+                navigate(prevTab, true); // skipHistory = true para não duplicar
+            } else {
+                // Se já está na home, re-adicionar estado para evitar fechar o app
+                history.pushState({ pwaTab: 'pwa-home' }, '', '');
+                if (currentTab !== 'pwa-home') {
+                    navigate('pwa-home', true);
+                }
+            }
+        });
     }
 
     async function updatePendingCount() {
@@ -375,15 +415,30 @@
     }
 
     function showToast(msg, type = 'success') {
+        // Limpar timer anterior se existir
+        if (toastTimer) {
+            clearTimeout(toastTimer);
+            toastTimer = null;
+        }
+
         let toast = document.getElementById('pwaToast');
         if (!toast) {
             toast = document.createElement('div');
             toast.id = 'pwaToast';
             document.body.appendChild(toast);
         }
+        toast.style.display = 'block';
         toast.className = `pwa-toast pwa-toast-${type} pwa-toast-show`;
         toast.textContent = msg;
-        setTimeout(() => toast.classList.remove('pwa-toast-show'), 3000);
+        toast.style.pointerEvents = 'none';
+
+        toastTimer = setTimeout(() => {
+            toast.classList.remove('pwa-toast-show');
+            // Garantir que o toast suma completamente após a animação
+            setTimeout(() => {
+                toast.style.display = 'none';
+            }, 400);
+        }, 2500);
     }
 
     function escapeHtml(str) {
@@ -423,7 +478,10 @@
                     <span class="pwa-action-arrow">&#8250;</span>
                 </button>
 
-                <div class="pwa-section-title">Roteiro de Hoje</div>
+                <div class="pwa-section-title" style="display:flex;align-items:center;justify-content:space-between;">
+                    <span>Roteiro de Hoje</span>
+                    <button onclick="pwaApp.navigate('registro-rota')" style="background:none;border:none;color:#dc2626;font-size:13px;font-weight:600;cursor:pointer;">Ver roteiro &#8250;</button>
+                </div>
                 <div id="pwaRoteiroHoje" class="pwa-card">
                     <div class="pwa-loading-inline">
                         <div class="pwa-spinner-small"></div>
@@ -511,12 +569,13 @@
         pwaContent.innerHTML = `
             <div class="pwa-page pwa-fullscreen-page">
                 <div class="pwa-page-header-bar">
+                    <button class="pwa-back-btn" onclick="pwaApp.voltarHome()">&#8592;</button>
                     <span class="pwa-page-header-title">Registro de Rota</span>
                 </div>
-                <div id="pwaRegistroRotaContent" class="pwa-page-body">
+                <div id="pwaRegistroRotaContent" class="pwa-page-body pwa-rota-body">
                     <div class="pwa-loading-inline">
                         <div class="pwa-spinner-small"></div>
-                        <span>Carregando...</span>
+                        <span>Carregando roteiro...</span>
                     </div>
                 </div>
             </div>
@@ -527,7 +586,7 @@
             window.app.navigateTo('registro-rota', {}, { replaceHistory: true, pwaMode: true, pwaContainer: container });
         } else {
             console.warn('[PWA] window.app não disponível para registro-rota');
-            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Módulo de rota carregando...</div></div>';
+            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">M\u00f3dulo de rota carregando...</div></div>';
         }
     }
 
@@ -538,6 +597,7 @@
         pwaContent.innerHTML = `
             <div class="pwa-page pwa-fullscreen-page">
                 <div class="pwa-page-header-bar">
+                    <button class="pwa-back-btn" onclick="pwaApp.voltarHome()">&#8592;</button>
                     <span class="pwa-page-header-title">Registro de Documentos</span>
                 </div>
                 <div id="pwaDocumentosContent" class="pwa-page-body">
@@ -908,6 +968,66 @@
         }
     }
 
+    // ==================== CHECK-IN TELA CHEIA (substitui popup) ====================
+
+    /**
+     * Intercepta o check-in no PWA e abre como tela cheia
+     * ao invés de modal/popup
+     */
+    function abrirCheckinTela(repId, clienteId, clienteNome, enderecoLinha, dataVisita, tipoRegistro, enderecoCadastro, novaVisita) {
+        previousTab = currentTab;
+
+        // Adicionar ao histórico para back funcionar
+        navigationStack.push('pwa-checkin');
+        history.pushState({ pwaTab: 'pwa-checkin' }, '', '');
+
+        const tipoLabel = (tipoRegistro || 'checkin').toUpperCase();
+        const tipoColor = tipoRegistro === 'checkout' ? '#dc2626'
+            : tipoRegistro === 'campanha' ? '#f59e0b'
+            : '#3b82f6';
+
+        pwaContent.innerHTML = `
+            <div class="pwa-page pwa-fullscreen-page pwa-checkin-page">
+                <div class="pwa-page-header-bar">
+                    <button class="pwa-back-btn" onclick="pwaApp.voltarDeCheckin()">&#8592;</button>
+                    <span class="pwa-page-header-title">${escapeHtml(clienteNome)}</span>
+                    <span class="pwa-checkin-badge" style="background:${tipoColor};">${tipoLabel}</span>
+                </div>
+                <div class="pwa-checkin-info">
+                    <div class="pwa-checkin-cliente">${escapeHtml(clienteId)} - ${escapeHtml(clienteNome)}</div>
+                    ${enderecoLinha ? `<div class="pwa-checkin-endereco">${escapeHtml(enderecoLinha)}</div>` : ''}
+                    <div class="pwa-checkin-data">${formatarData(dataVisita)}</div>
+                </div>
+                <div class="pwa-checkin-status" id="pwaCheckinStatus">
+                    <div class="pwa-spinner-small"></div>
+                    <span>Obtendo localiza\u00e7\u00e3o...</span>
+                </div>
+                <div id="pwaCheckinModalContainer" class="pwa-checkin-modal-area">
+                    <!-- O modal de captura será renderizado aqui pelo app.js -->
+                </div>
+            </div>
+        `;
+
+        // Delegar ao app.js para abrir o modal de captura
+        // O modal será renderizado com estilos de tela cheia via CSS
+        if (typeof window.app !== 'undefined' && window.app.abrirModalCaptura) {
+            window.app.abrirModalCaptura(repId, clienteId, clienteNome, enderecoLinha, dataVisita, tipoRegistro, enderecoCadastro, novaVisita);
+        }
+    }
+
+    function voltarDeCheckin() {
+        // Fechar a câmera/modal se estiver aberta
+        if (typeof window.app !== 'undefined' && window.app.fecharModalCaptura) {
+            window.app.fecharModalCaptura();
+        }
+
+        // Voltar para a tela anterior
+        if (navigationStack.length > 1) {
+            navigationStack.pop();
+        }
+        navigate(previousTab || 'registro-rota');
+    }
+
     // ==================== PÁGINA: MAIS ====================
 
     function renderMais() {
@@ -965,16 +1085,32 @@
 
         // Event listeners
         document.getElementById('pwaMenuSync')?.addEventListener('click', async () => {
+            const syncItem = document.getElementById('pwaMenuSync');
+            const syncLabel = syncItem?.querySelector('.pwa-menu-label');
+            const syncValue = syncItem?.querySelector('.pwa-menu-value');
+
             if (typeof syncService !== 'undefined') {
                 try {
+                    if (syncLabel) syncLabel.textContent = 'Sincronizando...';
+                    if (syncValue) syncValue.innerHTML = '<span class="pwa-spinner-small" style="width:16px;height:16px;display:inline-block;"></span>';
                     showSyncIndicator(true);
+
                     await syncService.sincronizarAgora();
                     await loadLocalData();
                     showSyncIndicator(false);
+
+                    // Atualizar a UI sem re-renderizar toda a tela
+                    if (syncLabel) syncLabel.textContent = 'Sincronizar agora';
+                    if (syncValue) syncValue.textContent = 'Sincronizado';
+                    const syncTimeEl = syncItem?.parentElement?.querySelector('.pwa-menu-item:nth-child(2) .pwa-menu-value');
+                    if (syncTimeEl) syncTimeEl.textContent = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+
                     showToast('Sincronizado com sucesso');
-                    renderMais(); // Re-render
+                    loadPendingCountMais();
                 } catch (e) {
                     showSyncIndicator(false);
+                    if (syncLabel) syncLabel.textContent = 'Sincronizar agora';
+                    if (syncValue) syncValue.textContent = 'Erro';
                     showToast('Erro: ' + e.message, 'error');
                 }
             }
