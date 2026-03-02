@@ -953,12 +953,12 @@ class App {
         const paginaHash = this.obterPaginaDoHash();
 
         // Se tem hash e o usuário tem permissão, usar
-        if (paginaHash && authManager?.hasPermission(paginaHash)) {
+        if (paginaHash && (paginaHash === 'home' || authManager?.hasPermission(paginaHash))) {
             return paginaHash;
         }
 
         // Se a página atual está nas permissões, usar
-        if (this.currentPage && authManager?.hasPermission(this.currentPage)) {
+        if (this.currentPage && (this.currentPage === 'home' || authManager?.hasPermission(this.currentPage))) {
             return this.currentPage;
         }
 
@@ -968,7 +968,8 @@ class App {
             return primeiraTela;
         }
 
-        return this.currentPage;
+        // Fallback: sempre retornar home (acessível a todos)
+        return 'home';
     }
 
     obterPaginaDoHash() {
@@ -1132,6 +1133,8 @@ class App {
     }
 
     usuarioTemPermissao(tela) {
+        // Home é acessível para todos os usuários autenticados
+        if (tela === 'home') return true;
         // Verificar usando o sistema de telas do authManager
         if (typeof authManager !== 'undefined' && authManager.isAuthenticated()) {
             return authManager.hasPermission(tela);
@@ -1511,7 +1514,7 @@ class App {
                     </button>
                 </div>
                 <div class="modal-footer" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
-                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalEditarCoordenadasConfig').classList.remove('active')">Cancelar</button>
+                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalEditarCoordenadasConfig')?.classList.remove('active')">Cancelar</button>
                     <button type="button" class="btn btn-primary" id="btnSalvarCoordenadasConfig">Salvar</button>
                 </div>
             `;
@@ -2682,7 +2685,7 @@ class App {
             <hr style="margin: 16px 0;">
             <div class="modal-footer" style="justify-content: flex-end; padding: 0; margin: 0;">
                 <button type="button" class="btn btn-secondary"
-                        onclick="document.getElementById('modalEditarCoordenadas').classList.remove('active')">
+                        onclick="document.getElementById('modalEditarCoordenadas')?.classList.remove('active')">
                     Cancelar
                 </button>
                 <button type="button" class="btn btn-primary" id="btnSalvarCoordenadas">
@@ -19239,7 +19242,7 @@ class App {
                 <div class="modal-content" style="max-width: 500px;">
                     <div class="modal-header">
                         <h3>Selecionar Pesquisa</h3>
-                        <button class="modal-close" onclick="document.getElementById('modalSelecaoPesquisa').classList.remove('active')">&times;</button>
+                        <button class="modal-close" onclick="document.getElementById('modalSelecaoPesquisa')?.classList.remove('active')">&times;</button>
                     </div>
                     <div class="modal-body" id="modalSelecaoPesquisaBody">
                     </div>
@@ -19276,7 +19279,7 @@ class App {
                 `).join('')}
             </div>
             <button type="button" class="pesquisa-selecao-cancelar"
-                    onclick="document.getElementById('modalSelecaoPesquisa').classList.remove('active')">
+                    onclick="document.getElementById('modalSelecaoPesquisa')?.classList.remove('active')">
                 Cancelar
             </button>
         `;

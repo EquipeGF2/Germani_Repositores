@@ -21,7 +21,7 @@ export const pages = {
                     <div class="home-container">
                         <div class="home-welcome">
                             <h2>Sistema de Gestão de Repositores</h2>
-                            <p>Selecione uma opção no menu lateral para começar.</p>
+                            <p>Selecione uma opção no menu lateral ou use os atalhos abaixo.</p>
                         </div>
 
                         <div class="home-sections">
@@ -31,16 +31,28 @@ export const pages = {
                                 <p>Gerencie repositores, roteiros e rateios</p>
                             </div>
 
-                            <div class="home-section-card" onclick="window.app.navigateTo('consulta-roteiro')">
+                            <div class="home-section-card" onclick="window.app.navigateTo('consulta-visitas')">
                                 <div class="home-section-icon">🔎</div>
                                 <h3>Consultas</h3>
-                                <p>Consulte alterações, estrutura e roteiros</p>
+                                <p>Consulte visitas, alterações e roteiros</p>
                             </div>
 
-                            <div class="home-section-card" onclick="window.app.navigateTo('resumo-periodo')">
-                                <div class="home-section-icon">📊</div>
-                                <h3>Reposição</h3>
-                                <p>Relatórios e análises de reposição</p>
+                            <div class="home-section-card" onclick="window.app.navigateTo('documentos')">
+                                <div class="home-section-icon">📄</div>
+                                <h3>Documentos</h3>
+                                <p>Registro e consulta de documentos</p>
+                            </div>
+
+                            <div class="home-section-card" onclick="window.app.navigateTo('registro-rota')">
+                                <div class="home-section-icon">🧭</div>
+                                <h3>Registro de Rota</h3>
+                                <p>Check-in, checkout e controle de visitas</p>
+                            </div>
+
+                            <div class="home-section-card" onclick="window.app.navigateTo('analise-performance')">
+                                <div class="home-section-icon">📈</div>
+                                <h3>Performance</h3>
+                                <p>Análise de visitas e faturamento</p>
                             </div>
 
                             <div class="home-section-card" onclick="window.app.navigateTo('configuracoes-sistema')">
@@ -2904,7 +2916,7 @@ export const pages = {
                 <div class="modal-content" style="max-width: 600px;">
                     <div class="modal-header">
                         <h3>Editar Coordenadas</h3>
-                        <button class="modal-close" onclick="document.getElementById('modalEditarCoordenadas').classList.remove('active')">&times;</button>
+                        <button class="modal-close" onclick="document.getElementById('modalEditarCoordenadas')?.classList.remove('active')">&times;</button>
                     </div>
                     <div class="modal-body" id="modalEditarCoordenadasBody">
                         <!-- Conteúdo preenchido dinamicamente -->
@@ -3514,7 +3526,7 @@ export const pages = {
                 <div class="modal-content modal-atividade-config">
                     <div class="modal-header">
                         <h3 id="modalAtividadeConfigTitulo">Nova Atividade</h3>
-                        <button class="modal-close" onclick="document.getElementById('modalAtividadeConfig').classList.remove('active')">&times;</button>
+                        <button class="modal-close" onclick="document.getElementById('modalAtividadeConfig')?.classList.remove('active')">&times;</button>
                     </div>
                     <div class="modal-body" style="padding: 20px;">
                         <form id="formAtividadeConfig">
@@ -3603,7 +3615,7 @@ export const pages = {
                         </form>
                     </div>
                     <div class="modal-footer" style="padding: 16px 20px; gap: 12px;">
-                        <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalAtividadeConfig').classList.remove('active')">Cancelar</button>
+                        <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalAtividadeConfig')?.classList.remove('active')">Cancelar</button>
                         <button type="button" class="btn btn-primary" id="btnSalvarAtividadeConfig">Salvar</button>
                     </div>
                 </div>
@@ -3647,7 +3659,7 @@ export const pages = {
                 <div class="modal-content" style="max-width: 450px;">
                     <div class="modal-header">
                         <h3 id="modalTipoEspacoConfigTitulo">Novo Tipo de Espaço</h3>
-                        <button class="modal-close" onclick="document.getElementById('modalTipoEspacoConfig').classList.remove('active')">&times;</button>
+                        <button class="modal-close" onclick="document.getElementById('modalTipoEspacoConfig')?.classList.remove('active')">&times;</button>
                     </div>
                     <div class="modal-body">
                         <form id="formTipoEspacoConfig">
@@ -3669,7 +3681,7 @@ export const pages = {
                         </form>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalTipoEspacoConfig').classList.remove('active')">Cancelar</button>
+                        <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalTipoEspacoConfig')?.classList.remove('active')">Cancelar</button>
                         <button type="button" class="btn btn-primary" id="btnSalvarTipoEspacoConfig">Salvar</button>
                     </div>
                 </div>
@@ -3680,7 +3692,7 @@ export const pages = {
                 <div class="modal-content" style="max-width: 450px;">
                     <div class="modal-header">
                         <h3 id="modalTipoDocumentoTitulo">Novo Tipo de Documento</h3>
-                        <button class="modal-close" onclick="document.getElementById('modalTipoDocumento').classList.remove('active')">&times;</button>
+                        <button class="modal-close" onclick="document.getElementById('modalTipoDocumento')?.classList.remove('active')">&times;</button>
                     </div>
                     <div class="modal-body">
                         <form id="formTipoDocumento">
@@ -3709,7 +3721,7 @@ export const pages = {
                         </form>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalTipoDocumento').classList.remove('active')">Cancelar</button>
+                        <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalTipoDocumento')?.classList.remove('active')">Cancelar</button>
                         <button type="button" class="btn btn-primary" id="btnSalvarTipoDocumento">Salvar</button>
                     </div>
                 </div>
@@ -3720,7 +3732,7 @@ export const pages = {
                 <div class="modal-content" style="max-width: 450px;">
                     <div class="modal-header">
                         <h3 id="modalTipoGastoTitulo">Nova Rubrica de Gasto</h3>
-                        <button class="modal-close" onclick="document.getElementById('modalTipoGasto').classList.remove('active')">&times;</button>
+                        <button class="modal-close" onclick="document.getElementById('modalTipoGasto')?.classList.remove('active')">&times;</button>
                     </div>
                     <div class="modal-body">
                         <form id="formTipoGasto">
@@ -3749,7 +3761,7 @@ export const pages = {
                         </form>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalTipoGasto').classList.remove('active')">Cancelar</button>
+                        <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalTipoGasto')?.classList.remove('active')">Cancelar</button>
                         <button type="button" class="btn btn-primary" id="btnSalvarTipoGasto">Salvar</button>
                     </div>
                 </div>
@@ -3760,7 +3772,7 @@ export const pages = {
                 <div class="modal-content" style="max-width: 600px;">
                     <div class="modal-header">
                         <h3>Editar Coordenadas</h3>
-                        <button class="modal-close" onclick="document.getElementById('modalEditarCoordenadasConfig').classList.remove('active')">&times;</button>
+                        <button class="modal-close" onclick="document.getElementById('modalEditarCoordenadasConfig')?.classList.remove('active')">&times;</button>
                     </div>
                     <div class="modal-body" id="modalEditarCoordenadasConfigBody">
                         <!-- Conteúdo preenchido dinamicamente -->
@@ -5155,7 +5167,7 @@ export const pages = {
                 <div class="modal-content modal-despesas-detalhes">
                     <div class="modal-header">
                         <h3 id="modalDetalhesDespesasTitulo">Despesas do Repositor</h3>
-                        <button class="modal-close" onclick="document.getElementById('modalDetalhesDespesas').classList.remove('active')">&times;</button>
+                        <button class="modal-close" onclick="document.getElementById('modalDetalhesDespesas')?.classList.remove('active')">&times;</button>
                     </div>
                     <div class="modal-body" id="modalDetalhesDespesasBody">
                         <!-- Conteúdo preenchido dinamicamente -->
