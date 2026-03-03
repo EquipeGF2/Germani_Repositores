@@ -1291,3 +1291,134 @@ body.pwa-mode .notification {
     font-size: 13px !important;
     padding: 10px 12px !important;
 }
+
+/* ==========================================
+   PWA FOCO CLIENTE - Quando em atendimento
+   ========================================== */
+
+/* Card do cliente em foco (em atendimento) */
+body.pwa-mode .route-item.pwa-cliente-foco {
+    border: 2px solid #3b82f6;
+    border-radius: 12px;
+    padding: 16px;
+    margin: 8px;
+    background: #fff;
+    box-shadow: 0 2px 12px rgba(59, 130, 246, 0.15);
+}
+
+body.pwa-mode .route-item.pwa-cliente-foco .route-item-name {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1f2937;
+}
+
+body.pwa-mode .route-item.pwa-cliente-foco .route-item-address {
+    font-size: 14px;
+    color: #6b7280;
+    margin-top: 4px;
+}
+
+/* Botões grandes no modo foco */
+body.pwa-mode .route-item.pwa-cliente-foco .route-item-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+body.pwa-mode .route-item.pwa-cliente-foco .route-item-actions .btn-small {
+    flex: 1 1 calc(50% - 4px);
+    min-height: 52px;
+    font-size: 15px;
+    font-weight: 600;
+    padding: 12px 8px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+body.pwa-mode .route-item.pwa-cliente-foco .route-item-actions .btn-atividades {
+    background: #3b82f6;
+    color: #fff;
+    order: 1;
+}
+
+body.pwa-mode .route-item.pwa-cliente-foco .route-item-actions .btn-campanha {
+    background: #f59e0b;
+    color: #fff;
+    order: 2;
+}
+
+body.pwa-mode .route-item.pwa-cliente-foco .route-item-actions .btn-checkout {
+    background: #dc2626;
+    color: #fff;
+    order: 3;
+}
+
+body.pwa-mode .route-item.pwa-cliente-foco .route-item-actions .btn-pesquisa {
+    order: 4;
+}
+
+body.pwa-mode .route-item.pwa-cliente-foco .route-item-actions .btn-danger {
+    flex: 1 1 100%;
+    order: 10;
+    background: #f3f4f6;
+    color: #6b7280;
+    border: 1px solid #d1d5db;
+}
+
+body.pwa-mode .route-item.pwa-cliente-foco .route-status {
+    width: 100%;
+    text-align: center;
+    font-size: 14px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    margin-bottom: 4px;
+}
+
+/* ==========================================
+   PWA ATIVIDADES INLINE
+   ========================================== */
+
+/* Modal de atividades renderizado inline no PWA */
+body.pwa-mode .pwa-atividades-inline {
+    position: relative;
+    background: #fff;
+    border-radius: 0;
+    width: 100%;
+    max-width: 100%;
+    max-height: none;
+    overflow-y: auto;
+    box-shadow: none;
+}
+
+body.pwa-mode .pwa-atividades-inline .modal-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 12px 16px;
+}
+
+body.pwa-mode .pwa-atividades-inline .modal-body {
+    padding: 16px;
+}
+
+body.pwa-mode .pwa-atividades-inline .modal-footer {
+    position: sticky;
+    bottom: 0;
+    background: #fff;
+    border-top: 1px solid #e5e7eb;
+    padding: 12px 16px;
+    display: flex;
+    gap: 8px;
+}
+
+body.pwa-mode .pwa-atividades-inline .modal-footer .btn {
+    flex: 1;
+    min-height: 48px;
+    font-size: 15px;
+}

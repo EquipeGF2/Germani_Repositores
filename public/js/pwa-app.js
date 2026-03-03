@@ -63,6 +63,8 @@
         voltarHome,
         abrirCheckinTela,
         voltarDeCheckin,
+        abrirAtividadesInline,
+        fecharAtividadesInline,
         sincronizarHome
     };
 
@@ -125,7 +127,32 @@
                 window.app._originalAbrirModalCaptura = originalAbrir;
                 window.app._originalFecharModalCaptura = originalFechar;
 
-                console.log('[PWA] Modal captura interceptado - será inline');
+                // Interceptar modal de atividades - renderizar inline no PWA
+                if (window.app.abrirModalAtividades) {
+                    const originalAbrirAtiv = window.app.abrirModalAtividades.bind(window.app);
+                    const originalFecharAtiv = window.app.fecharModalAtividades.bind(window.app);
+
+                    window.app.abrirModalAtividades = function(repId, clienteId, clienteNome, dataPlanejada) {
+                        if (authManager?.isPWA) {
+                            pwaApp.abrirAtividadesInline(repId, clienteId, clienteNome, dataPlanejada);
+                        } else {
+                            originalAbrirAtiv(repId, clienteId, clienteNome, dataPlanejada);
+                        }
+                    };
+
+                    window.app.fecharModalAtividades = function() {
+                        if (authManager?.isPWA) {
+                            pwaApp.fecharAtividadesInline();
+                        } else {
+                            originalFecharAtiv();
+                        }
+                    };
+
+                    window.app._originalAbrirModalAtividades = originalAbrirAtiv;
+                    window.app._originalFecharModalAtividades = originalFecharAtiv;
+                }
+
+                console.log('[PWA] Modais interceptados - captura e atividades serão inline');
             } else {
                 setTimeout(waitForApp, 200);
             }
@@ -1223,6 +1250,106 @@
     }
 
     // ==================== PÁGINA: MAIS ====================
+
+    // ==================== ATIVIDADES INLINE (substitui modal overlay) ====================
+
+    /**
+     * Renderiza a tela de atividades DENTRO do pwaContent como tela independente
+     * Sem modal overlay - navegação inline com botão voltar
+     */
+    function abrirAtividadesInline(repId, clienteId, clienteNome, dataPlanejada) {
+        previousTab = currentTab;
+
+        navigationStack.push('pwa-atividades');
+        history.pushState({ pwaTab: 'pwa-atividades' }, '', '');
+
+        pwaContent.innerHTML = `
+            <div class="pwa-page pwa-fullscreen-page">
+                <div class="pwa-page-header-bar">
+                    <button class="pwa-back-btn" onclick="pwaApp.fecharAtividadesInline()">&#8592;</button>
+                    <span class="pwa-page-header-title">Atividades - ${escapeHtml(clienteNome)}</span>
+                </div>
+                <div id="pwaAtividadesInlineArea" class="pwa-page-body" style="padding:0;">
+                    <div class="pwa-loading-inline">
+                        <div class="pwa-spinner-small"></div>
+                        <span>Carregando atividades...</span>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Chamar a lógica original do app.js para popular o modal
+        setTimeout(() => {
+            if (typeof window.app !== 'undefined' && window.app._originalAbrirModalAtividades) {
+                window.app._originalAbrirModalAtividades(repId, clienteId, clienteNome, dataPlanejada);
+
+                // Aguardar o modal ser populado e movê-lo para inline
+                setTimeout(() => injectAtividadesModalInline(), 100);
+            }
+        }, 50);
+    }
+
+    /**
+     * Move o modal de atividades para dentro da área inline (move, não clona)
+     * Isso preserva os event listeners e referências do app.js
+     */
+    function injectAtividadesModalInline() {
+        const modal = document.getElementById('modalAtividades');
+        const inlineArea = document.getElementById('pwaAtividadesInlineArea');
+        if (!modal || !inlineArea) return;
+
+        inlineArea.innerHTML = '';
+
+        // Mover o conteúdo do modal para inline
+        const content = modal.querySelector('.modal-content');
+        if (content) {
+            content.classList.add('pwa-atividades-inline');
+            inlineArea.appendChild(content);
+
+            // Atualizar botões de cancelar/fechar para usar versão PWA
+            const btnsCancelar = content.querySelectorAll('.modal-footer .btn-secondary');
+            btnsCancelar.forEach(btn => {
+                btn.onclick = () => pwaApp.fecharAtividadesInline();
+            });
+            const closeBtn = content.querySelector('.modal-close');
+            if (closeBtn) closeBtn.onclick = () => pwaApp.fecharAtividadesInline();
+        }
+
+        // Esconder o modal container (agora vazio)
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+    }
+
+    function fecharAtividadesInline() {
+        // Restaurar modal content de volta ao modal container
+        const modal = document.getElementById('modalAtividades');
+        const inlineArea = document.getElementById('pwaAtividadesInlineArea');
+
+        if (modal && inlineArea) {
+            const content = inlineArea.querySelector('.pwa-atividades-inline');
+            if (content) {
+                content.classList.remove('pwa-atividades-inline');
+                modal.appendChild(content);
+            }
+            modal.style.display = '';
+            modal.classList.remove('active');
+        }
+
+        // Limpar state de atividades
+        if (typeof window.app !== 'undefined') {
+            if (window.app.registroRotaState) {
+                window.app.registroRotaState.sessaoAtividades = null;
+                window.app.registroRotaState.atividadesConfiguradas = null;
+            }
+        }
+
+        showBottomTabs(true);
+
+        if (navigationStack.length > 1) {
+            navigationStack.pop();
+        }
+        navigate(previousTab || 'registro-rota');
+    }
 
     function renderMais() {
         const usuario = getUsuario();

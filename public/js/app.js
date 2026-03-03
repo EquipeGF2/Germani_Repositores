@@ -10702,14 +10702,6 @@ class App {
 
         this.salvarContextoRegistroRota(repId, dataVisita);
 
-        // Mostrar loading PRIMEIRO para feedback imediato
-        container.innerHTML = `
-            <div style="text-align:center;padding:40px;">
-                <div class="spinner"></div>
-                <p style="margin-top:16px;color:#666;font-size:14px;">Carregando roteiro...</p>
-            </div>
-        `;
-
         // Calcular dia da semana (0=Domingo, 1=Segunda, etc.)
         const data = new Date(dataVisita + 'T12:00:00');
         const diaNumero = data.getDay();
@@ -10733,8 +10725,69 @@ class App {
             roteiro = await db.carregarRoteiroRepositorDia(repId, diaSemana);
             resumo = [...this.registroRotaState.resumoVisitas.values()];
             atendimentosAbertos = [...(this.registroRotaState.atendimentosAbertos?.values() || [])];
+        } else if (isPWA) {
+            // PWA primeira carga: buscar roteiro do Turso direto (rápido) e renderizar imediatamente
+            // Status virão do backend em background depois
+            container.innerHTML = `
+                <div style="text-align:center;padding:20px;">
+                    <div class="pwa-spinner-small" style="margin:0 auto;"></div>
+                    <p style="margin-top:8px;color:#666;font-size:13px;">Carregando...</p>
+                </div>
+            `;
+            roteiro = await db.carregarRoteiroRepositorDia(repId, diaSemana);
+            resumo = [];
+            atendimentosAbertos = [];
+
+            if (isPWA) {
+                this.registroRotaState._cacheCarregado = true;
+                this.registroRotaState._cacheRepId = repId;
+                this.registroRotaState._cacheDataVisita = dataVisita;
+            }
+
+            // Buscar status do backend em background e atualizar a UI quando chegar
+            Promise.all([
+                this.buscarResumoVisitas(repId, dataVisita).catch(() => []),
+                this.buscarAtendimentosAbertos(repId).catch(() => []),
+                this.syncAtendimentoAberto(repId).catch(() => null)
+            ]).then(([_resumo, _atendimentosAbertos]) => {
+                if (_resumo?.length > 0 || _atendimentosAbertos?.length > 0) {
+                    // Reprocessar resumo com dados do backend
+                    const mapaResumo = new Map((_resumo || []).map((item) => [normalizeClienteId(item.cliente_id), item]));
+                    this.registroRotaState.atendimentosAbertos = new Map((_atendimentosAbertos || [])
+                        .map((item) => [normalizeClienteId(item.cliente_id), item]));
+
+                    (_atendimentosAbertos || []).forEach((aberto) => {
+                        const cliNorm = normalizeClienteId(aberto.cliente_id);
+                        if (this.sessaoFoiCanceladaRecentemente(repId, cliNorm)) return;
+                        const atual = mapaResumo.get(cliNorm) || {};
+                        const atividades = Number(aberto.atividades_count || 0);
+                        mapaResumo.set(cliNorm, {
+                            ...atual,
+                            status: 'em_atendimento',
+                            checkin_data_hora: aberto.checkin_em || atual.checkin_data_hora,
+                            checkout_data_hora: null,
+                            rv_id: aberto.rv_id || atual.rv_id,
+                            atividades_count: atividades
+                        });
+                        if (aberto.rv_id) {
+                            this.persistirAtendimentoLocal(repId, cliNorm, { rv_id: aberto.rv_id });
+                        }
+                    });
+
+                    this.registroRotaState.resumoVisitas = mapaResumo;
+                    // Atualizar visualmente sem re-render completo
+                    this.atualizarStatusVisuaisRoteiro();
+                }
+            }).catch(err => console.warn('Erro ao atualizar status em background:', err));
         } else {
-            // Primeira carga ou modo web: buscar do servidor
+            // Modo web: mostrar loading e buscar tudo
+            container.innerHTML = `
+                <div style="text-align:center;padding:40px;">
+                    <div class="spinner"></div>
+                    <p style="margin-top:16px;color:#666;font-size:14px;">Carregando roteiro...</p>
+                </div>
+            `;
+            // Primeira carga modo web: buscar do servidor
             const [_roteiro, _resumo, _atendimentosAbertos, _sync] = await Promise.all([
                 db.carregarRoteiroRepositorDia(repId, diaSemana),
                 this.buscarResumoVisitas(repId, dataVisita),
@@ -10744,12 +10797,6 @@ class App {
             roteiro = _roteiro;
             resumo = _resumo;
             atendimentosAbertos = _atendimentosAbertos;
-
-            if (isPWA) {
-                this.registroRotaState._cacheCarregado = true;
-                this.registroRotaState._cacheRepId = repId;
-                this.registroRotaState._cacheDataVisita = dataVisita;
-            }
         }
 
         if (!roteiro || roteiro.length === 0) {
@@ -11035,6 +11082,11 @@ class App {
 
         this.showNotification(`${roteiro.length} cliente(s) no roteiro`, 'success');
 
+        // PWA: aplicar foco no cliente em atendimento (ocultar demais)
+        if (window.authManager?.isPWA) {
+            this.aplicarFocoClientePWA();
+        }
+
         // Executar tarefas em background SEM bloquear a UI
         // Estas são fire-and-forget - não usamos await
 
@@ -11076,7 +11128,7 @@ class App {
     }
 
     atualizarStatusVisuaisRoteiro() {
-        // Atualiza o status visual dos itens do roteiro após carregar não atendimentos
+        // Atualiza o status visual de TODOS os itens do roteiro com base no resumoVisitas
         const container = document.getElementById('roteiroContainer');
         if (!container) return;
 
@@ -11088,30 +11140,94 @@ class App {
             const statusCliente = this.registroRotaState.resumoVisitas?.get(clienteId) || {};
             const statusBase = statusCliente.status || 'sem_checkin';
 
-            if (statusBase === 'nao_atendido') {
-                const statusSpan = item.querySelector('.route-status');
-                if (statusSpan) {
-                    statusSpan.className = 'route-status status-nao-atendido';
-                    statusSpan.textContent = 'Não atendido';
-                }
+            const statusSpan = item.querySelector('.route-status');
+            const actions = item.querySelector('.route-item-actions');
+            if (!statusSpan || !actions) return;
 
-                // Esconder botões de checkin e não atendimento, mostrar nova visita
-                const actions = item.querySelector('.route-item-actions');
-                if (actions) {
-                    const repId = item.dataset.repId;
-                    const dataVisita = item.dataset.dataVisita;
-                    const clienteNome = item.dataset.clienteNome || '';
-                    const enderecoLinha = item.dataset.enderecoLinha || '';
-                    const enderecoCadastro = item.dataset.enderecoCadastro || '';
+            const repId = item.dataset.repId;
+            const dataVisita = item.dataset.dataVisita;
+            const clienteNome = item.dataset.clienteNome || '';
+            const enderecoLinha = item.dataset.enderecoLinha || '';
+            const enderecoCadastro = item.dataset.enderecoCadastro || '';
 
-                    const nomeEsc = clienteNome.replace(/'/g, "\\'");
-                    const endEsc = enderecoLinha.replace(/'/g, "\\'");
-                    const cadastroEsc = enderecoCadastro.replace(/'/g, "\\'");
+            const nomeEsc = clienteNome.replace(/'/g, "\\'");
+            const endEsc = enderecoLinha.replace(/'/g, "\\'");
+            const cadastroEsc = enderecoCadastro.replace(/'/g, "\\'");
+            const cliId = clienteId;
 
-                    const btnNovaVisita = `<button onclick="app.abrirModalCaptura(${repId}, '${clienteId}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'checkin', '${cadastroEsc}', true)" class="btn-small">🆕 Nova visita</button>`;
-                    actions.innerHTML = `<span class="route-status status-nao-atendido">Não atendido</span>${btnNovaVisita}`;
-                }
+            const atrasoInfo = this.calcularAtrasoRoteiro(dataVisita);
+            const checkinBloqueadoPorAtraso = atrasoInfo.bloqueado;
+            const textoBloqueioCheckin = checkinBloqueadoPorAtraso
+                ? 'disabled title="Atraso superior a 7 dias. Check-in bloqueado." style="opacity:0.6;cursor:not-allowed;"'
+                : '';
+
+            const podeNovaVisita = statusBase === 'finalizado' || statusBase === 'nao_atendido';
+            const podeCheckout = statusBase === 'em_atendimento';
+            const checkinDisponivel = statusBase !== 'em_atendimento' && !podeNovaVisita;
+            const atividadesCount = Number(statusCliente.atividades_count || 0);
+
+            const pesquisasPendentesMap = this.registroRotaState.pesquisasPendentesMap || new Map();
+            const pesquisasPendentes = pesquisasPendentesMap.get(cliId) || [];
+            const temPesquisaPendente = pesquisasPendentes.length > 0;
+            const pesquisasObrigatorias = pesquisasPendentes.filter(p => p.pes_obrigatorio);
+            const temPesquisaObrigatoriaPendente = pesquisasObrigatorias.length > 0;
+            const checkoutLiberado = podeCheckout && atividadesCount > 0 && !temPesquisaObrigatoriaPendente;
+
+            let textoCheckout = '';
+            if (!podeCheckout) {
+                textoCheckout = 'disabled title="Faça o check-in primeiro" style="opacity:0.6;cursor:not-allowed;"';
+            } else if (atividadesCount === 0) {
+                textoCheckout = 'disabled title="Registre atividades antes do checkout" style="opacity:0.6;cursor:not-allowed;"';
+            } else if (temPesquisaObrigatoriaPendente) {
+                textoCheckout = `disabled title="Responda as ${pesquisasObrigatorias.length} pesquisa(s) obrigatória(s) antes do checkout" style="opacity:0.6;cursor:not-allowed;"`;
             }
+
+            // Atualizar badge de status
+            const statusClasse = statusBase === 'finalizado' ? 'status-visited'
+                : statusBase === 'em_atendimento' ? 'status-visited'
+                : statusBase === 'nao_atendido' ? 'status-nao-atendido'
+                : 'status-pending';
+
+            const statusTexto = statusBase === 'em_atendimento' ? 'Em atendimento'
+                : statusBase === 'finalizado' ? `Finalizado${statusCliente.tempo_minutos ? ` ${String(statusCliente.tempo_minutos).padStart(2, '0')} min` : ''}`
+                : statusBase === 'nao_atendido' ? 'Não atendido'
+                : 'Pendente';
+
+            statusSpan.className = `route-status ${statusClasse}`;
+            statusSpan.textContent = statusTexto;
+
+            // Rebuild botões
+            const btnCheckin = checkinDisponivel
+                ? `<button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'checkin', '${cadastroEsc}')" class="btn-small" ${textoBloqueioCheckin}>✅ Check-in</button>`
+                : '';
+            const btnAtividades = podeCheckout
+                ? `<button onclick="app.abrirModalAtividades(${repId}, '${cliId}', '${nomeEsc}', '${dataVisita}')" class="btn-small btn-atividades">📋 Atividades</button>`
+                : '';
+            const btnPesquisa = (podeCheckout && temPesquisaPendente)
+                ? `<button onclick="app.abrirPesquisaCliente(${repId}, '${cliId}', '${nomeEsc}', '${dataVisita}')" class="btn-small btn-pesquisa" style="background:#8b5cf6;color:white;">📝 Pesquisa (${pesquisasPendentes.length})</button>`
+                : '';
+            const clienteTemEspaco = this.registroRotaState.clientesComEspaco?.has(cliId);
+            const btnEspacos = podeCheckout
+                ? `<button data-btn-espaco="${cliId}" onclick="app.verificarEAbrirRegistroEspacos(${repId}, '${cliId}', '${nomeEsc}', '${dataVisita}')" class="btn-small btn-espacos" style="background:#f59e0b;color:white;${clienteTemEspaco === false ? 'display:none;' : ''}">📦 Espaços</button>`
+                : '';
+            const btnCheckout = podeCheckout
+                ? `<button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'checkout', '${cadastroEsc}')" class="btn-small btn-checkout" ${textoCheckout}>🚪 Checkout</button>`
+                : '';
+            const btnCampanha = podeCheckout
+                ? `<button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'campanha', '${cadastroEsc}')" class="btn-small btn-campanha">🎯 Campanha</button>`
+                : '';
+            const btnNovaVisita = podeNovaVisita
+                ? `<button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'checkin', '${cadastroEsc}', true)" class="btn-small">🆕 Nova visita</button>`
+                : '';
+            const btnCancelar = statusBase === 'em_atendimento'
+                ? `<button onclick="app.confirmarCancelarAtendimento(${repId}, '${cliId}', '${nomeEsc}')" class="btn-small btn-danger" title="Cancelar atendimento em aberto">🛑 Cancelar</button>`
+                : '';
+            const btnNaoAtendimento = (statusBase === 'sem_checkin' && !checkinBloqueadoPorAtraso)
+                ? `<button onclick="app.abrirModalNaoAtendimento(${repId}, '${cliId}', '${nomeEsc}', '${dataVisita}')" class="btn-small" style="background:#1f2937;color:white;" title="Registrar não atendimento">⛔ Não atendimento</button>`
+                : '';
+
+            const botoes = `${btnNovaVisita}${btnCheckin}${btnAtividades}${btnPesquisa}${btnEspacos}${btnCampanha}${btnCheckout}${btnCancelar}${btnNaoAtendimento}`;
+            actions.innerHTML = `<span class="route-status ${statusClasse}">${statusTexto}</span>${botoes}`;
         });
     }
 
@@ -11579,6 +11695,57 @@ class App {
             if (info) {
                 info.appendChild(tempoDivNovo);
             }
+        }
+
+        // PWA: Ocultar outros clientes quando em atendimento
+        const isPWA = window.authManager?.isPWA;
+        if (isPWA) {
+            this.aplicarFocoClientePWA();
+        }
+    }
+
+    /**
+     * PWA: Quando há um cliente em atendimento, ocultar os demais e mostrar botões grandes
+     * Quando não há ninguém em atendimento, mostrar todos normalmente
+     */
+    aplicarFocoClientePWA() {
+        const container = document.getElementById('roteiroContainer');
+        if (!container) return;
+
+        const items = container.querySelectorAll('.route-item');
+        const mapaResumo = this.registroRotaState.resumoVisitas || new Map();
+
+        // Encontrar cliente em atendimento
+        let clienteEmAtendimento = null;
+        mapaResumo.forEach((status, clienteId) => {
+            if (status.status === 'em_atendimento') {
+                clienteEmAtendimento = clienteId;
+            }
+        });
+
+        if (clienteEmAtendimento) {
+            // Ocultar todos exceto o em atendimento
+            items.forEach(item => {
+                if (item.dataset.clienteId === clienteEmAtendimento) {
+                    item.style.display = '';
+                    item.classList.add('pwa-cliente-foco');
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+
+            // Ocultar cabeçalho de distâncias
+            const cabecalho = container.querySelector('.roteiro-header');
+            if (cabecalho) cabecalho.style.display = 'none';
+        } else {
+            // Mostrar todos normalmente
+            items.forEach(item => {
+                item.style.display = '';
+                item.classList.remove('pwa-cliente-foco');
+            });
+
+            const cabecalho = container.querySelector('.roteiro-header');
+            if (cabecalho) cabecalho.style.display = '';
         }
     }
 
@@ -13235,7 +13402,7 @@ class App {
             }
 
             if (btnSalvar) {
-                btnSalvar.textContent = 'Enviando...';
+                btnSalvar.textContent = tipoRegistro === 'checkout' ? 'Enviando checkout...' : 'Enviando...';
             }
 
             // === PWA: Antes do checkout, enviar checkin local pendente ===
@@ -13243,7 +13410,7 @@ class App {
             if (isPWA && tipoRegistro === 'checkout' && this.registroRotaState._checkinLocal) {
                 const checkin = this.registroRotaState._checkinLocal;
                 if (checkin.clienteId === clienteId) {
-                    if (btnSalvar) btnSalvar.textContent = 'Enviando check-in...';
+                    if (btnSalvar) btnSalvar.textContent = 'Enviando checkout...';
 
                     // 1. Enviar checkin pendente ao servidor
                     const checkinForm = new FormData();
@@ -13281,7 +13448,7 @@ class App {
 
                     // 2. Se há atividades locais pendentes, enviar
                     if (this.registroRotaState._atividadesLocal?.clienteId === clienteId) {
-                        if (btnSalvar) btnSalvar.textContent = 'Enviando atividades...';
+                        if (btnSalvar) btnSalvar.textContent = 'Enviando checkout...';
                         const atv = this.registroRotaState._atividadesLocal;
                         try {
                             await fetch(`${this.registroRotaState.backendUrl}/api/registro-rota/sessoes/${rvCheckin}/servicos`, {
@@ -14019,8 +14186,9 @@ class App {
             const options = ['<option value="">Todos</option>'].concat(
                 clientes.map(cli => {
                     const cod = cli.cliente_codigo || cli.cliente_id || '';
-                    const nome = cli.cliente_nome || cli.fantasia || cli.razao_social || cod;
-                    return `<option value="${cod}">${cod} - ${nome}</option>`;
+                    const nome = cli.cliente_nome || cli.fantasia || cli.razao_social || '';
+                    const nomeDisplay = (nome && nome !== cod) ? nome : 'Cliente ' + cod;
+                    return `<option value="${cod}">${cod} - ${nomeDisplay}</option>`;
                 })
             );
 
@@ -18475,7 +18643,7 @@ class App {
 
         container.innerHTML = this.pesquisaClientesSelecionados.map(c => `
             <span class="cliente-tag">
-                ${c.codigo} - ${c.nome || c.fantasia || c.razao_social || 'Sem nome'}
+                ${c.codigo} - ${(c.nome || c.fantasia || c.razao_social || '') && (c.nome || c.fantasia || c.razao_social || '') !== c.codigo ? (c.nome || c.fantasia || c.razao_social) : 'Cliente ' + c.codigo}
                 <button type="button" class="cliente-tag-remove" onclick="window.app.removerClientePesquisa('${c.codigo}')">&times;</button>
             </span>
         `).join('');
