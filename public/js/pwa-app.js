@@ -62,7 +62,8 @@
         buscarConsulta,
         voltarHome,
         abrirCheckinTela,
-        voltarDeCheckin
+        voltarDeCheckin,
+        sincronizarHome
     };
 
     function init() {
@@ -344,6 +345,42 @@
         }
     }
 
+    // ==================== SINCRONIZAÇÃO HOME ====================
+
+    async function sincronizarHome() {
+        const btn = document.getElementById('pwaHomeSyncBtn');
+        if (btn) {
+            btn.style.opacity = '0.6';
+            btn.style.pointerEvents = 'none';
+            const textEl = btn.querySelector('.pwa-action-text');
+            if (textEl) textEl.textContent = 'Sincronizando...';
+        }
+        try {
+            if (typeof syncService !== 'undefined') {
+                showSyncIndicator(true);
+                await syncService.sincronizarAgora();
+                await loadLocalData();
+                localStorage.setItem('pwa_ultimo_sync_dia', getHojeBR());
+                localStorage.setItem('ultimo_sync', new Date().toISOString());
+                showSyncIndicator(false);
+                showToast('Sincronizado com sucesso');
+            } else {
+                showToast('Serviço de sincronização não disponível', 'error');
+            }
+        } catch (e) {
+            console.error('[PWA] Erro sincronização home:', e);
+            showSyncIndicator(false);
+            showToast('Erro ao sincronizar', 'error');
+        } finally {
+            if (btn) {
+                btn.style.opacity = '';
+                btn.style.pointerEvents = '';
+                const textEl = btn.querySelector('.pwa-action-text');
+                if (textEl) textEl.textContent = 'Sincronização';
+            }
+        }
+    }
+
     // ==================== NAVIGATION ====================
 
     function setupTabs() {
@@ -578,37 +615,13 @@
                     <span class="pwa-action-arrow">&#8250;</span>
                 </button>
 
-                <div class="pwa-section-title" style="display:flex;align-items:center;justify-content:space-between;">
-                    <span>Roteiro de Hoje</span>
-                    <button onclick="pwaApp.navigate('registro-rota')" style="background:none;border:none;color:#dc2626;font-size:13px;font-weight:600;cursor:pointer;">Ver roteiro &#8250;</button>
-                </div>
-                <div id="pwaRoteiroHoje" class="pwa-card">
-                    <div class="pwa-loading-inline">
-                        <div class="pwa-spinner-small"></div>
-                        <span>Carregando roteiro...</span>
-                    </div>
-                </div>
-
-                <div class="pwa-section-title">Status</div>
-                <div class="pwa-status-row">
-                    <div class="pwa-status-item">
-                        <div class="pwa-status-number" id="pwaVisitasHoje" style="color:#dc2626;">-</div>
-                        <div class="pwa-status-label">Visitas hoje</div>
-                    </div>
-                    <div class="pwa-status-item">
-                        <div class="pwa-status-number" id="pwaPendentesHoje" style="color:#2563eb;">-</div>
-                        <div class="pwa-status-label">Pendentes</div>
-                    </div>
-                    <div class="pwa-status-item">
-                        <div class="pwa-status-number" id="pwaSyncStatus" style="color:#16a34a;">&#10003;</div>
-                        <div class="pwa-status-label">${navigator.onLine ? 'Online' : 'Offline'}</div>
-                    </div>
-                </div>
+                <button class="pwa-action-btn" id="pwaHomeSyncBtn" onclick="pwaApp.sincronizarHome()">
+                    <span class="pwa-action-icon">&#8635;</span>
+                    <span class="pwa-action-text">Sincronização</span>
+                    <span class="pwa-action-arrow">&#8250;</span>
+                </button>
             </div>
         `;
-
-        // Carregar roteiro async
-        loadRoteiroHome();
     }
 
     async function getClientesMap() {
