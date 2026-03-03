@@ -160,15 +160,41 @@
         }
     }
 
-    async function getRoteiroHoje() {
+    function getDiaSemanaHoje() {
+        const diasMap = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+        try {
+            const now = new Date();
+            // Usar timezone de Brasília
+            const brDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+            return diasMap[brDate.getDay()];
+        } catch (e) {
+            return diasMap[new Date().getDay()];
+        }
+    }
+
+    function filtrarRoteiroDia(roteiro, diaSemana) {
+        if (!roteiro || roteiro.length === 0) return [];
+        // Filtrar por dia_semana (formato usado pelo backend: seg, ter, qua, etc.)
+        const filtrado = roteiro.filter(r => r.dia_semana === diaSemana);
+        if (filtrado.length > 0) return filtrado;
+        // Fallback: filtrar por data_visita (caso dados tenham esse campo)
         const hoje = getHojeBR();
+        const filtradoPorData = roteiro.filter(r => r.data_visita === hoje);
+        if (filtradoPorData.length > 0) return filtradoPorData;
+        return [];
+    }
+
+    async function getRoteiroHoje() {
+        const diaSemana = getDiaSemanaHoje();
 
         // 1. Tentar IndexedDB
         try {
-            if (typeof offlineDB !== 'undefined' && offlineDB.getRoteiroDia) {
+            if (typeof offlineDB !== 'undefined') {
                 await offlineDB.init();
-                const roteiro = await offlineDB.getRoteiroDia(hoje);
-                if (roteiro && roteiro.length > 0) return roteiro;
+                // Tentar buscar todos e filtrar por dia_semana
+                const todos = await offlineDB.getAll('roteiro');
+                const filtrado = filtrarRoteiroDia(todos, diaSemana);
+                if (filtrado.length > 0) return filtrado;
             }
         } catch (e) {
             console.warn('[PWA] Erro IndexedDB roteiro:', e);
@@ -176,7 +202,7 @@
 
         // 2. Fallback: cache geral
         if (cachedData.roteiro && cachedData.roteiro.length > 0) {
-            const filtrado = cachedData.roteiro.filter(r => r.data_visita === hoje);
+            const filtrado = filtrarRoteiroDia(cachedData.roteiro, diaSemana);
             if (filtrado.length > 0) return filtrado;
         }
 
@@ -197,7 +223,7 @@
                         } catch (e) { /* silent */ }
                     }
                     cachedData.roteiro = data.roteiro;
-                    return data.roteiro.filter(r => r.data_visita === hoje);
+                    return filtrarRoteiroDia(data.roteiro, diaSemana);
                 }
             } catch (e) {
                 console.warn('[PWA] Erro API roteiro:', e);
@@ -337,9 +363,10 @@
     }
 
     function showBottomTabs(visible) {
+        // Bottom tabs devem SEMPRE ficar visíveis
         const tabs = document.querySelector('.pwa-tabs');
         if (tabs) {
-            tabs.style.display = visible ? '' : 'none';
+            tabs.style.display = 'flex';
         }
     }
 
@@ -520,6 +547,12 @@
                     <span class="pwa-action-arrow">&#8250;</span>
                 </button>
 
+                <button class="pwa-action-btn" onclick="pwaApp.navigate('pwa-consultas')">
+                    <span class="pwa-action-icon">&#128270;</span>
+                    <span class="pwa-action-text">Consultas</span>
+                    <span class="pwa-action-arrow">&#8250;</span>
+                </button>
+
                 <div class="pwa-section-title" style="display:flex;align-items:center;justify-content:space-between;">
                     <span>Roteiro de Hoje</span>
                     <button onclick="pwaApp.navigate('registro-rota')" style="background:none;border:none;color:#dc2626;font-size:13px;font-weight:600;cursor:pointer;">Ver roteiro &#8250;</button>
@@ -553,6 +586,33 @@
         loadRoteiroHome();
     }
 
+    async function getClientesMap() {
+        // Buscar clientes do cache ou IndexedDB para enriquecer roteiro
+        if (cachedData.clientes && cachedData.clientes.length > 0) {
+            const map = {};
+            cachedData.clientes.forEach(c => {
+                const id = String(c.cli_codigo || c.cliente_id || '').trim();
+                if (id) map[id] = c;
+            });
+            return map;
+        }
+        try {
+            if (typeof offlineDB !== 'undefined') {
+                await offlineDB.init();
+                const clientes = await offlineDB.getAll('clientes');
+                if (clientes && clientes.length > 0) {
+                    const map = {};
+                    clientes.forEach(c => {
+                        const id = String(c.cli_codigo || c.cliente_id || '').trim();
+                        if (id) map[id] = c;
+                    });
+                    return map;
+                }
+            }
+        } catch (e) { /* silent */ }
+        return {};
+    }
+
     async function loadRoteiroHome() {
         const container = document.getElementById('pwaRoteiroHoje');
         if (!container) return;
@@ -561,16 +621,24 @@
             const roteiro = await getRoteiroHoje();
 
             if (roteiro && roteiro.length > 0) {
+                // Enriquecer roteiro com dados de clientes
+                const clientesMap = await getClientesMap();
+
                 let visitados = 0;
                 const items = roteiro.slice(0, 20).map(item => {
+                    const clienteId = String(item.cliente_id || item.cli_codigo || '').trim();
+                    const clienteInfo = clientesMap[clienteId] || {};
+                    const nome = item.cli_nome || clienteInfo.cli_nome || clienteInfo.cli_fantasia || item.nome || clienteId || 'Cliente';
+                    const cidade = item.cli_cidade || clienteInfo.cli_cidade || item.cidade || '';
+
                     const isVisitado = item.visitado || item.status === 'finalizado';
                     if (isVisitado) visitados++;
                     return `
                         <div class="pwa-roteiro-item">
                             <div class="pwa-roteiro-status ${isVisitado ? 'visitado' : 'pendente'}"></div>
                             <div class="pwa-roteiro-info">
-                                <div class="pwa-roteiro-nome">${escapeHtml(item.cli_nome || item.nome || 'Cliente')}</div>
-                                <div class="pwa-roteiro-detalhe">${escapeHtml(item.cli_cidade || item.cidade || '')}</div>
+                                <div class="pwa-roteiro-nome">${escapeHtml(nome)}</div>
+                                <div class="pwa-roteiro-detalhe">${escapeHtml(cidade)}</div>
                             </div>
                             ${item.hora ? `<div class="pwa-roteiro-hora">${escapeHtml(item.hora)}</div>` : ''}
                         </div>
@@ -821,9 +889,6 @@
 
     function abrirNaoAtendimento(repId, clienteId, clienteNome, dataVisita) {
         const tabAnterior = currentTab;
-
-        // Esconder tabs durante esta tela
-        showBottomTabs(false);
 
         navigationStack.push('pwa-nao-atendimento');
         history.pushState({ pwaTab: 'pwa-nao-atendimento' }, '', '');

@@ -139,7 +139,7 @@ body.pwa-mode #appScreen {
    BOTTOM TABS PWA
    ========================================== */
 .pwa-tabs {
-    display: flex;
+    display: flex !important;
     height: 56px;
     min-height: 56px;
     background: #fff;
