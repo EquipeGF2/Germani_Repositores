@@ -899,7 +899,7 @@ class TursoService {
       SELECT
         cli.rot_cliente_codigo AS cliente_id,
         cli.rot_cliente_codigo AS cliente_codigo,
-        COALESCE(MAX(s.cliente_nome), MAX(rv.rv_cliente_nome), cli.rot_cliente_codigo) AS cliente_nome
+        COALESCE(MAX(s.cliente_nome), MAX(rv.rv_cliente_nome)) AS cliente_nome
       FROM rot_roteiro_cidade rc
       JOIN rot_roteiro_cliente cli ON cli.rot_cid_id = rc.rot_cid_id
       LEFT JOIN cc_visita_sessao s ON s.rep_id = rc.rot_repositor_id AND s.cliente_id = cli.rot_cliente_codigo
@@ -913,7 +913,7 @@ class TursoService {
     const clientes = result.rows.map((row) => ({
       cliente_id: normalizeClienteId(row.cliente_id),
       cliente_codigo: normalizeClienteId(row.cliente_codigo),
-      cliente_nome: row.cliente_nome
+      cliente_nome: row.cliente_nome || null
     }));
 
     // Buscar nomes faltantes do banco comercial
@@ -935,7 +935,7 @@ class TursoService {
           });
           clientes.forEach(c => {
             if (!c.cliente_nome || c.cliente_nome === c.cliente_codigo) {
-              c.cliente_nome = nomesMap.get(c.cliente_codigo) || c.cliente_codigo;
+              c.cliente_nome = nomesMap.get(c.cliente_codigo) || '';
             }
           });
         }
@@ -943,6 +943,14 @@ class TursoService {
         console.warn('Não foi possível buscar nomes de clientes do banco comercial:', e.message);
       }
     }
+
+    // Garantir que cliente_nome nunca seja igual ao código
+    clientes.forEach(c => {
+      if (!c.cliente_nome || c.cliente_nome === c.cliente_codigo) {
+        c.cliente_nome = 'Cliente ' + c.cliente_codigo;
+      }
+    });
+
 
     return clientes;
   }
