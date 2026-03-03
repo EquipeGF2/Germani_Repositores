@@ -730,10 +730,20 @@ body.pwa-mode .captura-actions-right {
 body.pwa-mode .captura-actions-right .btn {
     flex: 1;
     min-width: 0;
-    padding: 12px 8px !important;
-    font-size: 13px !important;
+    padding: 10px 6px !important;
+    font-size: 12px !important;
     text-align: center;
     justify-content: center;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+}
+
+body.pwa-mode .captura-actions-right .btn .btn-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* Localização no PWA */

@@ -13162,7 +13162,6 @@ class App {
             }
 
             // === PWA OFFLINE-FIRST: Checkin salva apenas localmente ===
-            const isPWA = window.authManager?.isPWA;
             if (isPWA && tipoRegistro === 'checkin') {
                 const localId = `LOCAL_${Date.now()}_${repId}_${clienteId}`;
                 const dataRegistro = new Date().toISOString();

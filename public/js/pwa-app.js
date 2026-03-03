@@ -174,27 +174,38 @@
 
     function filtrarRoteiroDia(roteiro, diaSemana) {
         if (!roteiro || roteiro.length === 0) return [];
+        const diaLower = (diaSemana || '').toLowerCase().trim();
+
         // Filtrar por dia_semana (formato usado pelo backend: seg, ter, qua, etc.)
-        const filtrado = roteiro.filter(r => r.dia_semana === diaSemana);
+        // Comparação case-insensitive para robustez
+        const filtrado = roteiro.filter(r => {
+            const val = (r.dia_semana || '').toLowerCase().trim();
+            return val === diaLower;
+        });
         if (filtrado.length > 0) return filtrado;
+
         // Fallback: filtrar por data_visita (caso dados tenham esse campo)
         const hoje = getHojeBR();
         const filtradoPorData = roteiro.filter(r => r.data_visita === hoje);
         if (filtradoPorData.length > 0) return filtradoPorData;
+
         return [];
     }
 
     async function getRoteiroHoje() {
         const diaSemana = getDiaSemanaHoje();
+        let todosRoteiro = null;
 
         // 1. Tentar IndexedDB
         try {
             if (typeof offlineDB !== 'undefined') {
                 await offlineDB.init();
-                // Tentar buscar todos e filtrar por dia_semana
                 const todos = await offlineDB.getAll('roteiro');
-                const filtrado = filtrarRoteiroDia(todos, diaSemana);
-                if (filtrado.length > 0) return filtrado;
+                if (todos && todos.length > 0) {
+                    todosRoteiro = todos;
+                    const filtrado = filtrarRoteiroDia(todos, diaSemana);
+                    if (filtrado.length > 0) return filtrado;
+                }
             }
         } catch (e) {
             console.warn('[PWA] Erro IndexedDB roteiro:', e);
@@ -202,6 +213,7 @@
 
         // 2. Fallback: cache geral
         if (cachedData.roteiro && cachedData.roteiro.length > 0) {
+            todosRoteiro = todosRoteiro || cachedData.roteiro;
             const filtrado = filtrarRoteiroDia(cachedData.roteiro, diaSemana);
             if (filtrado.length > 0) return filtrado;
         }
@@ -210,24 +222,37 @@
         if (navigator.onLine) {
             try {
                 const token = localStorage.getItem('auth_token');
-                const resp = await fetch(`${API_BASE_URL}/api/sync/roteiro`, {
-                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-                });
-                const data = await resp.json();
-                if (data.ok && data.roteiro && data.roteiro.length > 0) {
-                    // Salvar no IndexedDB para próxima vez
-                    if (typeof offlineDB !== 'undefined') {
-                        try {
-                            await offlineDB.init();
-                            await offlineDB.salvarRoteiro(data.roteiro);
-                        } catch (e) { /* silent */ }
+                if (token) {
+                    const resp = await fetch(`${API_BASE_URL}/api/sync/roteiro`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.ok && data.roteiro && data.roteiro.length > 0) {
+                            todosRoteiro = data.roteiro;
+                            // Salvar no IndexedDB para próxima vez
+                            if (typeof offlineDB !== 'undefined') {
+                                try {
+                                    await offlineDB.init();
+                                    await offlineDB.salvarRoteiro(data.roteiro);
+                                } catch (e) { /* silent */ }
+                            }
+                            cachedData.roteiro = data.roteiro;
+                            const filtrado = filtrarRoteiroDia(data.roteiro, diaSemana);
+                            if (filtrado.length > 0) return filtrado;
+                        }
                     }
-                    cachedData.roteiro = data.roteiro;
-                    return filtrarRoteiroDia(data.roteiro, diaSemana);
                 }
             } catch (e) {
                 console.warn('[PWA] Erro API roteiro:', e);
             }
+        }
+
+        // 4. Se temos dados mas o filtro do dia não encontrou nada,
+        // retornar todos os itens para que o home não fique vazio
+        if (todosRoteiro && todosRoteiro.length > 0) {
+            console.log('[PWA] Roteiro do dia não encontrado, mostrando todos os itens');
+            return todosRoteiro;
         }
 
         return [];
@@ -1083,11 +1108,6 @@
                     <button class="pwa-back-btn" onclick="pwaApp.voltarDeCheckin()">&#8592;</button>
                     <span class="pwa-page-header-title">${escapeHtml(clienteNome)}</span>
                     <span class="pwa-checkin-badge" style="background:${tipoColor};">${tipoLabel}</span>
-                </div>
-                <div class="pwa-checkin-info">
-                    <div class="pwa-checkin-cliente">${escapeHtml(clienteId)} - ${escapeHtml(clienteNome)}</div>
-                    ${enderecoLinha ? `<div class="pwa-checkin-endereco">${escapeHtml(enderecoLinha)}</div>` : ''}
-                    <div class="pwa-checkin-data">${formatarData(dataVisita)}</div>
                 </div>
                 <div id="pwaCheckinInlineArea" class="pwa-checkin-inline-area">
                     <div class="pwa-loading-inline">
