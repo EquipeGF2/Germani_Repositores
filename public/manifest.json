@@ -13,17 +13,15 @@
       "src": "./icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "categories": ["business", "productivity"],
-  "screenshots": [],
-  "prefer_related_applications": false,
-  "offline_enabled": true,
-  "features": [
-    "offline",
-    "geolocation",
-    "camera",
-    "background-sync"
-  ]
+  "prefer_related_applications": false
 }

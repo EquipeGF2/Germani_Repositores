@@ -39,7 +39,7 @@ class GeoService {
 
     async verificarPermissao() {
         // Usa a Permissions API para verificar o estado real da permissão
-        if (!navigator.permissions) {
+        if (!navigator.permissions || !navigator.permissions.query) {
             console.log('[GeoService] Permissions API não disponível');
             return 'unknown';
         }
@@ -49,7 +49,10 @@ class GeoService {
             console.log('[GeoService] Estado da permissão de geolocalização:', result.state);
             return result.state; // 'granted', 'denied', ou 'prompt'
         } catch (error) {
-            console.warn('[GeoService] Erro ao verificar permissão:', error);
+            // Alguns navegadores/contextos bloqueiam a Permissions API
+            // (ex: Permissions-Policy header restritivo no GitHub Pages)
+            // Nesse caso, ignoramos e tentamos a geolocalização diretamente
+            console.warn('[GeoService] Permissions API bloqueada, tentando geolocalização diretamente:', error.message || error);
             return 'unknown';
         }
     }
@@ -61,6 +64,12 @@ class GeoService {
     }
 
     obterMensagemErro(erro, estadoPermissao) {
+        // Verificar se é erro de Permissions-Policy (bloqueio pelo servidor/navegador)
+        const erroStr = String(erro?.message || '');
+        if (erroStr.includes('Permissions-Policy') || erroStr.includes('permissions policy') || erroStr.includes('not allowed to request')) {
+            return 'Localização bloqueada pela política do navegador. Tente abrir o app diretamente pelo ícone na tela inicial, ou acesse pelo navegador Chrome/Safari.';
+        }
+
         // Códigos de erro do Geolocation API
         switch (erro?.code) {
             case 1: // PERMISSION_DENIED
