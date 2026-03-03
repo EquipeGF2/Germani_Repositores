@@ -10903,7 +10903,7 @@ class App {
             const linhaEndereco = [cidadeUF, enderecoTexto].filter(Boolean).join(' • ');
             const enderecoCadastro = [cidadeUF, enderecoTexto].filter(Boolean).join(' - ');
 
-            const statusCliente = mapaResumo.get(cliId) || { status: 'sem_checkin' };
+            const statusCliente = (this.registroRotaState.resumoVisitas || new Map()).get(cliId) || { status: 'sem_checkin' };
             const statusBase = statusCliente.status || 'sem_checkin';
 
             const podeNovaVisita = statusBase === 'finalizado' || statusBase === 'nao_atendido';
