@@ -409,6 +409,7 @@ class App {
         this.cacheUltimaAtualizacaoRoteiro = {};
         this.cidadesConsultaDisponiveis = [];
         this.MAX_CAMPANHA_FOTOS = 10;
+        this._atividadesCache = null;
         this.performanceMarks = {};
         this.keepAliveHandle = null;
         this.primeiraApiRegistrada = false;
@@ -596,18 +597,18 @@ class App {
 
         btnLimpar.onclick = () => {
             limparLocal();
-            modal.remove();
+            modal.fechar();
             this.showNotification('Atendimento local limpo. Inicie um novo check-in.', 'info');
         };
 
         btnCancelar.onclick = () => {
-            modal.remove();
+            modal.fechar();
             if (mesmoCliente) {
                 this.confirmarCancelarAtendimento(repId, clienteIdNorm, clienteNome || clienteIdNorm);
             }
         };
 
-        btnFechar.onclick = () => modal.remove();
+        btnFechar.onclick = () => modal.fechar();
     }
 
     marcarPerformance(nome) {
@@ -1022,7 +1023,8 @@ class App {
 
     async carregarDadosNaoCriticos() {
         const tarefas = [
-            this.fetchTiposDocumentos({ silencioso: true })
+            this.fetchTiposDocumentos({ silencioso: true }),
+            this.preCarregarAtividades()
         ];
 
         const resultados = await Promise.allSettled(tarefas);
@@ -13198,6 +13200,40 @@ class App {
                 return;
             }
 
+            // === PWA OFFLINE-FIRST: Campanha salva localmente quando checkin é local ===
+            if (isPWA && tipoRegistro === 'campanha' && this.registroRotaState._checkinLocal?.clienteId === clienteId) {
+                if (!this.registroRotaState._campanhaFotosLocal) {
+                    this.registroRotaState._campanhaFotosLocal = [];
+                }
+                // Armazenar fotos da campanha para envio posterior no checkout
+                for (const arquivo of arquivos) {
+                    this.registroRotaState._campanhaFotosLocal.push({
+                        blob: arquivo,
+                        clienteId,
+                        clienteNome,
+                        gpsCoords: { ...gpsCoords },
+                        enderecoResolvido,
+                        dataVisita,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+
+                const atuais = Number(statusCliente?.atividades_count || 0);
+                const novas = Math.max(1, arquivos.length);
+                this.atualizarStatusClienteLocal(clienteId, {
+                    status: 'em_atendimento',
+                    rv_id: statusCliente?.rv_id,
+                    atividades_count: atuais + novas,
+                    rep_id: repId
+                });
+
+                this.showNotification(`${arquivos.length} foto(s) de campanha salvas! Serão enviadas no checkout.`, 'success');
+                this._sessaoCache = {};
+                await this.fecharModalCaptura();
+                this.atualizarCardCliente(clienteId);
+                return;
+            }
+
             if (btnSalvar) {
                 btnSalvar.textContent = 'Enviando...';
             }
@@ -13257,6 +13293,37 @@ class App {
                             console.warn('Erro ao enviar atividades pendentes:', atvError);
                         }
                         this.registroRotaState._atividadesLocal = null;
+                    }
+
+                    // 3. Se há fotos de campanha locais pendentes, enviar
+                    if (this.registroRotaState._campanhaFotosLocal && this.registroRotaState._campanhaFotosLocal.length > 0) {
+                        const fotosLocais = this.registroRotaState._campanhaFotosLocal.filter(f => f.clienteId === clienteId);
+                        if (fotosLocais.length > 0) {
+                            if (btnSalvar) btnSalvar.textContent = `Enviando campanha (${fotosLocais.length} fotos)...`;
+                            try {
+                                const campanhaForm = new FormData();
+                                campanhaForm.append('rep_id', repId);
+                                campanhaForm.append('cliente_id', clienteId);
+                                campanhaForm.append('latitude', Number(gpsCoords.latitude));
+                                campanhaForm.append('longitude', Number(gpsCoords.longitude));
+                                campanhaForm.append('endereco_resolvido', fotosLocais[0].enderecoResolvido || '');
+                                campanhaForm.append('tipo', 'campanha');
+                                campanhaForm.append('cliente_nome', clienteNome);
+                                campanhaForm.append('cliente_endereco', this.registroRotaState.clienteAtual?.clienteEndereco || '');
+                                if (dataVisita) campanhaForm.append('data_planejada', dataVisita);
+                                campanhaForm.append('rv_id', rvCheckin);
+                                for (const foto of fotosLocais) {
+                                    campanhaForm.append('fotos', foto.blob);
+                                }
+                                await fetchJson(`${this.registroRotaState.backendUrl}/api/registro-rota/visitas`, {
+                                    method: 'POST',
+                                    body: campanhaForm
+                                });
+                            } catch (campanhaError) {
+                                console.warn('Erro ao enviar fotos de campanha pendentes:', campanhaError);
+                            }
+                        }
+                        this.registroRotaState._campanhaFotosLocal = null;
                     }
 
                     // Limpar checkin local
@@ -13542,25 +13609,48 @@ class App {
         await this.renderizarFormularioAtividades(sessaoAberta);
     }
 
+    async preCarregarAtividades() {
+        try {
+            const token = localStorage.getItem('auth_token');
+            if (!token) return;
+            const response = await fetch(`${this.registroRotaState?.backendUrl || window.API_BASE_URL || 'https://repositor-backend.onrender.com'}/api/atividades?ativas=true`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                const atividades = data.data || [];
+                if (atividades.length > 0) {
+                    this._atividadesCache = atividades;
+                    console.log('[INIT] Atividades pré-carregadas:', atividades.length);
+                }
+            }
+        } catch (e) {
+            console.warn('[INIT] Não foi possível pré-carregar atividades:', e.message);
+        }
+    }
+
     async renderizarFormularioAtividades(sessaoAberta) {
         const container = document.getElementById('modalAtividadesBody');
 
         try {
-            // Buscar atividades configuradas
-            const token = localStorage.getItem('auth_token');
-            let atividades = [];
+            // Usar cache pré-carregado ou buscar da API
+            let atividades = this._atividadesCache || [];
 
-            if (token) {
-                try {
-                    const response = await fetch(`${this.registroRotaState.backendUrl}/api/atividades?ativas=true`, {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    if (response.ok) {
-                        const data = await response.json();
-                        atividades = data.data || [];
+            if (atividades.length === 0) {
+                const token = localStorage.getItem('auth_token');
+                if (token) {
+                    try {
+                        const response = await fetch(`${this.registroRotaState.backendUrl}/api/atividades?ativas=true`, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        if (response.ok) {
+                            const data = await response.json();
+                            atividades = data.data || [];
+                            if (atividades.length > 0) this._atividadesCache = atividades;
+                        }
+                    } catch (e) {
+                        console.warn('Não foi possível carregar atividades da API, usando padrão');
                     }
-                } catch (e) {
-                    console.warn('Não foi possível carregar atividades da API, usando padrão');
                 }
             }
 
@@ -13927,7 +14017,11 @@ class App {
             this.consultaVisitasState.repositorSelecionado = repositorId;
 
             const options = ['<option value="">Todos</option>'].concat(
-                clientes.map(cli => `<option value="${cli.cliente_codigo || cli.cliente_id}">${cli.cliente_codigo || cli.cliente_id} - ${cli.cliente_nome || cli.cliente_codigo}</option>`)
+                clientes.map(cli => {
+                    const cod = cli.cliente_codigo || cli.cliente_id || '';
+                    const nome = cli.cliente_nome || cli.fantasia || cli.razao_social || cod;
+                    return `<option value="${cod}">${cod} - ${nome}</option>`;
+                })
             );
 
             selectCliente.innerHTML = options.join('');
@@ -18381,7 +18475,7 @@ class App {
 
         container.innerHTML = this.pesquisaClientesSelecionados.map(c => `
             <span class="cliente-tag">
-                ${c.codigo} - ${c.nome || c.codigo}
+                ${c.codigo} - ${c.nome || c.fantasia || c.razao_social || 'Sem nome'}
                 <button type="button" class="cliente-tag-remove" onclick="window.app.removerClientePesquisa('${c.codigo}')">&times;</button>
             </span>
         `).join('');
