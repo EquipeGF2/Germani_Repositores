@@ -675,16 +675,7 @@ router.post('/visitas', upload.any(), async (req, res) => {
     }
 
     if (rvTipo === 'checkout') {
-      if (rvSessaoId && !sessaoPorId) {
-        return responderErro({
-          res,
-          status: 404,
-          code: 'ATENDIMENTO_NAO_ENCONTRADO',
-          message: 'Atendimento não encontrado para o checkout solicitado.',
-          requestId
-        });
-      }
-
+      // Usar rv_id direto, mas se não encontrar (replication lag), buscar por cliente/rep em andamento
       const sessaoAlvoBase = sessaoPorId || sessaoEmAndamentoCliente || sessaoAberta;
 
       const sessaoValidacao = validarSessaoAbertaParaOperacao(sessaoAlvoBase, {
@@ -719,17 +710,8 @@ router.post('/visitas', upload.any(), async (req, res) => {
         : null;
     }
     if (rvTipo === 'campanha') {
-      if (rvSessaoId && !sessaoPorId) {
-        return responderErro({
-          res,
-          status: 404,
-          code: 'ATENDIMENTO_NAO_ENCONTRADO',
-          message: 'Atendimento não encontrado',
-          requestId
-        });
-      }
-
-      const sessaoBaseCampanha = rvSessaoId ? sessaoPorId : sessaoExistente;
+      // Usar rv_id direto, mas se não encontrar (replication lag), buscar por cliente/rep em andamento
+      const sessaoBaseCampanha = (rvSessaoId ? sessaoPorId : null) || sessaoEmAndamentoCliente || sessaoExistente;
       const sessaoValidada = validarSessaoAbertaParaOperacao(sessaoBaseCampanha, {
         clienteIdNorm,
         repIdNumber
