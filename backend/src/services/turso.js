@@ -910,11 +910,41 @@ class TursoService {
     `;
 
     const result = await this.execute(sql, [repId]);
-    return result.rows.map((row) => ({
+    const clientes = result.rows.map((row) => ({
       cliente_id: normalizeClienteId(row.cliente_id),
       cliente_codigo: normalizeClienteId(row.cliente_codigo),
       cliente_nome: row.cliente_nome
     }));
+
+    // Buscar nomes faltantes do banco comercial
+    const semNome = clientes.filter(c => !c.cliente_nome || c.cliente_nome === c.cliente_codigo);
+    if (semNome.length > 0) {
+      try {
+        const comercialClient = this.getComercialClient();
+        if (comercialClient) {
+          const ids = semNome.map(c => c.cliente_codigo);
+          const placeholders = ids.map(() => '?').join(',');
+          const comercialResult = await comercialClient.execute({
+            sql: `SELECT cliente, nome, fantasia FROM tab_cliente WHERE cliente IN (${placeholders})`,
+            args: ids
+          });
+          const nomesMap = new Map();
+          (comercialResult?.rows || []).forEach(r => {
+            const cod = String(r.cliente).trim().replace(/\.0$/, '');
+            nomesMap.set(cod, r.fantasia || r.nome || '');
+          });
+          clientes.forEach(c => {
+            if (!c.cliente_nome || c.cliente_nome === c.cliente_codigo) {
+              c.cliente_nome = nomesMap.get(c.cliente_codigo) || c.cliente_codigo;
+            }
+          });
+        }
+      } catch (e) {
+        console.warn('Não foi possível buscar nomes de clientes do banco comercial:', e.message);
+      }
+    }
+
+    return clientes;
   }
 
   async buscarSessaoAberta(repId, clienteId, { dataPlanejada, inicioIso, fimIso }) {

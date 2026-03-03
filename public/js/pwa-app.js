@@ -885,7 +885,9 @@
 
         const selectIds = [
             'consultaRepositor', 'perfRepositor', 'filtro_repositor_consulta_roteiro',
-            'uploadRepositor', 'registroRepositor'
+            'uploadRepositor', 'registroRepositor', 'filtro_repositor',
+            'filtro_repositor_cadastro', 'filtro_repositor_roteiro',
+            'filtro_repositor_checking_cancelado', 'filtro_repositor_validacao'
         ];
 
         selectIds.forEach(id => {
@@ -896,6 +898,16 @@
                 if (group) {
                     group.style.display = 'none';
                 }
+            }
+        });
+
+        // Also hide text input filters for repositor
+        const textInputIds = ['filtro_nome_repositor', 'filtro_nome_repositor_roteiro'];
+        textInputIds.forEach(id => {
+            const input = container.querySelector(`#${id}`) || document.getElementById(id);
+            if (input) {
+                const group = input.closest('.form-group, .filter-group');
+                if (group) group.style.display = 'none';
             }
         });
     }
