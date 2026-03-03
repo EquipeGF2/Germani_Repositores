@@ -1004,6 +1004,13 @@
             : tipoRegistro === 'campanha' ? '#f59e0b'
             : '#3b82f6';
 
+        // CRÍTICO: Salvar o modal ANTES de substituir o innerHTML,
+        // pois ele faz parte do conteúdo da página registro-rota que será destruída
+        const modalSalvo = document.getElementById('modalCapturarVisita');
+        if (modalSalvo && modalSalvo.parentNode) {
+            modalSalvo.parentNode.removeChild(modalSalvo);
+        }
+
         // Renderizar tela inline com área para o modal de captura
         pwaContent.innerHTML = `
             <div class="pwa-page pwa-fullscreen-page pwa-checkin-page">
@@ -1026,11 +1033,21 @@
             </div>
         `;
 
-        // Agora chamar a lógica original do app.js diretamente
-        // Mas antes: mover o modal de captura para dentro do pwaContent em vez de overlay
+        // Injetar o modal salvo na área inline
+        const inlineArea = document.getElementById('pwaCheckinInlineArea');
+        if (modalSalvo && inlineArea) {
+            inlineArea.innerHTML = '';
+            modalSalvo.classList.remove('active');
+            modalSalvo.classList.add('pwa-inline-modal');
+            inlineArea.appendChild(modalSalvo);
+        }
+
+        // Chamar a lógica original do app.js
         setTimeout(() => {
-            injectCaptureModalInline();
-            // Chamar a lógica original do app.js
+            // Se o modal não foi salvo (primeira navegação ou erro), tentar injetar do DOM
+            if (!modalSalvo) {
+                injectCaptureModalInline();
+            }
             if (typeof window.app !== 'undefined' && window.app._originalAbrirModalCaptura) {
                 window.app._originalAbrirModalCaptura(repId, clienteId, clienteNome, enderecoLinha, dataVisita, tipoRegistro, enderecoCadastro, novaVisita);
             }
@@ -1082,24 +1099,17 @@
     }
 
     /**
-     * Restaura o modal de captura para a posição original (dentro do contentBody)
-     * Para que funcione corretamente na próxima abertura
+     * Remove o modal de captura do inline area.
+     * Não precisa restaurar - ao navegar de volta para registro-rota,
+     * um novo modal será criado pela renderização da página.
      */
     function restoreCaptureModal() {
         const modal = document.getElementById('modalCapturarVisita');
         if (!modal) return;
 
-        // Remover classe inline
         modal.classList.remove('pwa-inline-modal');
         modal.classList.remove('active');
-
-        // Mover de volta para o body ou contentBody original
-        const contentBody = document.getElementById('contentBody');
-        if (contentBody) {
-            contentBody.appendChild(modal);
-        } else {
-            document.body.appendChild(modal);
-        }
+        modal.remove();
     }
 
     // ==================== PÁGINA: MAIS ====================
