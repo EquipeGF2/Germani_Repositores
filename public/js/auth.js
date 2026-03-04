@@ -408,15 +408,15 @@ class AuthManager {
     if (pronto) {
       this.atualizarStatusServidorPWA('ready');
     } else {
-      // Se falhou, mostrar erro mas tentar novamente automaticamente após 3s
+      // Se falhou, mostrar erro mas tentar novamente automaticamente após 5s
       this.atualizarStatusServidorPWA('error');
       if (!this.servidorPronto) {
-        console.log('[AUTH] Retry automático do pre-warm em 3s...');
+        console.log('[AUTH] Retry automático do pre-warm em 5s...');
         setTimeout(() => {
           if (!this.servidorPronto) {
             this._iniciarPreWarmComRetry();
           }
-        }, 3000);
+        }, 5000);
       }
     }
   }
@@ -474,14 +474,12 @@ class AuthManager {
       const inicio = performance.now();
       console.log('[AUTH] Pre-warm: acordando servidor...');
 
-      // Tentar até 3 vezes com timeouts curtos (servidor já deve estar quente na maioria dos casos)
-      const MAX_TENTATIVAS = 3;
+      // Tentar até 5 vezes com backoff crescente (cobre cold starts de ~60s)
+      const MAX_TENTATIVAS = 5;
       for (let tentativa = 0; tentativa < MAX_TENTATIVAS; tentativa++) {
         try {
           const controller = new AbortController();
-          // Timeout progressivo: 5s, 10s, 15s
-          const timeoutMs = (tentativa + 1) * 5000;
-          const timeout = setTimeout(() => controller.abort(), timeoutMs);
+          const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout por tentativa, falha mais rápido para tentar denovo
 
           // Fetch com modo no-cors ou fetch normal para ser mais agressivo?
           // Como precisamos ler ok, vamos normal
@@ -504,9 +502,9 @@ class AuthManager {
           console.warn(`[AUTH] Pre-warm: tentativa ${tentativa + 1}/${MAX_TENTATIVAS} falhou após ${duracao}s -`, error.message);
         }
 
-        // Backoff curto entre tentativas: 1s, 2s
+        // Backoff crescente entre tentativas: 2s, 4s, 6s, 8s
         if (tentativa < MAX_TENTATIVAS - 1) {
-          const espera = (tentativa + 1) * 1000;
+          const espera = (tentativa + 1) * 2000;
           console.log(`[AUTH] Pre-warm: aguardando ${espera / 1000}s antes da próxima tentativa...`);
           await new Promise(resolve => setTimeout(resolve, espera));
         }
@@ -813,31 +811,20 @@ class AuthManager {
       btnEntrar.disabled = true;
       erroEl.classList.remove('show');
 
-      btnEntrar.textContent = 'Entrando...';
-
-      // Tentar login direto sem esperar pre-warm (o login em si já acorda o servidor)
-      // Se falhar por rede, aí sim tentar pre-warm como fallback
-      let result;
-      try {
-        result = await this.loginWeb(usuario, senha);
-        this.servidorPronto = true;
-      } catch (loginError) {
-        // Se o erro for de rede (servidor dormindo), tentar pre-warm e re-tentar login
-        if (!this.servidorPronto && (loginError.message === 'Failed to fetch' || loginError.name === 'TypeError')) {
-          btnEntrar.textContent = 'Aguardando servidor...';
-          this.atualizarStatusServidor('connecting');
-          const pronto = await this.preWarmServer();
-          if (!pronto) {
-            this.atualizarStatusServidor('error');
-            throw new Error('Servidor indisponível. Tente novamente em alguns instantes.');
-          }
-          this.atualizarStatusServidor('ready');
-          btnEntrar.textContent = 'Entrando...';
-          result = await this.loginWeb(usuario, senha);
-        } else {
-          throw loginError;
+      // Se o servidor ainda não respondeu ao pre-warm, aguardar
+      if (!this.servidorPronto) {
+        btnEntrar.textContent = 'Aguardando servidor...';
+        this.atualizarStatusServidor('connecting');
+        const pronto = await this.preWarmServer();
+        if (!pronto) {
+          this.atualizarStatusServidor('error');
+          throw new Error('Servidor indisponível. Tente novamente em alguns instantes.');
         }
+        this.atualizarStatusServidor('ready');
       }
+
+      btnEntrar.textContent = 'Entrando...';
+      const result = await this.loginWeb(usuario, senha);
 
       // Remover página de login
       const loginPage = document.getElementById('loginPageWeb');

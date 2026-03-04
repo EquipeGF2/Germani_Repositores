@@ -1530,11 +1530,13 @@ body.pwa-mode .modal-title-pwa-hidden { display: none !important; }
 
 /* Expande modal atividades para 95% e otimiza espaços para evitar scroll */
 body.pwa-mode #modalAtividades .modal-content {
-    width: 95vw !important;
-    max-width: 95vw !important;
-    max-height: 98vh !important;
-    margin: 1vh auto !important;
-    padding: 16px 12px !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    margin: 0 !important;
+    padding: 8px 12px !important;
+    border-radius: 0 !important;
 }
 
 body.pwa-mode #modalAtividades .modal-header {
@@ -1567,4 +1569,23 @@ body.pwa-mode .form-group label {
 body.pwa-mode .form-group input[type="number"],
 body.pwa-mode .form-group select {
     padding: 10px !important;
+}
+
+
+body.pwa-mode .captura-hint {
+    font-size: 14px !important;
+    text-align: center !important;
+    font-weight: 500 !important;
+    margin: 8px 16px 0 !important;
+    background: #f1f5f9 !important;
+    padding: 8px !important;
+    border-radius: 8px !important;
+}
+
+body.pwa-mode .captura-header {
+    display: none !important;
+}
+
+body.pwa-mode .captura-localizacao {
+    padding-top: 16px !important;
 }

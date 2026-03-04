@@ -1158,8 +1158,7 @@
             <div class="pwa-page pwa-fullscreen-page pwa-checkin-page">
                 <div class="pwa-page-header-bar">
                     <button class="pwa-back-btn" onclick="pwaApp.voltarDeCheckin()">&#8592;</button>
-                    <span class="pwa-page-header-title">${escapeHtml(clienteNome)}</span>
-                    <span class="pwa-checkin-badge" style="background:${tipoColor};">${tipoLabel}</span>
+                    <span class="pwa-page-header-title">${tipoLabel}</span>
                 </div>
                 <div id="pwaCheckinInlineArea" class="pwa-checkin-inline-area">
                     <div class="pwa-loading-inline">
