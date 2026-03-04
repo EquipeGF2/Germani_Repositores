@@ -12976,30 +12976,27 @@ class App {
             contador.textContent = `Fotos: ${total}`;
         }
 
-        if (galeriaWrapper) {
-            galeriaWrapper.style.display = tipo === 'campanha' ? 'flex' : 'none';
-        }
+        // galeriaWrapper visibility will be handled by the cameraArea toggle logic below
 
         if (galeria) {
             galeria.innerHTML = '';
-            if (tipo === 'campanha') {
-                this.registroRotaState.fotosCapturadas.forEach((foto, index) => {
-                    const thumb = document.createElement('div');
-                    thumb.className = 'camera-thumb';
-                    thumb.innerHTML = `
-                        <img src="${foto.url}" alt="Foto ${index + 1}">
-                        <button type="button" data-index="${index}" class="btn-remover-foto">✖</button>
-                    `;
-                    galeria.appendChild(thumb);
-                });
+            // Renderizar galeria para todos os tipos (checkin, checkout, campanha)
+            this.registroRotaState.fotosCapturadas.forEach((foto, index) => {
+                const thumb = document.createElement('div');
+                thumb.className = 'camera-thumb';
+                thumb.innerHTML = `
+                    <img src="${foto.url}" alt="Foto ${index + 1}">
+                    <button type="button" data-index="${index}" class="btn-remover-foto">✖</button>
+                `;
+                galeria.appendChild(thumb);
+            });
 
-                galeria.querySelectorAll('.btn-remover-foto').forEach((btn) => {
-                    btn.onclick = (e) => {
-                        const idx = Number(e.currentTarget.getAttribute('data-index'));
-                        this.removerFotoIndice(idx);
-                    };
-                });
-            }
+            galeria.querySelectorAll('.btn-remover-foto').forEach((btn) => {
+                btn.onclick = (e) => {
+                    const idx = Number(e.currentTarget.getAttribute('data-index'));
+                    this.removerFotoIndice(idx);
+                };
+            });
         }
 
         if (btnSalvar) {
@@ -13017,15 +13014,15 @@ class App {
         }
 
         if (cameraArea) {
-            // Em campanha, ocultar a câmera e exibir apenas as fotos se houver fotos,
-            // a não ser que o usuário queira adicionar uma nova foto (estado controlado pelo botão)
-            if (tipo === 'campanha' && total > 0 && !this.registroRotaState._exibindoCameraSecundaria) {
+            // Ocultar a câmera e exibir apenas a galeria se houver fotos,
+            // a não ser que o usuário queira adicionar uma nova foto (exibindoCameraSecundaria)
+            if (total > 0 && !this.registroRotaState._exibindoCameraSecundaria) {
                 cameraArea.style.display = 'none';
                 if (galeriaWrapper) galeriaWrapper.style.display = 'flex';
                 if (btnCapturar) btnCapturar.style.display = 'none'; // Esconde botão de capturar enquanto vê a galeria
             } else {
                 cameraArea.style.display = 'block';
-                if (tipo === 'campanha' && galeriaWrapper) galeriaWrapper.style.display = 'none';
+                if (galeriaWrapper) galeriaWrapper.style.display = 'none';
                 if (btnCapturar) btnCapturar.style.display = 'inline-flex';
             }
         }
@@ -13140,16 +13137,26 @@ class App {
     }
 
     novaFoto() {
-        const canvas = document.getElementById('canvasCaptura');
-        const video = document.getElementById('videoPreview');
-        const placeholder = document.getElementById('cameraPlaceholder');
+        const tipo = (this.registroRotaState.tipoRegistro || '').toLowerCase();
 
-        if (canvas) canvas.style.display = 'none';
-        if (video) video.style.display = 'block';
-        if (placeholder) placeholder.style.display = 'none';
+        if (tipo === 'campanha') {
+            // Para campanha, manter as fotos tiradas e só mostrar a câmera
+            this.registroRotaState._exibindoCameraSecundaria = true;
+        } else {
+            // Para checkin/checkout, apagar a foto anterior e mostrar a câmera novamente
+            this.registroRotaState.fotosCapturadas.forEach((foto) => foto?.url && URL.revokeObjectURL(foto.url));
+            this.registroRotaState.fotosCapturadas = [];
+            this.registroRotaState._exibindoCameraSecundaria = true;
 
-        this.registroRotaState.fotosCapturadas.forEach((foto) => foto?.url && URL.revokeObjectURL(foto.url));
-        this.registroRotaState.fotosCapturadas = [];
+            const canvas = document.getElementById('canvasCaptura');
+            const video = document.getElementById('videoPreview');
+            const placeholder = document.getElementById('cameraPlaceholder');
+
+            if (canvas) canvas.style.display = 'none';
+            if (video) video.style.display = 'block';
+            if (placeholder) placeholder.style.display = 'none';
+        }
+
         this.atualizarGaleriaCaptura();
 
         if (!this.registroRotaState.videoStream) {
@@ -13765,11 +13772,8 @@ class App {
         if (tituloAt) tituloAt.textContent = 'Atividades';
         const infoAt = document.getElementById('atividadesClienteInfo');
         if (infoAt) {
-            infoAt.textContent = `${clienteIdNorm} • ${clienteNome}`;
-            infoAt.style.whiteSpace = 'normal';
-            infoAt.style.wordBreak = 'break-word';
-            infoAt.style.lineHeight = '1.4';
-            infoAt.style.marginTop = '8px';
+            // "mostrar nome do cliente em atividades não precisa" - escondendo info para poupar espaço
+            infoAt.style.display = 'none';
         }
         const bodyAt = document.getElementById('modalAtividadesBody');
         if (bodyAt) bodyAt.innerHTML = `
