@@ -1278,14 +1278,18 @@
         `;
 
         // Chamar a lógica original do app.js para popular o modal
-        setTimeout(() => {
-            if (typeof window.app !== 'undefined' && window.app._originalAbrirModalAtividades) {
-                window.app._originalAbrirModalAtividades(repId, clienteId, clienteNome, dataPlanejada);
-
-                // Aguardar o modal ser populado e movê-lo para inline
-                setTimeout(() => injectAtividadesModalInline(), 100);
+        if (typeof window.app !== 'undefined' && window.app._originalAbrirModalAtividades) {
+            // Pode ser assíncrono, então executamos imediatamente a injeção do esqueleto e
+            // repetimos algumas vezes para garantir que foi injetado (ou melhor, await a promessa se possível)
+            const promise = window.app._originalAbrirModalAtividades(repId, clienteId, clienteNome, dataPlanejada);
+            if (promise && typeof promise.then === 'function') {
+                promise.then(() => injectAtividadesModalInline()).catch(() => injectAtividadesModalInline());
+            } else {
+                setTimeout(() => injectAtividadesModalInline(), 50);
             }
-        }, 50);
+            // Injeção imediata para caso a UI demore na rede
+            injectAtividadesModalInline();
+        }
     }
 
     /**

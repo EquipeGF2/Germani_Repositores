@@ -1535,8 +1535,12 @@ body.pwa-mode #modalAtividades .modal-content {
     height: 100vh !important;
     max-height: 100vh !important;
     margin: 0 !important;
-    padding: 8px 12px !important;
+    padding: 0 !important;
     border-radius: 0 !important;
+}
+
+body.pwa-mode #modalAtividades .modal-body {
+    padding: 0 16px !important;
 }
 
 body.pwa-mode #modalAtividades .modal-header {
@@ -1558,8 +1562,13 @@ body.pwa-mode .atividades-checklist-grid {
 }
 
 body.pwa-mode .atividades-checklist-grid label.checkbox-label {
-    padding: 10px !important;
-    font-size: 15px !important;
+    padding: 12px 0 !important;
+    font-size: 16px !important;
+    background: transparent !important;
+    border: none !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
 }
 
 body.pwa-mode .form-group label {
@@ -1588,4 +1597,105 @@ body.pwa-mode .captura-header {
 
 body.pwa-mode .captura-localizacao {
     padding-top: 16px !important;
+}
+
+/* ==========================================
+   PWA DOCS CAMERA OVERRIDE
+   Make document camera fullscreen and push gallery to bottom
+   ========================================== */
+body.pwa-mode #modalCameraDocumentos .modal-content {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+body.pwa-mode #modalCameraDocumentos .modal-body {
+    flex: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+}
+
+body.pwa-mode #modalCameraDocumentos .camera-area {
+    flex: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    background: #000;
+}
+
+body.pwa-mode #modalCameraDocumentos .camera-video {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important;
+}
+
+body.pwa-mode #modalCameraDocumentos .captura-thumbs-wrapper {
+    flex-shrink: 0 !important;
+    padding: 10px !important;
+    background: #fff;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+body.pwa-mode #modalCameraDocumentos .captura-hint {
+    display: none !important; /* Hide hint to save space */
+}
+
+body.pwa-mode #modalCameraDocumentos .modal-footer {
+    padding: 12px 16px !important;
+}
+
+
+/* ==========================================
+   AGGRESSIVE MODAL TO SCREEN PWA OVERRIDE
+   The user explicitly wants "no modals on top of posts", everything should feel like a screen
+   ========================================== */
+body.pwa-mode .modal.active {
+    background: #fff !important;
+}
+
+body.pwa-mode .modal-content {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+body.pwa-mode .modal-header {
+    flex-shrink: 0;
+    padding: 16px !important;
+    border-radius: 0 !important;
+    background: #f8fafc !important;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+body.pwa-mode .modal-body {
+    flex: 1 !important;
+    overflow-y: auto !important;
+    padding: 16px !important;
+}
+
+body.pwa-mode .modal-footer {
+    flex-shrink: 0;
+    padding: 16px !important;
+    background: #fff !important;
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    border-radius: 0 !important;
 }

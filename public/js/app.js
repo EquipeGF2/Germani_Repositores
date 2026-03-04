@@ -11908,7 +11908,7 @@ class App {
         return atendimento;
     }
 
-    async buscarSessaoAberta(repId, dataPlanejada, forceRefresh = false) {
+    async buscarSessaoAberta(repId, dataPlanejada, forceRefresh = false, signal = null) {
         const cacheKey = `sessao_${repId}_${dataPlanejada || 'all'}`;
         const agora = Date.now();
         const cacheTTL = 15000; // 15 segundos
@@ -13838,9 +13838,47 @@ class App {
                 serv_pontos_extras: atvLocal?.payload?.serv_pontos_extras || null,
                 qtd_pontos_extras: atvLocal?.payload?.qtd_pontos_extras || null
             };
+        } else if (isPWA && !navigator.onLine) {
+            // PWA offline: tenta usar os dados em cache ou criar mock se sabemos que está aberto
+            const atvLocal = this.registroRotaState._atividadesLocal || {};
+            sessaoAberta = {
+                sessao_id: statusLocal?.rv_id || `LOCAL_TEMP_${Date.now()}`,
+                rv_sessao_id: statusLocal?.rv_id || `LOCAL_TEMP_${Date.now()}`,
+                cliente_id: clienteIdNorm,
+                cliente_nome: clienteNome,
+                qtd_frentes: atvLocal?.payload?.qtd_frentes || null,
+                usou_merchandising: atvLocal?.payload?.usou_merchandising || null,
+                serv_abastecimento: atvLocal?.payload?.serv_abastecimento || null,
+                serv_espaco_loja: atvLocal?.payload?.serv_espaco_loja || null,
+                serv_ruptura_loja: atvLocal?.payload?.serv_ruptura_loja || null,
+                serv_pontos_extras: atvLocal?.payload?.serv_pontos_extras || null,
+                qtd_pontos_extras: atvLocal?.payload?.qtd_pontos_extras || null
+            };
         } else {
-            // Buscar sessão ativa - forçar refresh para evitar problemas de cache
-            sessaoAberta = await this.buscarSessaoAberta(repId, dataPlanejada, true);
+            // Buscar sessão ativa - usar fallback de timeout se demorar
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), isPWA ? 2000 : 15000); // Fast fail no PWA
+
+                sessaoAberta = await this.buscarSessaoAberta(repId, dataPlanejada, true, controller.signal);
+                clearTimeout(timeoutId);
+            } catch (e) {
+                // Em caso de timeout, confia no cache
+                const atvLocal = this.registroRotaState._atividadesLocal || {};
+                sessaoAberta = {
+                    sessao_id: statusLocal?.rv_id || `LOCAL_TEMP_${Date.now()}`,
+                    rv_sessao_id: statusLocal?.rv_id || `LOCAL_TEMP_${Date.now()}`,
+                    cliente_id: clienteIdNorm,
+                    cliente_nome: clienteNome,
+                    qtd_frentes: atvLocal?.payload?.qtd_frentes || null,
+                    usou_merchandising: atvLocal?.payload?.usou_merchandising || null,
+                    serv_abastecimento: atvLocal?.payload?.serv_abastecimento || null,
+                    serv_espaco_loja: atvLocal?.payload?.serv_espaco_loja || null,
+                    serv_ruptura_loja: atvLocal?.payload?.serv_ruptura_loja || null,
+                    serv_pontos_extras: atvLocal?.payload?.serv_pontos_extras || null,
+                    qtd_pontos_extras: atvLocal?.payload?.qtd_pontos_extras || null
+                };
+            }
 
             // Se não encontrou pela data, buscar qualquer atendimento aberto (pode ser de outro dia)
             if (!sessaoAberta || normalizeClienteId(sessaoAberta.cliente_id) !== clienteIdNorm) {

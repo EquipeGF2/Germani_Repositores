@@ -344,16 +344,16 @@
             // authManager.init() já é chamado automaticamente no auth.js
 
             // Iniciar o pre-warm imediatamente em background para evitar demora no clique do botão Entrar
-            if (typeof authManager !== 'undefined' && !authManager.servidorPronto) {
-                authManager.atualizarStatusServidorPWA('connecting');
-                authManager.preWarmServer().then(pronto => {
+            if (window.authManager && typeof window.authManager.preWarmServer === 'function' && !window.authManager.servidorPronto) {
+                window.authManager.atualizarStatusServidorPWA('connecting');
+                window.authManager.preWarmServer().then(pronto => {
                     if (pronto) {
-                        authManager.atualizarStatusServidorPWA('ready');
+                        window.authManager.atualizarStatusServidorPWA('ready');
                     } else {
-                        authManager.atualizarStatusServidorPWA('error');
+                        window.authManager.atualizarStatusServidorPWA('error');
                     }
                 }).catch(() => {
-                    authManager.atualizarStatusServidorPWA('error');
+                    window.authManager.atualizarStatusServidorPWA('error');
                 });
             }
 
