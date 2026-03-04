@@ -483,6 +483,8 @@ class AuthManager {
           const timeoutMs = (tentativa + 1) * 5000;
           const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
+          // Fetch com modo no-cors ou fetch normal para ser mais agressivo?
+          // Como precisamos ler ok, vamos normal
           const response = await fetch(`${this.apiBaseUrl}/api/health`, {
             signal: controller.signal
           });
