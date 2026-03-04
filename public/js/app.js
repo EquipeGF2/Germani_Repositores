@@ -12196,8 +12196,31 @@ class App {
         const capturaHint = document.getElementById('capturaHint');
         if (capturaHint) {
             capturaHint.textContent = tipoPadrao === 'campanha'
-                ? `Capture até ${this.MAX_CAMPANHA_FOTOS} fotos da campanha e remova o que não quiser antes de salvar.`
-                : 'Capture uma única foto para este registro. Você pode refazer antes de salvar.';
+                ? `Máximo de ${this.MAX_CAMPANHA_FOTOS} fotos. Você pode capturar várias fotos em sequência.`
+                : 'Capture uma única foto para este registro.';
+        }
+
+        // Esconder informações não desejadas pelo usuário em modo PWA
+        if (window.authManager?.isPWA) {
+            const tituloModal = document.getElementById('modalCapturaTitulo');
+            const clienteInfo = document.getElementById('capturaClienteInfo');
+            const capturaBadge = document.getElementById('capturaTipoBadge');
+
+            if (tituloModal) tituloModal.style.display = 'none';
+            if (clienteInfo) clienteInfo.style.display = 'none';
+            if (capturaBadge) capturaBadge.style.display = 'none';
+
+            // Mover a hint text para baixo do GPS
+            const capturaHint = document.getElementById('capturaHint');
+            const capturaLoc = document.querySelector('.captura-localizacao');
+            if (capturaHint && capturaLoc && capturaHint.parentNode !== capturaLoc.parentNode) {
+                // Ensure it's visually directly under GPS
+                capturaHint.style.margin = '10px 16px 0';
+                capturaHint.style.textAlign = 'center';
+                capturaHint.style.fontSize = '14px';
+                capturaHint.style.fontWeight = '500';
+                capturaLoc.parentNode.insertBefore(capturaHint, capturaLoc.nextSibling);
+            }
         }
 
         this.configurarToggleGps();
@@ -13014,16 +13037,23 @@ class App {
         }
 
         if (cameraArea) {
-            // Ocultar a câmera e exibir apenas a galeria se houver fotos,
-            // a não ser que o usuário queira adicionar uma nova foto (exibindoCameraSecundaria)
-            if (total > 0 && !this.registroRotaState._exibindoCameraSecundaria) {
-                cameraArea.style.display = 'none';
-                if (galeriaWrapper) galeriaWrapper.style.display = 'flex';
-                if (btnCapturar) btnCapturar.style.display = 'none'; // Esconde botão de capturar enquanto vê a galeria
-            } else {
+            if (tipo === 'campanha') {
+                // Campanha: Exibe ambos (câmera em cima, galeria em baixo) para suportar até 10 fotos rápidas
                 cameraArea.style.display = 'block';
-                if (galeriaWrapper) galeriaWrapper.style.display = 'none';
-                if (btnCapturar) btnCapturar.style.display = 'inline-flex';
+                if (galeriaWrapper) galeriaWrapper.style.display = 'flex';
+                if (btnCapturar) btnCapturar.style.display = total >= this.MAX_CAMPANHA_FOTOS ? 'none' : 'inline-flex';
+                if (btnNova) btnNova.style.display = 'none'; // Não precisa "nova foto" na campanha, a câmera já está lá
+            } else {
+                // Check-in / Check-out: Toggle entre câmera e foto capturada
+                if (total > 0 && !this.registroRotaState._exibindoCameraSecundaria) {
+                    cameraArea.style.display = 'none';
+                    if (galeriaWrapper) galeriaWrapper.style.display = 'flex';
+                    if (btnCapturar) btnCapturar.style.display = 'none';
+                } else {
+                    cameraArea.style.display = 'block';
+                    if (galeriaWrapper) galeriaWrapper.style.display = 'none';
+                    if (btnCapturar) btnCapturar.style.display = 'inline-flex';
+                }
             }
         }
     }
@@ -13103,7 +13133,7 @@ class App {
                 } else {
                     canvas.style.display = 'none';
                 }
-            }, 'image/jpeg', 0.9);
+            }, 'image/jpeg', 0.6);
         } catch (error) {
             console.error('Erro ao capturar foto:', error);
             this.showNotification('Erro ao capturar foto: ' + error.message, 'error');
@@ -13140,8 +13170,8 @@ class App {
         const tipo = (this.registroRotaState.tipoRegistro || '').toLowerCase();
 
         if (tipo === 'campanha') {
-            // Para campanha, manter as fotos tiradas e só mostrar a câmera
-            this.registroRotaState._exibindoCameraSecundaria = true;
+            // Não deve ser chamado em campanha
+            return;
         } else {
             // Para checkin/checkout, apagar a foto anterior e mostrar a câmera novamente
             this.registroRotaState.fotosCapturadas.forEach((foto) => foto?.url && URL.revokeObjectURL(foto.url));
@@ -16105,9 +16135,9 @@ class App {
                     </div>
                     <div class="modal-footer captura-footer">
                         <div class="captura-actions-left"></div>
-                        <div class="captura-actions-right">
-                            <button class="btn btn-secondary" type="button" data-camera-close>Cancelar</button>
-                            <button class="btn btn-primary" type="button" id="btnCapturarFotoDocumento">📸 Capturar foto</button>
+                        <div class="captura-actions-right" style="display:flex; gap:10px; width: 100%;">
+                            <button class="btn btn-secondary" type="button" data-camera-close style="flex:1; justify-content:center;">Concluir / Voltar</button>
+                            <button class="btn btn-primary" type="button" id="btnCapturarFotoDocumento" style="flex:1; justify-content:center;">📸 Capturar foto</button>
                         </div>
                     </div>
                 </div>
@@ -16177,11 +16207,27 @@ class App {
                 return;
             }
 
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            // Comprimir a imagem para agilizar o upload
+            const maxDim = 1200;
+            let finalWidth = video.videoWidth;
+            let finalHeight = video.videoHeight;
 
+            if (finalWidth > maxDim || finalHeight > maxDim) {
+                if (finalWidth > finalHeight) {
+                    finalHeight = Math.round(finalHeight * (maxDim / finalWidth));
+                    finalWidth = maxDim;
+                } else {
+                    finalWidth = Math.round(finalWidth * (maxDim / finalHeight));
+                    finalHeight = maxDim;
+                }
+            }
+
+            canvas.width = finalWidth;
+            canvas.height = finalHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, finalWidth, finalHeight);
+
+            // Reduzir qualidade do jpeg para 0.7 para upload super rápido (PWA request)
             canvas.toBlob(blob => {
                 if (!blob) {
                     this.showNotification('Não foi possível gerar a foto', 'error');
@@ -16201,7 +16247,7 @@ class App {
 
                 if (status) status.textContent = 'Foto adicionada à fila de envio';
                 this.showNotification('Foto adicionada à fila de envio', 'success');
-            }, 'image/jpeg', 0.92);
+            }, 'image/jpeg', 0.6);
         } catch (error) {
             console.error('Erro ao capturar foto:', error);
             this.showNotification('Erro ao capturar foto', 'error');
@@ -20345,7 +20391,7 @@ class App {
                 if (btnConfirmar) btnConfirmar.style.display = 'inline-flex';
 
                 this.showNotification('Foto capturada', 'success');
-            }, 'image/jpeg', 0.9);
+            }, 'image/jpeg', 0.6);
         } catch (error) {
             console.error('Erro ao capturar foto da pesquisa:', error);
             this.showNotification('Erro ao capturar foto: ' + error.message, 'error');
@@ -22604,7 +22650,7 @@ class App {
             this.fecharCameraEspaco();
             this.showNotification('Foto capturada com sucesso!', 'success');
 
-        }, 'image/jpeg', 0.9);
+        }, 'image/jpeg', 0.6);
     }
 
     fecharCameraEspaco() {
