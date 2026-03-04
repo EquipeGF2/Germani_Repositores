@@ -1290,16 +1290,16 @@ tbody td {
 
 .captura-header h3 {
     margin: 0;
-    white-space: nowrap;
+    white-space: normal;
+    word-break: break-word;
 }
 
 .captura-cliente-info {
     margin: 0;
     color: var(--gray-600);
     font-size: 0.95rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;
+    word-break: break-word;
 }
 
 .captura-body {

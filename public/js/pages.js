@@ -1432,14 +1432,14 @@ export const pages = {
                                 ${cidadesRoteiroOptions}
                             </select>
                         </div>
-                        <div class="filter-group">
+                        <div class="filter-group ${filtrarParaRepositor ? 'pwa-hidden' : ''}">
                             <label for="filtro_supervisor_consulta_roteiro">Supervisor</label>
                             <select id="filtro_supervisor_consulta_roteiro">
                                 <option value="">Todos</option>
                                 ${supervisorOptions}
                             </select>
                         </div>
-                        <div class="filter-group">
+                        <div class="filter-group ${filtrarParaRepositor ? 'pwa-hidden' : ''}">
                             <label for="filtro_representante_consulta_roteiro">Representante</label>
                             <select id="filtro_representante_consulta_roteiro">
                                 <option value="">Todos</option>
@@ -2423,11 +2423,6 @@ export const pages = {
                     font-size: 15px;
                     color: #111827;
                     margin-bottom: 4px;
-                    display: -webkit-box;
-                    -webkit-box-orient: vertical;
-                    -webkit-line-clamp: 1;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
                     word-break: break-word;
                 }
 
@@ -5142,7 +5137,7 @@ export const pages = {
                                     🔍 Filtrar
                                 </button>
                             </div>
-                            <div class="filter-group despesa-export-buttons" style="display: none;">
+                            <div class="filter-group despesa-export-buttons pwa-hidden" style="display: none;">
                                 <button type="button" class="btn btn-secondary btn-sm" id="btnExportarDespesasExcel">
                                     📊 Excel
                                 </button>
