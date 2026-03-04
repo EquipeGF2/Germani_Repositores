@@ -13715,6 +13715,33 @@ class App {
     // ==================== ATIVIDADES ====================
 
     async abrirModalAtividades(repId, clienteId, clienteNome, dataPlanejada) {
+        // Garantir que o modal existe no DOM
+        if (!document.getElementById('modalAtividades')) {
+            const modalHtml = `
+            <div class="modal" id="modalAtividades">
+                <div class="modal-content" style="max-width: 600px; display: flex; flex-direction: column; max-height: 90vh;">
+                    <div class="modal-header">
+                        <div>
+                            <h3 id="modalAtividadesTitulo">Atividades</h3>
+                            <div id="atividadesClienteInfo" style="font-size: 13px; color: #6b7280; margin-top: 4px;"></div>
+                        </div>
+                        <button class="modal-close" onclick="window.app.fecharModalAtividades()">&times;</button>
+                    </div>
+                    <div class="modal-body" id="modalAtividadesBody" style="overflow-y: auto; flex: 1;">
+                        <div style="text-align: center; padding: 40px;">
+                            <div class="spinner"></div>
+                            <p style="margin-top: 12px; color: #6b7280;">Carregando atividades...</p>
+                        </div>
+                    </div>
+                    <div class="modal-footer" style="padding-top: 15px; border-top: 1px solid #e5e7eb; display: flex; justify-content: flex-end; gap: 10px;">
+                        <button class="btn btn-secondary" onclick="window.app.fecharModalAtividades()">Cancelar</button>
+                        <button class="btn btn-primary" onclick="window.app.salvarAtividades()">💾 Salvar</button>
+                    </div>
+                </div>
+            </div>`;
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+        }
+
         const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
         const clienteIdNorm = normalizeClienteId(clienteId);
 

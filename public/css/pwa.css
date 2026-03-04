@@ -1372,10 +1372,10 @@ body.pwa-mode .route-item.pwa-cliente-foco .route-item-actions .btn-danger {
 body.pwa-mode .route-item.pwa-cliente-foco .route-status {
     width: 100%;
     text-align: center;
-    font-size: 14px;
-    padding: 6px 12px;
-    border-radius: 8px;
-    margin-bottom: 4px;
+    font-size: 16px;
+    padding: 10px 16px;
+    border-radius: 12px;
+    margin-bottom: 24px;
 }
 
 /* ==========================================
