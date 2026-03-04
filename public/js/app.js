@@ -13747,9 +13747,15 @@ class App {
 
         // Mostrar modal com loading
         const tituloAt = document.getElementById('modalAtividadesTitulo');
-        if (tituloAt) tituloAt.textContent = clienteNome || 'Atividades';
+        if (tituloAt) tituloAt.textContent = 'Atividades';
         const infoAt = document.getElementById('atividadesClienteInfo');
-        if (infoAt) infoAt.textContent = `${clienteIdNorm} • ${clienteNome}`;
+        if (infoAt) {
+            infoAt.textContent = `${clienteIdNorm} • ${clienteNome}`;
+            infoAt.style.whiteSpace = 'normal';
+            infoAt.style.wordBreak = 'break-word';
+            infoAt.style.lineHeight = '1.4';
+            infoAt.style.marginTop = '8px';
+        }
         const bodyAt = document.getElementById('modalAtividadesBody');
         if (bodyAt) bodyAt.innerHTML = `
             <div style="text-align: center; padding: 40px;">
