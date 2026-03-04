@@ -1267,7 +1267,7 @@
             <div class="pwa-page pwa-fullscreen-page">
                 <div class="pwa-page-header-bar">
                     <button class="pwa-back-btn" onclick="pwaApp.fecharAtividadesInline()">&#8592;</button>
-                    <span class="pwa-page-header-title">Atividades - ${escapeHtml(clienteNome)}</span>
+                    <span class="pwa-page-header-title">Atividades</span>
                 </div>
                 <div id="pwaAtividadesInlineArea" class="pwa-page-body" style="padding:0;">
                     <div class="pwa-loading-inline">

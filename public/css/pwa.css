@@ -1428,3 +1428,102 @@ body.pwa-mode .pwa-atividades-inline .modal-footer .btn {
 body.pwa-mode .pwa-hidden {
     display: none !important;
 }
+
+
+/* ==========================================
+   PWA GALLERY OVERRIDE (Campanha)
+   ========================================== */
+body.pwa-mode .camera-thumbs {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    padding: 10px 0 !important;
+}
+
+body.pwa-mode .camera-thumb {
+    width: 100% !important;
+    height: auto !important;
+    aspect-ratio: 4/3;
+    border-radius: 12px !important;
+}
+
+body.pwa-mode .camera-thumb img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important;
+    background: #000;
+}
+
+body.pwa-mode .camera-thumb .btn-remover-foto {
+    width: 40px !important;
+    height: 40px !important;
+    font-size: 20px !important;
+    top: 10px !important;
+    right: 10px !important;
+    background: rgba(220, 38, 38, 0.9) !important;
+}
+
+body.pwa-mode .captura-thumbs-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+
+/* ==========================================
+   PWA ATIVIDADES INLINE OVERRIDES (Aggressive 1-column)
+   ========================================== */
+body.pwa-mode .atividades-form-grid,
+body.pwa-mode .atividades-checklist-grid,
+body.pwa-mode #modalAtividadesBody > div {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 16px !important;
+}
+
+body.pwa-mode .atividades-checklist-grid {
+    gap: 12px !important;
+}
+
+body.pwa-mode .atividades-checklist-grid label.checkbox-label {
+    padding: 16px !important;
+    background: #f8fafc !important;
+    border-radius: 12px !important;
+    border: 1px solid #e2e8f0 !important;
+    white-space: normal !important;
+    word-break: break-word !important;
+    font-size: 16px !important;
+    font-weight: 500 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 12px !important;
+    margin: 0 !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+body.pwa-mode .atividades-checklist-grid input[type="checkbox"] {
+    width: 24px !important;
+    height: 24px !important;
+    margin: 0 !important;
+}
+
+body.pwa-mode .form-group label {
+    font-size: 16px !important;
+    margin-bottom: 8px !important;
+    display: block !important;
+}
+
+body.pwa-mode .form-group input[type="number"],
+body.pwa-mode .form-group select {
+    width: 100% !important;
+    padding: 16px !important;
+    font-size: 16px !important;
+    border-radius: 12px !important;
+    border: 1px solid #cbd5e1 !important;
+    background: #fff !important;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+}
+
+body.pwa-mode .modal-title-pwa-hidden { display: none !important; }
