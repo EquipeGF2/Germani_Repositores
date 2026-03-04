@@ -13011,8 +13011,23 @@ class App {
             btnCapturar.disabled = limiteAtingido;
         }
 
+        const cameraArea = document.getElementById('cameraArea');
         if (btnNova) {
-            btnNova.style.display = total > 0 && tipo !== 'campanha' ? 'inline-flex' : 'none';
+            btnNova.style.display = total > 0 ? 'inline-flex' : 'none';
+        }
+
+        if (cameraArea) {
+            // Em campanha, ocultar a câmera e exibir apenas as fotos se houver fotos,
+            // a não ser que o usuário queira adicionar uma nova foto (estado controlado pelo botão)
+            if (tipo === 'campanha' && total > 0 && !this.registroRotaState._exibindoCameraSecundaria) {
+                cameraArea.style.display = 'none';
+                if (galeriaWrapper) galeriaWrapper.style.display = 'flex';
+                if (btnCapturar) btnCapturar.style.display = 'none'; // Esconde botão de capturar enquanto vê a galeria
+            } else {
+                cameraArea.style.display = 'block';
+                if (tipo === 'campanha' && galeriaWrapper) galeriaWrapper.style.display = 'none';
+                if (btnCapturar) btnCapturar.style.display = 'inline-flex';
+            }
         }
     }
 
@@ -13722,7 +13737,7 @@ class App {
                 <div class="modal-content" style="max-width: 600px; display: flex; flex-direction: column; max-height: 90vh;">
                     <div class="modal-header">
                         <div>
-                            <h3 id="modalAtividadesTitulo">Atividades</h3>
+                            <h3 id="modalAtividadesTitulo" class="modal-title-pwa-hidden">Atividades</h3>
                             <div id="atividadesClienteInfo" style="font-size: 13px; color: #6b7280; margin-top: 4px;"></div>
                         </div>
                         <button class="modal-close" onclick="window.app.fecharModalAtividades()">&times;</button>

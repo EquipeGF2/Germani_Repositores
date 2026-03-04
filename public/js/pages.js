@@ -2195,7 +2195,7 @@ export const pages = {
                 <div class="modal-content" style="max-width: 900px; max-height: calc(100vh - 40px); display: flex; flex-direction: column;">
                     <div class="modal-header">
                         <div>
-                            <h3 id="modalAtividadesTitulo">Atividades</h3>
+                            <h3 id="modalAtividadesTitulo" class="modal-title-pwa-hidden">Atividades</h3>
                             <p id="atividadesClienteInfo" style="color: #666; font-size: 14px; margin: 4px 0 0;"></p>
                         </div>
                         <button class="modal-close" onclick="window.app.fecharModalAtividades()">&times;</button>
