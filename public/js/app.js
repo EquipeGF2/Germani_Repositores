@@ -10495,9 +10495,30 @@ class App {
             const resumoAnterior = await this.buscarResumoVisitas(repId, ultimoDiaUtil);
             const mapaResumo = new Map(resumoAnterior.map(r => [String(r.cliente_id).trim(), r]));
 
+            // Buscar roteiro de hoje para não sugerir clientes que já estão na rota
+            const dataHoje = new Date(dataAtual + 'T12:00:00');
+            const diaHojeSemana = diasMap[dataHoje.getDay()];
+            const roteiroHoje = await db.carregarRoteiroRepositorDia(repId, diaHojeSemana);
+
+            // Incluir também clientes já adicionados manualmente hoje
+            const adicionadosKeyHoje = `clientes_adicionados_${repId}_${dataAtual}`;
+            const adicionadosStrHoje = localStorage.getItem(adicionadosKeyHoje);
+            const adicionadosHoje = adicionadosStrHoje ? JSON.parse(adicionadosStrHoje) : [];
+            const idsRotaHoje = new Set([
+                ...(roteiroHoje || []).map(c => String(c.cli_codigo).trim().replace(/\.0$/, '')),
+                ...adicionadosHoje.map(c => String(c.cli_codigo).trim().replace(/\.0$/, ''))
+            ]);
+
             // Filtrar clientes sem checkout
-            const clientesPendentes = roteiroAnterior.filter(cliente => {
-                const clienteId = String(cliente.cli_codigo).trim();
+            let clientesPendentes = roteiroAnterior.filter(cliente => {
+                const clienteId = String(cliente.cli_codigo).trim().replace(/\.0$/, '');
+
+                // Se já está no roteiro de hoje, não sugerir
+                if (idsRotaHoje.has(clienteId)) {
+                    return false;
+                }
+
+                // Verificar status de ontem (se foi finalizado, não sugerir)
                 const resumo = mapaResumo.get(clienteId);
                 return !resumo || resumo.status !== 'finalizado';
             });
@@ -10606,47 +10627,43 @@ class App {
             const clienteDados = clientesMap[clienteId] || {};
 
             const cliNome = clienteDados.nome || clienteDados.fantasia || clienteNome || 'Cliente';
-            const cidadeUF = [clienteDados.cidade || '', clienteDados.estado || ''].filter(Boolean).join('/');
-            const enderecoPartes = [
-                clienteDados.endereco || '',
-                clienteDados.num_endereco || '',
-                clienteDados.bairro || ''
-            ].filter(Boolean);
-            const enderecoTexto = enderecoPartes.join(', ');
-            const linhaEndereco = [cidadeUF, enderecoTexto].filter(Boolean).join(' • ');
-            const enderecoCadastro = [cidadeUF, enderecoTexto].filter(Boolean).join(' - ');
 
-            const nomeEsc = cliNome.replace(/'/g, "\\'");
-            const endEsc = linhaEndereco.replace(/'/g, "\\'");
-            const cadastroEsc = enderecoCadastro.replace(/'/g, "\\'");
+            // Salvar no localStorage para sobreviver a re-renderizações
+            const adicionadosKey = `clientes_adicionados_${repId}_${dataAtual}`;
+            const adicionadosStr = localStorage.getItem(adicionadosKey);
+            const adicionados = adicionadosStr ? JSON.parse(adicionadosStr) : [];
+            const objClienteExtra = {
+                cli_codigo: cliId,
+                cli_nome: cliNome,
+                cli_cidade: clienteDados.cidade || '',
+                cli_estado: clienteDados.estado || '',
+                cli_endereco: clienteDados.endereco || '',
+                cli_logradouro: clienteDados.logradouro || '',
+                cli_rua: clienteDados.rua || '',
+                cli_numero: clienteDados.num_endereco || '',
+                cli_bairro: clienteDados.bairro || '',
+                cli_pendente_anterior: true
+            };
+            if (!adicionados.some(a => String(a.cli_codigo).trim().replace(/\.0$/, '') === cliId)) {
+                adicionados.push(objClienteExtra);
+                localStorage.setItem(adicionadosKey, JSON.stringify(adicionados));
+            }
 
             // Registrar no resumo como pendente
             this.registroRotaState.resumoVisitas.set(cliId, { status: 'sem_checkin' });
 
-            // Criar card do cliente no roteiro (idêntico ao carregarRoteiroRepositor)
-            const item = document.createElement('div');
-            item.className = 'route-item';
-            item.dataset.clienteId = cliId;
-            item.dataset.repId = repId;
-            item.dataset.dataVisita = dataAtual;
-            item.dataset.clienteNome = cliNome;
-            item.dataset.enderecoLinha = linhaEndereco;
-            item.dataset.enderecoCadastro = enderecoCadastro;
-            item.innerHTML = `
-                <div class="route-item-info">
-                    <div class="route-item-name">${cliId} - ${cliNome} <span style="background:#f59e0b;color:white;padding:2px 6px;border-radius:4px;font-size:11px;margin-left:6px;">PENDENTE DIA ANTERIOR</span></div>
-                    <div class="route-item-address">${linhaEndereco}</div>
-                </div>
-                <div class="route-item-actions">
-                    <span class="route-status status-pending">Pendente</span>
-                    <button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataAtual}', 'checkin', '${cadastroEsc}')" class="btn-small">✅ Check-in</button>
-                    <button onclick="app.abrirModalNaoAtendimento(${repId}, '${cliId}', '${nomeEsc}', '${dataAtual}')" class="btn-small" style="background:#1f2937;color:white;" title="Registrar não atendimento">⛔ Não atendimento</button>
-                </div>
-            `;
-            container.appendChild(item);
+            // Também incluir no roteiro atual se carregado
+            if (this.registroRotaState.roteiroAtual && Array.isArray(this.registroRotaState.roteiroAtual)) {
+                if (!this.registroRotaState.roteiroAtual.some(r => String(r.cli_codigo).trim().replace(/\.0$/, '') === cliId)) {
+                    this.registroRotaState.roteiroAtual.push(objClienteExtra);
+                }
+            }
 
             // Remover da lista de pendentes
             this.ignorarClientePendente(clienteId, repId, dataAtual);
+
+            // Recarregar o roteiro para renderizar tudo corretamente (com as flags e etc)
+            await this.carregarRoteiroRepositor();
 
             this.showNotification(`${cliNome} adicionado ao roteiro de hoje`, 'success');
         } catch (error) {
@@ -10799,6 +10816,22 @@ class App {
             atendimentosAbertos = _atendimentosAbertos;
         }
 
+        // Adicionar clientes extras inseridos hoje (pendentes de dias anteriores)
+        try {
+            const adicionadosKey = `clientes_adicionados_${repId}_${dataVisita}`;
+            const adicionadosStr = localStorage.getItem(adicionadosKey);
+            const adicionados = adicionadosStr ? JSON.parse(adicionadosStr) : [];
+            if (adicionados && adicionados.length > 0) {
+                if (!roteiro) roteiro = [];
+                adicionados.forEach(cliAdicional => {
+                    const cliIdAdic = normalizeClienteId(cliAdicional.cli_codigo);
+                    if (!roteiro.some(r => normalizeClienteId(r.cli_codigo) === cliIdAdic)) {
+                        roteiro.push(cliAdicional);
+                    }
+                });
+            }
+        } catch (e) { console.warn('Erro ao carregar clientes adicionais:', e); }
+
         if (!roteiro || roteiro.length === 0) {
             this.showNotification('Nenhum cliente no roteiro para este dia', 'info');
             container.innerHTML = '<p style="text-align:center;color:#999;margin-top:20px;">Nenhum cliente encontrado</p>';
@@ -10939,6 +10972,7 @@ class App {
         roteiro.forEach(cliente => {
             const cliId = normalizeClienteId(cliente.cli_codigo);
             const cliNome = String(cliente.cli_nome || '');
+            const badgePendente = cliente.cli_pendente_anterior ? ' <span style="background:#f59e0b;color:white;padding:2px 6px;border-radius:4px;font-size:11px;margin-left:6px;">PENDENTE DIA ANTERIOR</span>' : '';
 
             const cidadeUF = [cliente.cli_cidade, cliente.cli_estado].filter(Boolean).join('/');
 
@@ -11064,7 +11098,7 @@ class App {
             item.dataset.enderecoCadastro = enderecoCadastro;
             item.innerHTML = `
                 <div class="route-item-info">
-                    <div class="route-item-name">${cliId} - ${cliNome}</div>
+                    <div class="route-item-name">${cliId} - ${cliNome}${badgePendente}</div>
                     <div class="route-item-address">${linhaEndereco}</div>
                     <div class="route-item-distance" id="distancia-${cliId}" style="font-size:12px;color:#666;margin-top:4px;">
                         📍 Calculando distância...
