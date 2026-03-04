@@ -18,14 +18,11 @@ async function verificarSenhaComFallback(password, usuario) {
   // Fallback: senha pode estar em texto plano
   console.log(`[LOGIN] Hash não é bcrypt (len=${hash.length}). Tentando comparação direta.`);
   if (hash === password || hash.trim() === password.trim()) {
-    // Migrar para bcrypt automaticamente
-    try {
-      const novoHash = await authService.hashPassword(password);
-      await tursoService.atualizarUsuario(usuario.usuario_id, { passwordHash: novoHash });
-      console.log(`[LOGIN] Senha do usuário ID=${usuario.usuario_id} migrada para bcrypt com sucesso.`);
-    } catch (err) {
-      console.error(`[LOGIN] Erro ao migrar senha para bcrypt:`, err);
-    }
+    // Migrar para bcrypt em background (não bloqueia o login)
+    authService.hashPassword(password).then(novoHash =>
+      tursoService.atualizarUsuario(usuario.usuario_id, { passwordHash: novoHash })
+        .then(() => console.log(`[LOGIN] Senha do usuário ID=${usuario.usuario_id} migrada para bcrypt com sucesso.`))
+    ).catch(err => console.error(`[LOGIN] Erro ao migrar senha para bcrypt:`, err));
     return { valida: true, upgraded: true };
   }
 
@@ -49,69 +46,17 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Buscar usuário
+    // Buscar usuário - usar busca flexível (case-insensitive) direto para evitar 2 queries
     console.log(`[LOGIN] Tentativa de login - username: "${username}" (tamanho: ${username.length})`);
-    const usuario = await tursoService.buscarUsuarioPorUsername(username);
+    let usuario = await tursoService.buscarUsuarioPorUsername(username);
+    let viaFlexivel = false;
 
     if (!usuario) {
-      // Tentar busca case-insensitive como fallback
-      const usuarioCI = await tursoService.buscarUsuarioPorUsernameFlex(username);
-      if (usuarioCI) {
-        console.log(`[LOGIN] Usuário encontrado via busca flexível: ID=${usuarioCI.usuario_id}, username="${usuarioCI.username}"`);
-        const loginResult = await verificarSenhaComFallback(password, usuarioCI);
-        if (!loginResult.valida) {
-          console.log(`[LOGIN] Senha inválida para usuário: "${username}" (via busca flexível) - hash_len=${(usuarioCI.password_hash || '').length}, eh_bcrypt=${(usuarioCI.password_hash || '').startsWith('$2')}`);
-          return res.status(401).json({
-            ok: false,
-            code: 'INVALID_CREDENTIALS',
-            message: 'Usuário ou senha incorretos'
-          });
-        }
+      usuario = await tursoService.buscarUsuarioPorUsernameFlex(username);
+      viaFlexivel = true;
+    }
 
-        console.log(`[LOGIN] Login bem-sucedido (via busca flexível): "${username}"${loginResult.upgraded ? ' [senha migrada para bcrypt]' : ''}`);
-        await tursoService.registrarUltimoLogin(usuarioCI.usuario_id);
-        const token = authService.generateToken(usuarioCI);
-        const permissoes = authService.getPermissoesPerfil(usuarioCI.perfil);
-
-        // Buscar telas do usuário para PWA
-        let telas = [];
-        try {
-          if (usuarioCI.perfil === 'admin') {
-            telas = await tursoService.listarTelasWeb();
-          } else {
-            telas = await tursoService.listarTelasUsuario(usuarioCI.usuario_id);
-            if (!telas || telas.length === 0) {
-              telas = await tursoService.listarTelasWeb();
-            }
-          }
-        } catch (e) {
-          console.warn('[LOGIN] Erro ao buscar telas (flex):', e.message);
-        }
-
-        return res.json({
-          ok: true,
-          token,
-          permissoes,
-          telas: telas.map(t => ({
-            id: t.tela_id,
-            titulo: t.tela_titulo,
-            categoria: t.tela_categoria,
-            icone: t.tela_icone,
-            pode_editar: t.pode_editar || (usuarioCI.perfil === 'admin' ? 1 : 0)
-          })),
-          usuario: {
-            usuario_id: usuarioCI.usuario_id,
-            username: usuarioCI.username,
-            nome_completo: usuarioCI.nome_completo,
-            email: usuarioCI.email,
-            perfil: usuarioCI.perfil,
-            rep_id: usuarioCI.rep_id,
-            repo_nome: usuarioCI.repo_nome,
-            permissoes
-          }
-        });
-      }
-
+    if (!usuario) {
       console.log(`[LOGIN] Usuário não encontrado: "${username}"`);
       return res.status(401).json({
         ok: false,
@@ -120,7 +65,11 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    console.log(`[LOGIN] Usuário encontrado: ID=${usuario.usuario_id}, perfil=${usuario.perfil}, ativo=${usuario.ativo}, tem_hash=${!!usuario.password_hash}, hash_len=${(usuario.password_hash || '').length}, eh_bcrypt=${(usuario.password_hash || '').startsWith('$2')}`);
+    if (viaFlexivel) {
+      console.log(`[LOGIN] Usuário encontrado via busca flexível: ID=${usuario.usuario_id}, username="${usuario.username}"`);
+    } else {
+      console.log(`[LOGIN] Usuário encontrado: ID=${usuario.usuario_id}, perfil=${usuario.perfil}, ativo=${usuario.ativo}`);
+    }
 
     // Verificar senha (com fallback para senha em texto plano)
     const loginResult = await verificarSenhaComFallback(password, usuario);
@@ -136,14 +85,15 @@ router.post('/login', async (req, res) => {
 
     console.log(`[LOGIN] Login bem-sucedido: "${username}"${loginResult.upgraded ? ' [senha migrada para bcrypt]' : ''}`);
 
-    // Registrar último login
-    await tursoService.registrarUltimoLogin(usuario.usuario_id);
-
-    // Gerar token
+    // Gerar token e permissões (síncrono, instantâneo)
     const token = authService.generateToken(usuario);
-
-    // Obter permissões
     const permissoes = authService.getPermissoesPerfil(usuario.perfil);
+    const usuarioId = usuario.usuario_id;
+
+    // Registrar último login em background (fire-and-forget, não bloqueia resposta)
+    tursoService.registrarUltimoLogin(usuarioId).catch(e =>
+      console.warn('[LOGIN] Erro ao registrar último login:', e.message)
+    );
 
     // Buscar telas do usuário para PWA
     let telas = [];
@@ -151,7 +101,7 @@ router.post('/login', async (req, res) => {
       if (usuario.perfil === 'admin') {
         telas = await tursoService.listarTelasWeb();
       } else {
-        telas = await tursoService.listarTelasUsuario(usuario.usuario_id);
+        telas = await tursoService.listarTelasUsuario(usuarioId);
         if (!telas || telas.length === 0) {
           telas = await tursoService.listarTelasWeb();
         }
@@ -271,17 +221,15 @@ router.post('/login-web', async (req, res) => {
       tipo_acesso: 'web'
     };
 
-    // Gerar token
-    const token = authService.generateToken(usuario);
-
-    // Buscar permissões do usuário (se existirem)
-    let telas = await tursoService.listarTelasUsuario(usuarioLogin.id);
-
-    // Se não tem permissões configuradas, dar acesso total
-    if (!telas || telas.length === 0) {
-      console.log(`[LOGIN-WEB] Usuário ${username} sem permissões - acesso total`);
-      telas = await tursoService.listarTelasWeb();
-    }
+    // Gerar token (síncrono) e buscar telas em paralelo
+    const [token, telas] = await Promise.all([
+      Promise.resolve(authService.generateToken(usuario)),
+      tursoService.listarTelasUsuario(usuarioLogin.id).then(t =>
+        (!t || t.length === 0)
+          ? (console.log(`[LOGIN-WEB] Usuário ${username} sem permissões - acesso total`), tursoService.listarTelasWeb())
+          : t
+      )
+    ]);
 
     return res.json({
       ok: true,
