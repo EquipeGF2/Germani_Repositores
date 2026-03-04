@@ -1422,3 +1422,9 @@ body.pwa-mode .pwa-atividades-inline .modal-footer .btn {
     min-height: 48px;
     font-size: 15px;
 }
+
+
+/* Utilities */
+body.pwa-mode .pwa-hidden {
+    display: none !important;
+}

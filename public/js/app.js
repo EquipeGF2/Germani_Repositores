@@ -12172,7 +12172,7 @@ class App {
 
         const tituloModal = document.getElementById('modalCapturaTitulo');
         if (tituloModal) {
-            tituloModal.textContent = this.registroRotaState.clienteAtual.clienteNome || 'Registrar Visita';
+            tituloModal.textContent = 'Registrar Visita';
         }
 
         const tipoBadge = document.getElementById('capturaTipoBadge');
@@ -13898,7 +13898,7 @@ class App {
             const valoresExistentes = this.mapearValoresLegado(sessaoAberta);
 
             // Gerar HTML do formulário
-            let html = `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">`;
+            let html = `<div class="atividades-form-grid">`;
 
             // Coluna 1 - Campos
             html += `<div style="display: flex; flex-direction: column; gap: 20px;">`;
@@ -13925,7 +13925,7 @@ class App {
                 html += `
                     <div class="form-group">
                         <label style="margin-bottom: 12px; display: block; font-weight: 600;">Atividades Realizadas * (marque ao menos uma)</label>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <div class="atividades-checklist-grid">
                 `;
                 for (const atv of checklist) {
                     html += this.renderizarCampoAtividade(atv, valoresExistentes);
@@ -13936,13 +13936,48 @@ class App {
 
             html += `</div>`;
 
-            // Adicionar estilos para responsividade
+            // Adicionar estilos para responsividade e PWA
             html += `
                 <style>
+                    .atividades-form-grid {
+                        display: grid;
+                        grid-template-columns: 1fr 1fr;
+                        gap: 24px;
+                    }
+                    .atividades-checklist-grid {
+                        display: grid;
+                        grid-template-columns: 1fr 1fr;
+                        gap: 8px;
+                    }
+                    body.pwa-mode .atividades-form-grid,
                     @media (max-width: 768px) {
-                        #modalAtividadesBody > div {
+                        .atividades-form-grid {
                             grid-template-columns: 1fr !important;
+                            gap: 16px;
                         }
+                    }
+                    body.pwa-mode .atividades-checklist-grid,
+                    @media (max-width: 768px) {
+                        .atividades-checklist-grid {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 12px;
+                        }
+                        .atividades-checklist-grid label.checkbox-label {
+                            padding: 12px;
+                            background: #f8fafc;
+                            border-radius: 8px;
+                            border: 1px solid #e2e8f0;
+                            white-space: normal;
+                            word-break: break-word;
+                            font-size: 15px;
+                        }
+                    }
+                    body.pwa-mode .form-group input[type="number"],
+                    body.pwa-mode .form-group select {
+                        width: 100%;
+                        padding: 14px 12px;
+                        font-size: 16px;
                     }
                 </style>
             `;
