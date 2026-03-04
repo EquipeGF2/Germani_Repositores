@@ -479,8 +479,10 @@ class AuthManager {
       for (let tentativa = 0; tentativa < MAX_TENTATIVAS; tentativa++) {
         try {
           const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout por tentativa
+          const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout por tentativa, falha mais rápido para tentar denovo
 
+          // Fetch com modo no-cors ou fetch normal para ser mais agressivo?
+          // Como precisamos ler ok, vamos normal
           const response = await fetch(`${this.apiBaseUrl}/api/health`, {
             signal: controller.signal
           });

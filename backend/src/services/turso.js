@@ -1842,6 +1842,7 @@ class TursoService {
 
     // Criar índices
     await this.execute('CREATE INDEX IF NOT EXISTS idx_usuarios_username ON cc_usuarios(username)', []);
+    await this.execute('CREATE INDEX IF NOT EXISTS idx_usuarios_username_nocase ON cc_usuarios(username COLLATE NOCASE)', []);
     await this.execute('CREATE INDEX IF NOT EXISTS idx_usuarios_rep_id ON cc_usuarios(rep_id)', []);
     await this.execute('CREATE INDEX IF NOT EXISTS idx_usuarios_perfil ON cc_usuarios(perfil)', []);
 

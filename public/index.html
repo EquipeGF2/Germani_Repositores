@@ -343,6 +343,20 @@
         document.addEventListener('DOMContentLoaded', () => {
             // authManager.init() já é chamado automaticamente no auth.js
 
+            // Iniciar o pre-warm imediatamente em background para evitar demora no clique do botão Entrar
+            if (typeof authManager !== 'undefined' && !authManager.servidorPronto) {
+                authManager.atualizarStatusServidorPWA('connecting');
+                authManager.preWarmServer().then(pronto => {
+                    if (pronto) {
+                        authManager.atualizarStatusServidorPWA('ready');
+                    } else {
+                        authManager.atualizarStatusServidorPWA('error');
+                    }
+                }).catch(() => {
+                    authManager.atualizarStatusServidorPWA('error');
+                });
+            }
+
             // Handler do formulário de login
             const loginForm = document.getElementById('loginForm');
             if (loginForm) {
@@ -375,7 +389,7 @@
 
                         // Fazer login com timeout de 30s
                         const loginController = new AbortController();
-                        const loginTimeout = setTimeout(() => loginController.abort(), 30000);
+                        const loginTimeout = setTimeout(() => loginController.abort(), 60000);
                         try {
                             await authManager.login(username, password);
                         } finally {
