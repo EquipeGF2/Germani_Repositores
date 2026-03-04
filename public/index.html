@@ -25,7 +25,7 @@
     <link rel="apple-touch-icon" href="icon-512.png">
 
     <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/pwa.css?v=20260303_05">
+    <link rel="stylesheet" href="css/pwa.css?v=20260304_01">
 </head>
 <body>
     <!-- Tela de Login (hidden por padrão - AuthManager decide mostrar) -->
@@ -331,12 +331,12 @@
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
     <!-- Scripts -->
-    <script src="js/auth.js?v=20260302_01"></script>
-    <script src="js/offline-db.js?v=20260302_01"></script>
-    <script src="js/sync-service.js?v=20260302_01"></script>
-    <script src="js/pwa-app.js?v=20260303_04"></script>
-    <script type="module" src="js/db.js?v=20260302_01"></script>
-    <script type="module" src="js/app.js?v=20260303_05">
+    <script src="js/auth.js?v=20260304_01"></script>
+    <script src="js/offline-db.js?v=20260304_01"></script>
+    <script src="js/sync-service.js?v=20260304_01"></script>
+    <script src="js/pwa-app.js?v=20260304_01"></script>
+    <script type="module" src="js/db.js?v=20260304_01"></script>
+    <script type="module" src="js/app.js?v=20260304_01"></script>
 
     <!-- Handler do formulário de login -->
     <script>
@@ -361,20 +361,26 @@
 
                         // Se servidor ainda não respondeu, aguardar pre-warm
                         if (!authManager.servidorPronto) {
-                            submitBtn.textContent = 'Aguardando servidor...';
+                            submitBtn.textContent = 'Conectando ao servidor...';
                             authManager.atualizarStatusServidorPWA('connecting');
                             const pronto = await authManager.preWarmServer();
                             if (!pronto) {
                                 authManager.atualizarStatusServidorPWA('error');
-                                throw new Error('Servidor indisponível. Tente novamente em alguns instantes.');
+                                throw new Error('Servidor indisponível. Aguarde alguns segundos e tente novamente.');
                             }
                             authManager.atualizarStatusServidorPWA('ready');
                         }
 
                         submitBtn.textContent = 'Entrando...';
 
-                        // Fazer login
-                        await authManager.login(username, password);
+                        // Fazer login com timeout de 30s
+                        const loginController = new AbortController();
+                        const loginTimeout = setTimeout(() => loginController.abort(), 30000);
+                        try {
+                            await authManager.login(username, password);
+                        } finally {
+                            clearTimeout(loginTimeout);
+                        }
 
                         // Login bem-sucedido - mostrar aplicação
                         authManager.mostrarAplicacao();
@@ -385,7 +391,10 @@
                         // Recarregar página para inicializar app.js com usuário logado
                         window.location.reload();
                     } catch (error) {
-                        errorDiv.textContent = error.message || 'Erro ao fazer login';
+                        const msg = error.name === 'AbortError'
+                            ? 'Servidor demorou para responder. Tente novamente.'
+                            : (error.message || 'Erro ao fazer login');
+                        errorDiv.textContent = msg;
                         errorDiv.classList.remove('hidden');
                         submitBtn.disabled = false;
                         submitBtn.textContent = 'Entrar';

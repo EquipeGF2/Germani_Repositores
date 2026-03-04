@@ -396,10 +396,29 @@ class AuthManager {
     if (pwaScreen) pwaScreen.classList.add('hidden');
 
     // Pre-warm do servidor em background enquanto o usuário digita
+    this._iniciarPreWarmComRetry();
+  }
+
+  /**
+   * Inicia pre-warm com retry automático caso falhe
+   */
+  async _iniciarPreWarmComRetry() {
     this.atualizarStatusServidorPWA('connecting');
-    this.preWarmServer().then(pronto => {
-      this.atualizarStatusServidorPWA(pronto ? 'ready' : 'error');
-    });
+    const pronto = await this.preWarmServer();
+    if (pronto) {
+      this.atualizarStatusServidorPWA('ready');
+    } else {
+      // Se falhou, mostrar erro mas tentar novamente automaticamente após 5s
+      this.atualizarStatusServidorPWA('error');
+      if (!this.servidorPronto) {
+        console.log('[AUTH] Retry automático do pre-warm em 5s...');
+        setTimeout(() => {
+          if (!this.servidorPronto) {
+            this._iniciarPreWarmComRetry();
+          }
+        }, 5000);
+      }
+    }
   }
 
   /**
@@ -445,6 +464,7 @@ class AuthManager {
   /**
    * Pre-warm do servidor - acorda o backend do Render antes do login
    * Isso elimina a espera de cold start durante o login
+   * Render free tier pode levar 30-60s para acordar (cold start)
    */
   async preWarmServer() {
     if (this.servidorPronto) return true;
@@ -454,11 +474,12 @@ class AuthManager {
       const inicio = performance.now();
       console.log('[AUTH] Pre-warm: acordando servidor...');
 
-      // Tentar até 2 vezes com timeout de 60s cada
-      for (let tentativa = 0; tentativa < 2; tentativa++) {
+      // Tentar até 5 vezes com backoff crescente (cobre cold starts de ~60s)
+      const MAX_TENTATIVAS = 5;
+      for (let tentativa = 0; tentativa < MAX_TENTATIVAS; tentativa++) {
         try {
           const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
+          const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout por tentativa
 
           const response = await fetch(`${this.apiBaseUrl}/api/health`, {
             signal: controller.signal
@@ -474,16 +495,21 @@ class AuthManager {
           }
 
           console.warn(`[AUTH] Pre-warm: servidor respondeu com status ${response.status} em ${duracao}s`);
-          // Se não foi OK, tentar novamente
         } catch (error) {
           const duracao = ((performance.now() - inicio) / 1000).toFixed(1);
-          console.warn(`[AUTH] Pre-warm: tentativa ${tentativa + 1} falhou após ${duracao}s -`, error.message);
-          // Se foi a primeira tentativa, tentar novamente
+          console.warn(`[AUTH] Pre-warm: tentativa ${tentativa + 1}/${MAX_TENTATIVAS} falhou após ${duracao}s -`, error.message);
+        }
+
+        // Backoff crescente entre tentativas: 2s, 4s, 6s, 8s
+        if (tentativa < MAX_TENTATIVAS - 1) {
+          const espera = (tentativa + 1) * 2000;
+          console.log(`[AUTH] Pre-warm: aguardando ${espera / 1000}s antes da próxima tentativa...`);
+          await new Promise(resolve => setTimeout(resolve, espera));
         }
       }
 
       const duracao = ((performance.now() - inicio) / 1000).toFixed(1);
-      console.warn(`[AUTH] Pre-warm: servidor não respondeu após ${duracao}s`);
+      console.warn(`[AUTH] Pre-warm: servidor não respondeu após ${duracao}s e ${MAX_TENTATIVAS} tentativas`);
       return false;
     })().finally(() => {
       this._preWarmPromise = null;
