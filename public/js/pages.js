@@ -1405,7 +1405,7 @@ export const pages = {
                             <label for="filtro_data_fim_consulta_roteiro">Data Fim</label>
                             <input type="date" id="filtro_data_fim_consulta_roteiro">
                         </div>
-                        <div class="filter-group">
+                        <div class="filter-group ${filtrarParaRepositor ? 'pwa-hidden' : ''}">
                             <label for="filtro_repositor_consulta_roteiro">Repositor</label>
                             <select id="filtro_repositor_consulta_roteiro" ${selectDisabled}>
                                 ${defaultOption}
@@ -2192,7 +2192,7 @@ export const pages = {
 
             <!-- Modal de Atividades -->
             <div class="modal" id="modalAtividades">
-                <div class="modal-content" style="max-width: 900px; max-height: calc(100vh - 40px);">
+                <div class="modal-content" style="max-width: 900px; max-height: calc(100vh - 40px); display: flex; flex-direction: column;">
                     <div class="modal-header">
                         <div>
                             <h3 id="modalAtividadesTitulo">Atividades</h3>
@@ -2200,7 +2200,7 @@ export const pages = {
                         </div>
                         <button class="modal-close" onclick="window.app.fecharModalAtividades()">&times;</button>
                     </div>
-                    <div class="modal-body" id="modalAtividadesBody">
+                    <div class="modal-body" id="modalAtividadesBody" style="overflow-y: auto; flex: 1;">
                         <!-- Conteúdo será gerado dinamicamente pelo app.js -->
                         <div style="text-align: center; padding: 40px;">
                             <div class="spinner"></div>
@@ -4859,7 +4859,7 @@ export const pages = {
                                     <option value="">Todos os tipos</option>
                                 </select>
                             </div>
-                            <div class="filter-group">
+                            <div class="filter-group ${filtrarParaRepositor ? 'pwa-hidden' : ''}">
                                 <label for="consultaRepositor">Repositor <span style="color: #6b7280; font-weight: 400;">(opcional se tipo informado)</span></label>
                                 <select id="consultaRepositor" ${selectDisabled}>
                                     ${defaultOption}
