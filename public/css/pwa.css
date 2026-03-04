@@ -1527,3 +1527,44 @@ body.pwa-mode .form-group select {
 }
 
 body.pwa-mode .modal-title-pwa-hidden { display: none !important; }
+
+/* Expande modal atividades para 95% e otimiza espaços para evitar scroll */
+body.pwa-mode #modalAtividades .modal-content {
+    width: 95vw !important;
+    max-width: 95vw !important;
+    max-height: 98vh !important;
+    margin: 1vh auto !important;
+    padding: 16px 12px !important;
+}
+
+body.pwa-mode #modalAtividades .modal-header {
+    padding-bottom: 8px !important;
+    margin-bottom: 8px !important;
+}
+
+body.pwa-mode #modalAtividades .modal-footer {
+    padding-top: 8px !important;
+    margin-top: 8px !important;
+}
+
+body.pwa-mode .atividades-form-grid {
+    gap: 8px !important;
+}
+
+body.pwa-mode .atividades-checklist-grid {
+    gap: 8px !important;
+}
+
+body.pwa-mode .atividades-checklist-grid label.checkbox-label {
+    padding: 10px !important;
+    font-size: 15px !important;
+}
+
+body.pwa-mode .form-group label {
+    margin-bottom: 4px !important;
+}
+
+body.pwa-mode .form-group input[type="number"],
+body.pwa-mode .form-group select {
+    padding: 10px !important;
+}
