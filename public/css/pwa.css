@@ -1699,3 +1699,121 @@ body.pwa-mode .modal-footer {
     z-index: 10;
     border-radius: 0 !important;
 }
+
+/* ==========================================
+   TELA DE SINCRONIZAÇÃO DIÁRIA
+   ========================================== */
+
+.pwa-daily-sync-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(160deg, #1e3a5f 0%, #dc2626 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    padding: 24px;
+}
+
+.pwa-daily-sync-overlay.hidden {
+    display: none;
+}
+
+.pwa-daily-sync-card {
+    background: rgba(255, 255, 255, 0.97);
+    border-radius: 20px;
+    padding: 40px 32px;
+    text-align: center;
+    width: 100%;
+    max-width: 320px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.pwa-daily-sync-logo {
+    width: 72px;
+    height: 72px;
+    border-radius: 14px;
+    margin: 0 auto 20px;
+    display: block;
+}
+
+.pwa-daily-sync-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #1e3a5f;
+    margin-bottom: 24px;
+}
+
+.pwa-daily-sync-spinner {
+    font-size: 40px;
+    color: #dc2626;
+    animation: pwa-sync-spin 1.2s linear infinite;
+    display: block;
+    margin-bottom: 16px;
+    line-height: 1;
+}
+
+@keyframes pwa-sync-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.pwa-daily-sync-status {
+    font-size: 14px;
+    color: #6b7280;
+    margin-bottom: 24px;
+    min-height: 20px;
+    transition: opacity 0.3s ease;
+}
+
+.pwa-daily-sync-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    text-align: left;
+}
+
+.pwa-sync-step {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: #9ca3af;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: #f9fafb;
+    transition: all 0.3s ease;
+}
+
+.pwa-sync-step::before {
+    content: '\25CB';
+    font-size: 16px;
+    flex-shrink: 0;
+    color: #d1d5db;
+}
+
+.pwa-sync-step.active {
+    color: #1e3a5f;
+    background: #eff6ff;
+}
+
+.pwa-sync-step.active::before {
+    content: '\27F3';
+    color: #dc2626;
+    animation: pwa-sync-spin 1s linear infinite;
+    display: inline-block;
+}
+
+.pwa-sync-step.done {
+    color: #065f46;
+    background: #d1fae5;
+}
+
+.pwa-sync-step.done::before {
+    content: '\2713';
+    color: #10b981;
+    animation: none;
+}

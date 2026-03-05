@@ -68,7 +68,7 @@
         sincronizarHome
     };
 
-    function init() {
+    async function init() {
         if (isInitialized) return;
         isInitialized = true;
 
@@ -87,11 +87,23 @@
         setupBackNavigation();
         interceptModalCaptura();
 
-        // Render home imediatamente
-        navigate('pwa-home');
+        // Carregar dados locais do IndexedDB para cache em memória
+        await loadLocalData();
 
-        // Carga inicial em background
-        triggerInitialSync();
+        const hoje = getHojeBR();
+        const ultimoSyncDia = localStorage.getItem('pwa_ultimo_sync_dia');
+        const precisaSincronizarHoje = ultimoSyncDia !== hoje;
+
+        if (precisaSincronizarHoje && navigator.onLine) {
+            // Primeira abertura do dia com internet: sincronização bloqueante
+            await performDailySync();
+        } else {
+            // Já sincronizado hoje ou offline: ir direto para home com dados em cache
+            navigate('pwa-home');
+            if (!navigator.onLine && precisaSincronizarHoje) {
+                showToast('Offline - usando dados anteriores', 'warning');
+            }
+        }
 
         console.log('[PWA] App v3.0 inicializado - inline-first, zero popups');
     }
@@ -314,49 +326,142 @@
         return cachedData.tiposDocumento || [];
     }
 
-    // ==================== SYNC INICIAL ====================
+    // ==================== TELA DE SINCRONIZAÇÃO DIÁRIA ====================
+
+    function showDailySyncScreen() {
+        const screen = document.getElementById('pwaDailySyncScreen');
+        if (screen) screen.classList.remove('hidden');
+    }
+
+    function hideDailySyncScreen() {
+        const screen = document.getElementById('pwaDailySyncScreen');
+        if (screen) screen.classList.add('hidden');
+    }
+
+    function updateDailySyncStatus(msg) {
+        const el = document.getElementById('pwaDailySyncStatus');
+        if (el) el.textContent = msg;
+    }
+
+    function setDailySyncStep(stepNum, state) {
+        // state: 'active' | 'done' | 'pending'
+        const el = document.getElementById('pwaSyncStep' + stepNum);
+        if (!el) return;
+        el.className = 'pwa-sync-step ' + state;
+    }
+
+    /**
+     * Realiza a sincronização diária com tela bloqueante de progresso.
+     * Chamado apenas na primeira abertura do dia quando há internet.
+     */
+    async function performDailySync() {
+        if (initialSyncDone) return;
+        initialSyncDone = true;
+
+        showDailySyncScreen();
+        showSyncIndicator(true);
+
+        try {
+            if (typeof syncService === 'undefined' || typeof offlineDB === 'undefined') {
+                console.warn('[PWA] SyncService ou OfflineDB não disponível');
+                hideDailySyncScreen();
+                navigate('pwa-home');
+                return;
+            }
+
+            await offlineDB.init();
+
+            // Passo 1: Roteiro e clientes
+            setDailySyncStep(1, 'active');
+            updateDailySyncStatus('Baixando roteiro e clientes...');
+
+            const token = localStorage.getItem('auth_token');
+            const headers = {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            };
+
+            let step1Ok = false;
+            try {
+                const [roteiroRes, clientesRes, coordenadasRes] = await Promise.all([
+                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/roteiro`, { headers }).then(r => r.json()),
+                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/clientes`, { headers }).then(r => r.json()),
+                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/coordenadas`, { headers }).then(r => r.json())
+                ]);
+
+                if (roteiroRes.ok) await offlineDB.salvarRoteiro(roteiroRes.roteiro || []);
+                if (clientesRes.ok) await offlineDB.salvarClientes(clientesRes.clientes || []);
+                if (coordenadasRes.ok) await offlineDB.salvarCoordenadas(coordenadasRes.coordenadas || []);
+                step1Ok = true;
+            } catch (e) {
+                console.warn('[PWA] Erro parcial no passo 1:', e);
+            }
+            setDailySyncStep(1, 'done');
+
+            // Passo 2: Tipos e configurações
+            setDailySyncStep(2, 'active');
+            updateDailySyncStatus('Atualizando configurações...');
+
+            try {
+                const [tiposDocRes, tiposGastoRes] = await Promise.all([
+                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/tipos-documento`, { headers }).then(r => r.json()),
+                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/tipos-gasto`, { headers }).then(r => r.json())
+                ]);
+                if (tiposDocRes.ok) await offlineDB.salvarTiposDocumento(tiposDocRes.tipos || []);
+                if (tiposGastoRes.ok) await offlineDB.salvarTiposGasto(tiposGastoRes.tipos || []);
+            } catch (e) {
+                console.warn('[PWA] Erro parcial no passo 2:', e);
+            }
+            setDailySyncStep(2, 'done');
+
+            // Passo 3: Finalizar
+            setDailySyncStep(3, 'active');
+            updateDailySyncStatus('Carregando dados para navegação...');
+
+            // Recarregar cache em memória com dados recém-sincronizados
+            await loadLocalData();
+
+            // Registrar sync completo
+            const hoje = getHojeBR();
+            localStorage.setItem('pwa_ultimo_sync_dia', hoje);
+            localStorage.setItem('ultimo_sync', new Date().toISOString());
+
+            // Tentar enviar pendentes em background (não bloqueia)
+            if (typeof syncService !== 'undefined') {
+                syncService.enviarPendentes().catch(e => console.warn('[PWA] Erro envio pendentes:', e));
+            }
+
+            setDailySyncStep(3, 'done');
+            updateDailySyncStatus('Pronto!');
+
+            // Pequena pausa para o usuário ver o "Pronto!" antes de navegar
+            await new Promise(resolve => setTimeout(resolve, 600));
+
+        } catch (e) {
+            console.error('[PWA] Erro na sincronização diária:', e);
+            updateDailySyncStatus('Erro ao sincronizar - usando dados anteriores');
+            await new Promise(resolve => setTimeout(resolve, 1500));
+        } finally {
+            showSyncIndicator(false);
+            hideDailySyncScreen();
+            navigate('pwa-home');
+        }
+    }
+
+    // ==================== SYNC INICIAL (legado - mantido para compatibilidade) ====================
 
     async function triggerInitialSync() {
+        // Esta função foi substituída por performDailySync() chamada no init().
+        // Mantida para compatibilidade com chamadas externas.
         if (initialSyncDone) return;
         initialSyncDone = true;
 
         try {
             await loadLocalData();
-
-            const hoje = getHojeBR();
-            const ultimoSyncDia = localStorage.getItem('pwa_ultimo_sync_dia');
-
-            if (ultimoSyncDia === hoje) {
-                console.log('[PWA] Sync do dia já realizado');
-                if (currentTab === 'pwa-home') renderHome();
-                return;
-            }
-
-            if (typeof syncService === 'undefined' || typeof offlineDB === 'undefined') {
-                console.warn('[PWA] SyncService ou OfflineDB não disponível');
-                if (currentTab === 'pwa-home') renderHome();
-                return;
-            }
-
-            await offlineDB.init();
-            showSyncIndicator(true);
-
-            if (navigator.onLine) {
-                console.log('[PWA] Iniciando carga do dia...');
-                const result = await syncService.sincronizarDownload();
-                if (result && result.ok) {
-                    localStorage.setItem('pwa_ultimo_sync_dia', hoje);
-                    localStorage.setItem('ultimo_sync', new Date().toISOString());
-                    await loadLocalData();
-                }
-            }
-
             showSyncIndicator(false);
             if (currentTab === 'pwa-home') renderHome();
         } catch (e) {
-            console.error('[PWA] Erro sync inicial:', e);
             showSyncIndicator(false);
-            if (currentTab === 'pwa-home') renderHome();
         }
     }
 
