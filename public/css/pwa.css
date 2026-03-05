@@ -1921,3 +1921,126 @@ body.pwa-mode .modal-footer {
     border-color: #fecaca;
     color: #dc2626;
 }
+
+/* ==========================================
+   CORREÇÕES PWA - MODAIS E ATIVIDADES
+   ========================================== */
+
+/* Centrar botões do modal cancelar atendimento em PWA */
+body.pwa-mode .modal-footer-inline {
+    justify-content: center !important;
+    gap: 16px !important;
+}
+
+/* Botão Confirmar no header de atividades */
+.pwa-header-confirmar-btn {
+    margin-left: auto;
+    background: #16a34a;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.pwa-header-confirmar-btn:active {
+    background: #15803d;
+    transform: scale(0.97);
+}
+
+/* Atividades inline: conteúdo ocupa todo o espaço disponível */
+.pwa-atividades-inline {
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    max-height: none !important;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+}
+
+.pwa-atividades-inline .modal-body {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* ==========================================
+   BANNER - ATENDIMENTO ATIVO NO ROTEIRO
+   ========================================== */
+
+.pwa-atendimento-ativo-banner {
+    margin: 12px 16px 0;
+    background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+    color: white;
+    border-radius: 14px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    box-shadow: 0 4px 16px rgba(37, 99, 235, 0.35);
+    animation: pwa-banner-pulse 2.5s ease-in-out infinite;
+}
+
+@keyframes pwa-banner-pulse {
+    0%, 100% { box-shadow: 0 4px 16px rgba(37, 99, 235, 0.35); }
+    50%       { box-shadow: 0 4px 24px rgba(37, 99, 235, 0.60); }
+}
+
+.pwa-aab-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.pwa-aab-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    opacity: 0.8;
+    margin-bottom: 2px;
+}
+
+.pwa-aab-nome {
+    font-size: 15px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pwa-aab-end {
+    font-size: 12px;
+    opacity: 0.75;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+}
+
+.pwa-aab-btn {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* Quando há atendimento ativo, esconder botões de ação dos cards de cliente */
+.pwa-atendimento-ativo .route-item-actions .btn-small,
+.pwa-atendimento-ativo .route-item-actions .btn-checkout,
+.pwa-atendimento-ativo .route-item-actions .btn-atividades,
+.pwa-atendimento-ativo .route-item-actions .btn-pesquisa,
+.pwa-atendimento-ativo .route-item-actions .btn-campanha,
+.pwa-atendimento-ativo .route-item-actions .btn-danger {
+    display: none !important;
+}

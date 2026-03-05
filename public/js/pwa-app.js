@@ -71,6 +71,7 @@
         // Tela de atendimento pós-checkin
         abrirAtendimentoTela,
         voltarAtendimento,
+        reabrirAtendimento,
         atendimentoAbrirAtividade,
         atendimentoAbrirCampanha,
         atendimentoAbrirPesquisa,
@@ -904,12 +905,29 @@
     // ==================== PÁGINA: REGISTRO DE ROTA ====================
 
     function renderRegistroRota() {
+        const ctx = currentAtendimentoContext;
+
+        const bannerHtml = ctx ? (() => {
+            const nomeEsc = escapeHtml(ctx.clienteNome || '');
+            const endEsc = escapeHtml(ctx.endereco || '');
+            return `
+            <div class="pwa-atendimento-ativo-banner" onclick="pwaApp.reabrirAtendimento()">
+                <div class="pwa-aab-info">
+                    <div class="pwa-aab-label">Em atendimento</div>
+                    <div class="pwa-aab-nome">${nomeEsc}</div>
+                    ${endEsc ? `<div class="pwa-aab-end">${endEsc}</div>` : ''}
+                </div>
+                <div class="pwa-aab-btn">Registrar &#8250;</div>
+            </div>`;
+        })() : '';
+
         pwaContent.innerHTML = `
-            <div class="pwa-page pwa-fullscreen-page">
+            <div class="pwa-page pwa-fullscreen-page${ctx ? ' pwa-atendimento-ativo' : ''}">
                 <div class="pwa-page-header-bar">
                     <button class="pwa-back-btn" onclick="pwaApp.voltarHome()">&#8592;</button>
                     <span class="pwa-page-header-title">Registro de Rota</span>
                 </div>
+                ${bannerHtml}
                 <div id="pwaRegistroRotaContent" class="pwa-page-body pwa-rota-body">
                     <div class="pwa-loading-inline">
                         <div class="pwa-spinner-small"></div>
@@ -1388,7 +1406,8 @@
 
         modal.classList.remove('pwa-inline-modal');
         modal.classList.remove('active');
-        modal.remove();
+        // Mover de volta ao body (NÃO remover - precisa persistir para próximos usos)
+        document.body.appendChild(modal);
     }
 
     // ==================== TELA DE ATENDIMENTO EM ANDAMENTO ====================
@@ -1411,6 +1430,8 @@
         if (pwaContent) pwaContent.scrollTop = 0;
 
         currentAtendimentoContext = { repId, clienteId, clienteNome, endereco, dataVisita, enderecoCadastro };
+        // Checar pesquisas pendentes em background para mostrar/esconder botão
+        _verificarPesquisaAtendimento(clienteId, repId, dataVisita);
 
         const hora = new Date().toLocaleTimeString('pt-BR', {
             timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit'
@@ -1437,7 +1458,7 @@
 
                 <div class="pwa-section-title">O que deseja registrar?</div>
 
-                <div class="pwa-atendimento-grid">
+                <div class="pwa-atendimento-grid" id="pwaAtendimentoGrid">
                     <button class="pwa-atendimento-action-btn" onclick="pwaApp.atendimentoAbrirAtividade()">
                         <span class="pwa-atendimento-action-icon">&#128203;</span>
                         <span>Atividade</span>
@@ -1446,8 +1467,8 @@
                         <span class="pwa-atendimento-action-icon">&#128248;</span>
                         <span>Campanha</span>
                     </button>
-                    <button class="pwa-atendimento-action-btn" onclick="pwaApp.atendimentoAbrirPesquisa()">
-                        <span class="pwa-atendimento-action-icon">&#128203;</span>
+                    <button class="pwa-atendimento-action-btn hidden" id="pwaAtendimentoBtnPesquisa" onclick="pwaApp.atendimentoAbrirPesquisa()">
+                        <span class="pwa-atendimento-action-icon">&#128196;</span>
                         <span>Pesquisa</span>
                     </button>
                     <button class="pwa-atendimento-action-btn pwa-atendimento-action-checkout" onclick="pwaApp.atendimentoAbrirCheckout()">
@@ -1465,10 +1486,60 @@
         `;
     }
 
+    /**
+     * Verifica se há pesquisas pendentes para o cliente e mostra/esconde botão Pesquisa.
+     * Usa o mapa já calculado pelo app.js após checkin ou faz busca leve.
+     */
+    function _verificarPesquisaAtendimento(clienteId, repId, dataVisita) {
+        const normalizeId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
+        const cliNorm = normalizeId(clienteId);
+
+        // 1. Verificar o mapa já existente no app.js (populado pelo verificarPesquisasAposCheckin)
+        const mapa = window.app?.registroRotaState?.pesquisasPendentesMap;
+        if (mapa) {
+            const pendentes = mapa.get(cliNorm) || [];
+            if (pendentes.length > 0) {
+                _mostrarBotaoPesquisa(true);
+                return;
+            }
+            // Se o mapa tem a chave mas está vazia, não há pesquisas
+            if (mapa.has(cliNorm)) {
+                _mostrarBotaoPesquisa(false);
+                return;
+            }
+        }
+
+        // 2. Se não há mapa, fazer busca em background
+        if (typeof window.app?.buscarPesquisasPendentes === 'function' && navigator.onLine) {
+            window.app.buscarPesquisasPendentes(repId, cliNorm, dataVisita, false)
+                .then(pesquisas => _mostrarBotaoPesquisa(pesquisas && pesquisas.length > 0))
+                .catch(() => _mostrarBotaoPesquisa(false));
+        } else {
+            _mostrarBotaoPesquisa(false);
+        }
+    }
+
+    function _mostrarBotaoPesquisa(mostrar) {
+        const btn = document.getElementById('pwaAtendimentoBtnPesquisa');
+        if (!btn) return;
+        if (mostrar) {
+            btn.classList.remove('hidden');
+        } else {
+            btn.classList.add('hidden');
+        }
+    }
+
     /** Navega de volta à lista de roteiro a partir da tela de atendimento */
     function voltarAtendimento() {
         currentAtendimentoContext = null;
         navigate('registro-rota');
+    }
+
+    /** Reabre a tela de atendimento a partir do banner no roteiro */
+    function reabrirAtendimento() {
+        const ctx = currentAtendimentoContext;
+        if (!ctx) return;
+        abrirAtendimentoTela(ctx.repId, ctx.clienteId, ctx.clienteNome, ctx.endereco, ctx.dataVisita, ctx.enderecoCadastro);
     }
 
     /** Abre atividades a partir da tela de atendimento */
@@ -1563,8 +1634,9 @@
                 <div class="pwa-page-header-bar">
                     <button class="pwa-back-btn" onclick="pwaApp.fecharAtividadesInline()">&#8592;</button>
                     <span class="pwa-page-header-title">Atividades</span>
+                    <button class="pwa-header-confirmar-btn" onclick="window.app && window.app.salvarAtividades()">&#10003; Confirmar</button>
                 </div>
-                <div id="pwaAtividadesInlineArea" class="pwa-page-body" style="padding:0;">
+                <div id="pwaAtividadesInlineArea" class="pwa-page-body" style="padding:0; overflow-y:auto;">
                     <div class="pwa-loading-inline">
                         <div class="pwa-spinner-small"></div>
                         <span>Carregando atividades...</span>
@@ -1603,13 +1675,13 @@
             content.classList.add('pwa-atividades-inline');
             inlineArea.appendChild(content);
 
-            // Atualizar botões de cancelar/fechar para usar versão PWA
-            const btnsCancelar = content.querySelectorAll('.modal-footer .btn-secondary');
-            btnsCancelar.forEach(btn => {
-                btn.onclick = () => pwaApp.fecharAtividadesInline();
-            });
-            const closeBtn = content.querySelector('.modal-close');
-            if (closeBtn) closeBtn.onclick = () => pwaApp.fecharAtividadesInline();
+            // Esconder o modal-header (X e título) — no PWA usamos o header-bar próprio
+            const modalHeader = content.querySelector('.modal-header');
+            if (modalHeader) modalHeader.style.display = 'none';
+
+            // Esconder o modal-footer original — o botão Confirmar está no header-bar
+            const modalFooter = content.querySelector('.modal-footer');
+            if (modalFooter) modalFooter.style.display = 'none';
         }
 
         // Esconder o modal container (agora vazio)
