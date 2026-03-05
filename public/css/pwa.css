@@ -2044,3 +2044,101 @@ body.pwa-mode .modal-footer-inline {
 .pwa-atendimento-ativo .route-item-actions .btn-danger {
     display: none !important;
 }
+
+/* ==========================================
+   CAMPANHA: FOOTER DE BOTÕES ACIMA DA GALERIA
+   ========================================== */
+
+/* Em PWA inline o footer de captura deve ficar no TOPO, acima das fotos */
+body.pwa-mode .pwa-inline-modal .captura-footer {
+    order: -1;
+    position: sticky;
+    top: 0;
+    bottom: auto !important;
+    border-top: none !important;
+    border-bottom: 1px solid #e5e7eb;
+    z-index: 20;
+}
+
+/* O modal-body (câmera + galeria) fica abaixo do footer, scrollável */
+body.pwa-mode .pwa-inline-modal .captura-body {
+    order: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    flex: 1;
+}
+
+/* ==========================================
+   CANCELAR ATENDIMENTO: BOTÕES CENTRALIZADOS
+   ========================================== */
+
+body.pwa-mode .modal-footer-inline {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: center !important;
+    align-items: center !important;
+    gap: 12px !important;
+    flex-wrap: wrap;
+}
+
+body.pwa-mode .modal-footer-inline .btn {
+    flex: 1;
+    min-width: 120px;
+    max-width: 200px;
+    text-align: center;
+    justify-content: center;
+}
+
+/* ==========================================
+   HOME: AVISO DE ATENDIMENTO EM ANDAMENTO
+   ========================================== */
+
+.pwa-home-atendimento-aviso {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 4px 16px 8px;
+    padding: 14px 16px;
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border: 1px solid #f59e0b;
+    border-radius: 14px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    animation: pwa-banner-pulse 2.5s ease-in-out infinite;
+}
+
+.pwa-home-aviso-icon {
+    font-size: 22px;
+    flex-shrink: 0;
+}
+
+.pwa-home-aviso-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.pwa-home-aviso-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #92400e;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.pwa-home-aviso-nome {
+    font-size: 14px;
+    font-weight: 600;
+    color: #78350f;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 1px;
+}
+
+.pwa-home-aviso-btn {
+    font-size: 13px;
+    font-weight: 700;
+    color: #92400e;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
