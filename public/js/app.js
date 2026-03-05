@@ -11307,7 +11307,10 @@ class App {
             }
         }
 
-        if (!rvId) {
+        const isPWA = window.location.pathname.includes('/index.html') || document.body.classList.contains('pwa-mode');
+        const hasLocalCheckin = isPWA && this.registroRotaState._checkinLocal?.clienteId === clienteIdNorm;
+
+        if (!rvId && !hasLocalCheckin) {
             this.showNotification('Nenhum atendimento aberto encontrado para cancelar.', 'warning');
             return;
         }
@@ -11386,18 +11389,30 @@ class App {
             setLoading(true);
 
             try {
-                const resposta = await this.cancelarAtendimentoApi({
-                    rvId,
-                    repId,
-                    motivo: motivoInput?.value
-                });
+                // If it's only a local offline checkin with no server ID yet
+                if (hasLocalCheckin && (!rvId || rvId.startsWith('LOCAL_'))) {
+                    this.registroRotaState._checkinLocal = null;
+                    if (this.registroRotaState._atividadesLocal?.clienteId === clienteIdNorm) {
+                        this.registroRotaState._atividadesLocal = null;
+                    }
+                    if (this.registroRotaState._campanhaFotosLocal && this.registroRotaState._campanhaFotosLocal[0]?.clienteId === clienteIdNorm) {
+                        this.registroRotaState._campanhaFotosLocal = null;
+                    }
+                    this.showNotification('Atendimento local cancelado.', 'success');
+                } else {
+                    const resposta = await this.cancelarAtendimentoApi({
+                        rvId,
+                        repId,
+                        motivo: motivoInput?.value
+                    });
+                }
 
                 limparEstadoLocal();
 
                 this.showNotification('Atendimento cancelado. Novo check-in liberado.', 'success');
                 modal.fechar();
                 await this.reidratarAtendimentosAposCancelamento(repId);
-                return resposta;
+                return;
             } catch (error) {
                 console.error('Erro ao cancelar atendimento:', error);
                 const motivoFalha = error?.message || 'Erro ao cancelar atendimento';
@@ -13687,8 +13702,25 @@ class App {
                 this.showNotification(`Integração com Drive desconectada. Acione o administrador.${protocolo}`, 'error');
                 return;
             }
-            if (error?.status === 404 || mensagem.includes('não há check-in em aberto') || mensagem.includes('não encontrado')) {
-                await this.tratarAtendimentoNaoEncontrado(repId, clienteId, clienteNome);
+            if (error?.status === 404 || mensagem.includes('não há check-in em aberto') || mensagem.includes('não encontrado') || (mensagem.includes('já foi atendido') && tipoRegistro === 'checkout')) {
+                if (mensagem.includes('já foi atendido')) {
+                    // The backend rejected our checkin/checkout because a visit is already done today.
+                    // To solve this properly as requested, we must force close the modal and mark it done locally so the user isn't stuck.
+                    // By just resolving it locally, we allow the sync worker to figure it out later, or the user can just continue.
+                    this.showNotification('Aviso: Cliente já foi atendido no servidor. Encerrando atendimento atual localmente.', 'warning');
+                    this.registroRotaState._checkinLocal = null;
+                    if (this.registroRotaState._atividadesLocal?.clienteId === clienteId) {
+                        this.registroRotaState._atividadesLocal = null;
+                    }
+                    if (this.registroRotaState._campanhaFotosLocal && this.registroRotaState._campanhaFotosLocal[0]?.clienteId === clienteId) {
+                        this.registroRotaState._campanhaFotosLocal = null;
+                    }
+                    this._sessaoCache = {};
+                    await this.fecharModalCaptura();
+                    this.atualizarCardCliente(clienteId);
+                } else {
+                    await this.tratarAtendimentoNaoEncontrado(repId, clienteId, clienteNome);
+                }
             } else {
                 const protocolo = error?.requestId ? ` (Protocolo: ${error.requestId})` : '';
                 this.showNotification(`Não foi possível registrar: ${error.message}${protocolo}`, 'error');

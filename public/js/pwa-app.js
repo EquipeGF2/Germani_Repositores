@@ -755,6 +755,19 @@
         const hora = now.getHours();
         const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
 
+        // Ensure currentAtendimentoContext is recovered from checkinLocal if available
+        if (!currentAtendimentoContext && typeof window.app !== 'undefined' && window.app.registroRotaState && window.app.registroRotaState._checkinLocal) {
+            const checkin = window.app.registroRotaState._checkinLocal;
+            currentAtendimentoContext = {
+                repId: checkin.repId,
+                clienteId: checkin.clienteId,
+                clienteNome: checkin.clienteNome,
+                endereco: checkin.enderecoRoteiro || '',
+                dataVisita: new Date().toISOString().split('T')[0], // Approximation
+                enderecoCadastro: checkin.enderecoResolvido || ''
+            };
+        }
+
         pwaContent.innerHTML = `
             <div class="pwa-page">
                 <div class="pwa-welcome-card">
@@ -1086,16 +1099,21 @@
             'consultaRepositor', 'perfRepositor', 'filtro_repositor_consulta_roteiro',
             'uploadRepositor', 'registroRepositor', 'filtro_repositor',
             'filtro_repositor_cadastro', 'filtro_repositor_roteiro',
-            'filtro_repositor_checking_cancelado', 'filtro_repositor_validacao'
+            'filtro_repositor_checking_cancelado', 'filtro_repositor_validacao',
+            'filtro_supervisor', 'filtro_representante', 'filtro_cidade_roteiro'
         ];
 
         selectIds.forEach(id => {
             const select = container.querySelector(`#${id}`) || document.getElementById(id);
             if (select) {
-                select.value = String(repId);
-                const group = select.closest('.form-group, .filter-group');
+                if (id.includes('repositor') || id.includes('Repositor')) {
+                    select.value = String(repId);
+                }
+                const group = select.closest('.form-group, .filter-group, .filter-item');
                 if (group) {
                     group.style.display = 'none';
+                } else {
+                    select.style.display = 'none';
                 }
             }
         });
@@ -1105,7 +1123,7 @@
         textInputIds.forEach(id => {
             const input = container.querySelector(`#${id}`) || document.getElementById(id);
             if (input) {
-                const group = input.closest('.form-group, .filter-group');
+                const group = input.closest('.form-group, .filter-group, .filter-item');
                 if (group) group.style.display = 'none';
             }
         });
@@ -1405,6 +1423,11 @@
             navigationStack.pop();
         }
         navigate(previousTab || 'registro-rota');
+
+        // Refresh route to prevent white screen
+        if (typeof window.app !== 'undefined' && window.app.carregarRoteiroRepositor) {
+            setTimeout(() => window.app.carregarRoteiroRepositor(), 50);
+        }
     }
 
     /**
@@ -1641,6 +1664,11 @@
         } else {
             // Checkout/cancelamento finalizado → ir para lista
             navigate('registro-rota');
+
+            // Refresh route to prevent white screen
+            if (typeof window.app !== 'undefined' && window.app.carregarRoteiroRepositor) {
+                setTimeout(() => window.app.carregarRoteiroRepositor(), 50);
+            }
         }
     }
 
@@ -1764,8 +1792,13 @@
             : 'Nunca';
 
         pwaContent.innerHTML = `
+            <div class="pwa-page-header-bar" style="display:flex; align-items:center; padding: 12px 16px; background: white; border-bottom: 1px solid #e5e7eb; position: sticky; top: 0; z-index: 10;">
+                <button onclick="pwaApp.navigate('pwa-home')" style="background: none; border: none; font-size: 20px; color: #1f2937; cursor: pointer; display: flex; align-items: center; gap: 8px; font-weight: 500;">
+                    <i class="bi bi-arrow-left"></i> Voltar para tela inicial
+                </button>
+            </div>
             <div class="pwa-page">
-                <div class="pwa-card" style="text-align:center; padding: 24px 16px;">
+                <div class="pwa-card" style="text-align:center; padding: 24px 16px; margin-top: 16px;">
                     <div class="pwa-avatar">
                         ${(usuario.nome_completo || usuario.username || 'R')[0].toUpperCase()}
                     </div>

@@ -48,6 +48,7 @@ body.pwa-mode #appScreen {
     display: flex;
     align-items: center;
     gap: 8px;
+    width: 80%;
 }
 
 .pwa-user-name {
@@ -56,7 +57,8 @@ body.pwa-mode #appScreen {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 200px;
+    max-width: 100%;
+    width: 100%;
 }
 
 .pwa-header-right {
@@ -732,21 +734,30 @@ body.pwa-mode .captura-body {
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     padding: 8px 12px !important;
+    display: flex;
+    flex-direction: column;
 }
 
 body.pwa-mode .camera-wrapper {
     width: 100% !important;
+    flex: 1 !important;
+    display: flex;
+    flex-direction: column;
 }
 
 body.pwa-mode .camera-area {
     width: 100% !important;
-    max-height: 45vh !important;
+    flex: 1 !important;
+    max-height: none !important;
+    display: flex;
+    flex-direction: column;
 }
 
 body.pwa-mode #videoPreview,
 body.pwa-mode #canvasCaptura {
-    max-height: 45vh !important;
+    flex: 1 !important;
     width: 100% !important;
+    max-height: none !important;
     object-fit: cover;
 }
 
@@ -758,7 +769,8 @@ body.pwa-mode .captura-footer {
     border-top: 1px solid #e5e7eb;
     background: #fff;
     position: sticky;
-    bottom: 0;
+    top: 0; /* Changed from bottom: 0 to top: 0 to move closer to header */
+    order: -1; /* Move buttons above body */
     z-index: 10;
 }
 
