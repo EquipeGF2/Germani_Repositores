@@ -13702,17 +13702,24 @@ class App {
                 this.showNotification(`Integração com Drive desconectada. Acione o administrador.${protocolo}`, 'error');
                 return;
             }
-            if (error?.status === 404 || mensagem.includes('não há check-in em aberto') || mensagem.includes('não encontrado') || (mensagem.includes('já foi atendido') && tipoRegistro === 'checkout')) {
-                if (mensagem.includes('já foi atendido')) {
-                    // The backend rejected our checkin/checkout because a visit is already done today.
-                    // To solve this properly as requested, we must force close the modal and mark it done locally so the user isn't stuck.
-                    // By just resolving it locally, we allow the sync worker to figure it out later, or the user can just continue.
-                    this.showNotification('Aviso: Cliente já foi atendido no servidor. Encerrando atendimento atual localmente.', 'warning');
+            const isAtendimentoJaFinalizado = mensagem.includes('já foi atendido') || mensagem.includes('finalizado no sistema') || error?.code === 'ATENDIMENTO_FECHADO';
+            const isCheckoutSemSessao = tipoRegistro === 'checkout' && (error?.status === 404 || mensagem.includes('não há check-in em aberto') || mensagem.includes('não encontrado') || isAtendimentoJaFinalizado);
+            if (isCheckoutSemSessao || (error?.status === 404 && tipoRegistro !== 'checkout')) {
+                if (isAtendimentoJaFinalizado || isCheckoutSemSessao) {
+                    // O atendimento já foi registrado (checkout já feito ou sessão não encontrada).
+                    // Encerrar localmente para desbloquear o repositor.
+                    this.showNotification('Aviso: Atendimento já registrado no servidor. Encerrando localmente.', 'warning');
+                    const normalizeClienteId_ = (v) => String(v ?? '').trim().replace(/\.0$/, '');
+                    const clienteIdNorm_ = normalizeClienteId_(clienteId);
+                    this.atualizarStatusClienteLocal(clienteIdNorm_, {
+                        status: 'finalizado',
+                        rep_id: repId
+                    });
                     this.registroRotaState._checkinLocal = null;
-                    if (this.registroRotaState._atividadesLocal?.clienteId === clienteId) {
+                    if (this.registroRotaState._atividadesLocal?.clienteId === clienteIdNorm_) {
                         this.registroRotaState._atividadesLocal = null;
                     }
-                    if (this.registroRotaState._campanhaFotosLocal && this.registroRotaState._campanhaFotosLocal[0]?.clienteId === clienteId) {
+                    if (this.registroRotaState._campanhaFotosLocal && this.registroRotaState._campanhaFotosLocal[0]?.clienteId === clienteIdNorm_) {
                         this.registroRotaState._campanhaFotosLocal = null;
                     }
                     this._sessaoCache = {};
