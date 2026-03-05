@@ -40,6 +40,8 @@
     let isInitialized = false;
     let initialSyncDone = false;
     let toastTimer = null;
+    let currentCheckContext = null;     // Contexto do checkin em andamento
+    let currentAtendimentoContext = null; // Contexto da tela de atendimento aberta
     let cachedData = {
         roteiro: null,
         clientes: null,
@@ -65,7 +67,15 @@
         voltarDeCheckin,
         abrirAtividadesInline,
         fecharAtividadesInline,
-        sincronizarHome
+        sincronizarHome,
+        // Tela de atendimento pós-checkin
+        abrirAtendimentoTela,
+        voltarAtendimento,
+        atendimentoAbrirAtividade,
+        atendimentoAbrirCampanha,
+        atendimentoAbrirPesquisa,
+        atendimentoAbrirCheckout,
+        atendimentoCancelar
     };
 
     async function init() {
@@ -129,7 +139,28 @@
 
                 window.app.fecharModalCaptura = function() {
                     if (authManager?.isPWA) {
-                        pwaApp.voltarDeCheckin();
+                        const ctx = currentCheckContext;
+                        if (ctx?.tipoRegistro === 'checkin') {
+                            // Check-in concluído → abrir tela de atendimento
+                            restoreCaptureModal();
+                            try {
+                                window.app.pararStreamVideo?.();
+                                const video = document.getElementById('videoPreview');
+                                if (video) { video.srcObject = null; video.style.display = 'none'; }
+                                const modal = document.getElementById('modalCapturarVisita');
+                                if (modal) modal.classList.remove('active');
+                            } catch (e) { /* silent */ }
+                            showBottomTabs(true);
+                            if (navigationStack.length > 1) navigationStack.pop();
+                            abrirAtendimentoTela(ctx.repId, ctx.clienteId, ctx.clienteNome, ctx.enderecoLinha, ctx.dataVisita, ctx.enderecoCadastro);
+                        } else if (ctx?.tipoRegistro === 'campanha') {
+                            // Campanha registrada → voltar à tela de atendimento (se aberta) ou à lista
+                            voltarDeCheckinParaAtendimento();
+                        } else {
+                            // Checkout, cancelamento, outros → voltar à lista
+                            currentAtendimentoContext = null;
+                            pwaApp.voltarDeCheckin();
+                        }
                     } else {
                         originalFechar();
                     }
@@ -621,7 +652,13 @@
             if (navigationStack.length > 1) {
                 navigationStack.pop();
                 const prevTab = navigationStack[navigationStack.length - 1];
-                navigate(prevTab, true);
+                // Telas especiais não estão em PWA_TABS - tratar manualmente
+                if (prevTab === 'pwa-atendimento' && currentAtendimentoContext) {
+                    const ctx = currentAtendimentoContext;
+                    abrirAtendimentoTela(ctx.repId, ctx.clienteId, ctx.clienteNome, ctx.endereco, ctx.dataVisita, ctx.enderecoCadastro);
+                } else {
+                    navigate(prevTab, true);
+                }
             } else {
                 history.pushState({ pwaTab: 'pwa-home' }, '', '');
                 if (currentTab !== 'pwa-home') {
@@ -1242,6 +1279,7 @@
      */
     function abrirCheckinTela(repId, clienteId, clienteNome, enderecoLinha, dataVisita, tipoRegistro, enderecoCadastro, novaVisita) {
         previousTab = currentTab;
+        currentCheckContext = { repId, clienteId, clienteNome, enderecoLinha, dataVisita, tipoRegistro, enderecoCadastro };
 
         navigationStack.push('pwa-checkin');
         history.pushState({ pwaTab: 'pwa-checkin' }, '', '');
@@ -1353,6 +1391,159 @@
         modal.remove();
     }
 
+    // ==================== TELA DE ATENDIMENTO EM ANDAMENTO ====================
+
+    /**
+     * Abre tela full-screen de atendimento após o check-in.
+     * Exibe nome/endereço do cliente e ações: atividade, campanha,
+     * pesquisa, checkout, cancelar.
+     */
+    function abrirAtendimentoTela(repId, clienteId, clienteNome, endereco, dataVisita, enderecoCadastro) {
+        // Limpar contexto de checkin (já foi usado)
+        currentCheckContext = null;
+
+        previousTab = currentTab;
+        currentTab = 'pwa-atendimento';
+        navigationStack.push('pwa-atendimento');
+        history.pushState({ pwaTab: 'pwa-atendimento' }, '', '');
+
+        showBottomTabs(true);
+        if (pwaContent) pwaContent.scrollTop = 0;
+
+        currentAtendimentoContext = { repId, clienteId, clienteNome, endereco, dataVisita, enderecoCadastro };
+
+        const hora = new Date().toLocaleTimeString('pt-BR', {
+            timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit'
+        });
+
+        const nomeEsc = escapeHtml(clienteNome || '');
+        const endEsc = escapeHtml(endereco || '');
+        const clienteIdEsc = String(clienteId || '').replace(/'/g, "\\'");
+        const endCadEsc = String(enderecoCadastro || '').replace(/'/g, "\\'");
+        const dataEsc = String(dataVisita || '').replace(/'/g, "\\'");
+
+        pwaContent.innerHTML = `
+            <div class="pwa-page pwa-atendimento-page">
+                <div class="pwa-page-header-bar">
+                    <button class="pwa-back-btn" onclick="pwaApp.voltarAtendimento()">&#8592;</button>
+                    <span class="pwa-page-header-title">Atendimento em Andamento</span>
+                </div>
+
+                <div class="pwa-atendimento-cliente-card">
+                    <div class="pwa-atendimento-cliente-nome">${nomeEsc}</div>
+                    ${endEsc ? `<div class="pwa-atendimento-cliente-end">&#128205; ${endEsc}</div>` : ''}
+                    <div class="pwa-atendimento-checkin-hora">&#10003; Check-in realizado ${hora}</div>
+                </div>
+
+                <div class="pwa-section-title">O que deseja registrar?</div>
+
+                <div class="pwa-atendimento-grid">
+                    <button class="pwa-atendimento-action-btn" onclick="pwaApp.atendimentoAbrirAtividade()">
+                        <span class="pwa-atendimento-action-icon">&#128203;</span>
+                        <span>Atividade</span>
+                    </button>
+                    <button class="pwa-atendimento-action-btn" onclick="pwaApp.atendimentoAbrirCampanha()">
+                        <span class="pwa-atendimento-action-icon">&#128248;</span>
+                        <span>Campanha</span>
+                    </button>
+                    <button class="pwa-atendimento-action-btn" onclick="pwaApp.atendimentoAbrirPesquisa()">
+                        <span class="pwa-atendimento-action-icon">&#128203;</span>
+                        <span>Pesquisa</span>
+                    </button>
+                    <button class="pwa-atendimento-action-btn pwa-atendimento-action-checkout" onclick="pwaApp.atendimentoAbrirCheckout()">
+                        <span class="pwa-atendimento-action-icon">&#128682;</span>
+                        <span>Checkout</span>
+                    </button>
+                </div>
+
+                <div style="padding: 0 16px 16px;">
+                    <button class="pwa-atendimento-cancelar-btn" onclick="pwaApp.atendimentoCancelar()">
+                        &#9940; Cancelar atendimento
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    /** Navega de volta à lista de roteiro a partir da tela de atendimento */
+    function voltarAtendimento() {
+        currentAtendimentoContext = null;
+        navigate('registro-rota');
+    }
+
+    /** Abre atividades a partir da tela de atendimento */
+    function atendimentoAbrirAtividade() {
+        const ctx = currentAtendimentoContext;
+        if (!ctx) return;
+        if (typeof window.app !== 'undefined' && window.app.abrirModalAtividades) {
+            window.app.abrirModalAtividades(ctx.repId, ctx.clienteId, ctx.clienteNome, ctx.dataVisita);
+        }
+    }
+
+    /** Abre campanha (foto) a partir da tela de atendimento */
+    function atendimentoAbrirCampanha() {
+        const ctx = currentAtendimentoContext;
+        if (!ctx) return;
+        if (typeof window.app !== 'undefined' && window.app.abrirModalCaptura) {
+            window.app.abrirModalCaptura(ctx.repId, ctx.clienteId, ctx.clienteNome, ctx.endereco, ctx.dataVisita, 'campanha', ctx.enderecoCadastro);
+        }
+    }
+
+    /** Abre pesquisa a partir da tela de atendimento */
+    function atendimentoAbrirPesquisa() {
+        const ctx = currentAtendimentoContext;
+        if (!ctx) return;
+        if (typeof window.app !== 'undefined' && window.app.abrirPesquisaCliente) {
+            window.app.abrirPesquisaCliente(ctx.repId, ctx.clienteId, ctx.clienteNome, ctx.dataVisita);
+        }
+    }
+
+    /** Abre checkout a partir da tela de atendimento */
+    function atendimentoAbrirCheckout() {
+        const ctx = currentAtendimentoContext;
+        if (!ctx) return;
+        if (typeof window.app !== 'undefined' && window.app.abrirModalCaptura) {
+            window.app.abrirModalCaptura(ctx.repId, ctx.clienteId, ctx.clienteNome, ctx.endereco, ctx.dataVisita, 'checkout', ctx.enderecoCadastro);
+        }
+    }
+
+    /** Cancela o atendimento a partir da tela de atendimento */
+    function atendimentoCancelar() {
+        const ctx = currentAtendimentoContext;
+        if (!ctx) return;
+        if (typeof window.app !== 'undefined' && window.app.confirmarCancelarAtendimento) {
+            window.app.confirmarCancelarAtendimento(ctx.repId, ctx.clienteId, ctx.clienteNome);
+        }
+    }
+
+    /**
+     * Chamado pelo fecharModalCaptura após checkout/cancelamento concluído
+     * para retornar à tela de atendimento ou à lista.
+     */
+    function voltarDeCheckinParaAtendimento() {
+        restoreCaptureModal();
+        if (typeof window.app !== 'undefined') {
+            try {
+                window.app.pararStreamVideo?.();
+                const video = document.getElementById('videoPreview');
+                if (video) { video.srcObject = null; video.style.display = 'none'; }
+                const modal = document.getElementById('modalCapturarVisita');
+                if (modal) modal.classList.remove('active');
+            } catch (e) { /* silent */ }
+        }
+        showBottomTabs(true);
+        if (navigationStack.length > 1) navigationStack.pop();
+
+        const ctx = currentAtendimentoContext;
+        if (ctx) {
+            // Voltar à tela de atendimento (contexto ainda existe → não foi checkout)
+            abrirAtendimentoTela(ctx.repId, ctx.clienteId, ctx.clienteNome, ctx.endereco, ctx.dataVisita, ctx.enderecoCadastro);
+        } else {
+            // Checkout/cancelamento finalizado → ir para lista
+            navigate('registro-rota');
+        }
+    }
+
     // ==================== PÁGINA: MAIS ====================
 
     // ==================== ATIVIDADES INLINE (substitui modal overlay) ====================
@@ -1384,16 +1575,14 @@
 
         // Chamar a lógica original do app.js para popular o modal
         if (typeof window.app !== 'undefined' && window.app._originalAbrirModalAtividades) {
-            // Pode ser assíncrono, então executamos imediatamente a injeção do esqueleto e
-            // repetimos algumas vezes para garantir que foi injetado (ou melhor, await a promessa se possível)
             const promise = window.app._originalAbrirModalAtividades(repId, clienteId, clienteNome, dataPlanejada);
             if (promise && typeof promise.then === 'function') {
+                // Injetar APENAS após a promessa resolver, para não wipe dados carregados
                 promise.then(() => injectAtividadesModalInline()).catch(() => injectAtividadesModalInline());
             } else {
-                setTimeout(() => injectAtividadesModalInline(), 50);
+                setTimeout(() => injectAtividadesModalInline(), 150);
             }
-            // Injeção imediata para caso a UI demore na rede
-            injectAtividadesModalInline();
+            // NÃO chamar imediatamente: a 2ª chamada apagaria o conteúdo carregado
         }
     }
 
@@ -1456,7 +1645,14 @@
         if (navigationStack.length > 1) {
             navigationStack.pop();
         }
-        navigate(previousTab || 'registro-rota');
+
+        // Se há atendimento em andamento, voltar para a tela de atendimento
+        if (currentAtendimentoContext) {
+            const ctx = currentAtendimentoContext;
+            abrirAtendimentoTela(ctx.repId, ctx.clienteId, ctx.clienteNome, ctx.endereco, ctx.dataVisita, ctx.enderecoCadastro);
+        } else {
+            navigate(previousTab || 'registro-rota');
+        }
     }
 
     function renderMais() {
