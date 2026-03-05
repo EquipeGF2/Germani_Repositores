@@ -1817,3 +1817,107 @@ body.pwa-mode .modal-footer {
     color: #10b981;
     animation: none;
 }
+
+/* ==========================================
+   TELA DE ATENDIMENTO EM ANDAMENTO
+   ========================================== */
+
+.pwa-atendimento-page {
+    padding-bottom: 16px;
+}
+
+.pwa-atendimento-cliente-card {
+    margin: 16px;
+    background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+    color: white;
+    border-radius: 16px;
+    padding: 20px;
+}
+
+.pwa-atendimento-cliente-nome {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    line-height: 1.3;
+}
+
+.pwa-atendimento-cliente-end {
+    font-size: 13px;
+    opacity: 0.85;
+    margin-bottom: 10px;
+}
+
+.pwa-atendimento-checkin-hora {
+    font-size: 13px;
+    background: rgba(255,255,255,0.2);
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    margin-top: 4px;
+}
+
+/* Grid 2x2 para botões de ação */
+.pwa-atendimento-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    padding: 0 16px 16px;
+}
+
+.pwa-atendimento-action-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 20px 12px;
+    background: white;
+    border: 2px solid #e5e7eb;
+    border-radius: 14px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1f2937;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.pwa-atendimento-action-btn:active {
+    transform: scale(0.96);
+    background: #f9fafb;
+}
+
+.pwa-atendimento-action-icon {
+    font-size: 28px;
+    line-height: 1;
+}
+
+.pwa-atendimento-action-checkout {
+    border-color: #fecaca;
+    background: #fef2f2;
+    color: #dc2626;
+}
+
+.pwa-atendimento-action-checkout:active {
+    background: #fee2e2;
+}
+
+.pwa-atendimento-cancelar-btn {
+    width: 100%;
+    padding: 14px;
+    background: transparent;
+    border: 2px solid #d1d5db;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #6b7280;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: all 0.15s;
+}
+
+.pwa-atendimento-cancelar-btn:active {
+    background: #fef2f2;
+    border-color: #fecaca;
+    color: #dc2626;
+}
