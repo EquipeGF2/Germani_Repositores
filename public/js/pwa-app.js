@@ -785,12 +785,24 @@
                     <span class="pwa-action-arrow">&#8250;</span>
                 </button>
 
-                <button class="pwa-action-btn" id="pwaHomeSyncBtn" onclick="pwaApp.sincronizarHome()">
+                <button class="pwa-action-btn" onclick="pwaApp.navigate('pwa-mais')">
                     <span class="pwa-action-icon">&#8635;</span>
                     <span class="pwa-action-text">Sincronização</span>
                     <span class="pwa-action-arrow">&#8250;</span>
                 </button>
             </div>
+            ${currentAtendimentoContext ? (() => {
+                const ctx = currentAtendimentoContext;
+                return `
+                <div class="pwa-home-atendimento-aviso" onclick="pwaApp.reabrirAtendimento()">
+                    <div class="pwa-home-aviso-icon">&#9888;</div>
+                    <div class="pwa-home-aviso-info">
+                        <div class="pwa-home-aviso-title">Atendimento em andamento</div>
+                        <div class="pwa-home-aviso-nome">${escapeHtml(ctx.clienteNome || '')}</div>
+                    </div>
+                    <div class="pwa-home-aviso-btn">Continuar &#8250;</div>
+                </div>`;
+            })() : ''}
         `;
     }
 
@@ -1531,7 +1543,8 @@
 
     /** Navega de volta à lista de roteiro a partir da tela de atendimento */
     function voltarAtendimento() {
-        currentAtendimentoContext = null;
+        // NÃO limpar currentAtendimentoContext — atendimento ainda está ativo.
+        // Contexto só é limpo após checkout ou confirmação de cancelamento.
         navigate('registro-rota');
     }
 
@@ -1584,6 +1597,22 @@
         if (!ctx) return;
         if (typeof window.app !== 'undefined' && window.app.confirmarCancelarAtendimento) {
             window.app.confirmarCancelarAtendimento(ctx.repId, ctx.clienteId, ctx.clienteNome);
+
+            // Quando o modal de confirmação fechar (cancel confirmado), limpar contexto e ir para lista
+            const obs = new MutationObserver(() => {
+                if (!document.querySelector('.modal-backdrop')) {
+                    obs.disconnect();
+                    // Verificar se o cliente ainda está em atendimento no estado local
+                    const normalizeId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
+                    const cliNorm = normalizeId(ctx.clienteId);
+                    const status = window.app?.registroRotaState?.resumoVisitas?.get(cliNorm);
+                    if (!status || status.status !== 'em_atendimento') {
+                        currentAtendimentoContext = null;
+                        navigate('registro-rota');
+                    }
+                }
+            });
+            obs.observe(document.body, { childList: true, subtree: false });
         }
     }
 
