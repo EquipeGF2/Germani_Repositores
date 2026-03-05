@@ -157,8 +157,19 @@
                         } else if (ctx?.tipoRegistro === 'campanha') {
                             // Campanha registrada → voltar à tela de atendimento (se aberta) ou à lista
                             voltarDeCheckinParaAtendimento();
+                        } else if (ctx?.tipoRegistro === 'checkout') {
+                            // Checkout: verificar se foi concluído ou cancelado pelo usuário
+                            const normalizeId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
+                            const cliNorm = ctx.clienteId ? normalizeId(ctx.clienteId) : null;
+                            const statusCliente = cliNorm ? window.app?.registroRotaState?.resumoVisitas?.get(cliNorm) : null;
+                            if (statusCliente?.status === 'finalizado') {
+                                // Checkout concluído com sucesso → limpar contexto e voltar à lista
+                                currentAtendimentoContext = null;
+                            }
+                            // Se checkout cancelado, currentAtendimentoContext permanece → voltarDeCheckinParaAtendimento volta ao atendimento
+                            voltarDeCheckinParaAtendimento();
                         } else {
-                            // Checkout, cancelamento, outros → voltar à lista
+                            // Cancelamento ou outros → voltar à lista
                             currentAtendimentoContext = null;
                             pwaApp.voltarDeCheckin();
                         }
@@ -768,6 +779,19 @@
             };
         }
 
+        const avisoAtendimento = currentAtendimentoContext ? (() => {
+            const ctx = currentAtendimentoContext;
+            return `
+            <div class="pwa-home-atendimento-aviso" onclick="pwaApp.reabrirAtendimento()">
+                <div class="pwa-home-aviso-icon">&#9888;</div>
+                <div class="pwa-home-aviso-info">
+                    <div class="pwa-home-aviso-title">Atendimento em andamento</div>
+                    <div class="pwa-home-aviso-nome">${escapeHtml(ctx.clienteNome || '')}</div>
+                </div>
+                <div class="pwa-home-aviso-btn">Continuar &#8250;</div>
+            </div>`;
+        })() : '';
+
         pwaContent.innerHTML = `
             <div class="pwa-page">
                 <div class="pwa-welcome-card">
@@ -777,6 +801,8 @@
                         ${now.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: 'numeric', month: 'long' })}
                     </div>
                 </div>
+
+                ${avisoAtendimento}
 
                 <div class="pwa-section-title">Ações Rápidas</div>
 
@@ -804,18 +830,6 @@
                     <span class="pwa-action-arrow">&#8250;</span>
                 </button>
             </div>
-            ${currentAtendimentoContext ? (() => {
-                const ctx = currentAtendimentoContext;
-                return `
-                <div class="pwa-home-atendimento-aviso" onclick="pwaApp.reabrirAtendimento()">
-                    <div class="pwa-home-aviso-icon">&#9888;</div>
-                    <div class="pwa-home-aviso-info">
-                        <div class="pwa-home-aviso-title">Atendimento em andamento</div>
-                        <div class="pwa-home-aviso-nome">${escapeHtml(ctx.clienteNome || '')}</div>
-                    </div>
-                    <div class="pwa-home-aviso-btn">Continuar &#8250;</div>
-                </div>`;
-            })() : ''}
         `;
     }
 
@@ -1095,6 +1109,9 @@
         const repId = getRepId();
         if (!repId) return;
 
+        const usuario = getUsuario();
+        const repNome = usuario.nome_completo || usuario.username || `Repositor ${repId}`;
+
         const selectIds = [
             'consultaRepositor', 'perfRepositor', 'filtro_repositor_consulta_roteiro',
             'uploadRepositor', 'registroRepositor', 'filtro_repositor',
@@ -1107,7 +1124,20 @@
             const select = container.querySelector(`#${id}`) || document.getElementById(id);
             if (select) {
                 if (id.includes('repositor') || id.includes('Repositor')) {
-                    select.value = String(repId);
+                    // Garantir que a opção do repositor logado existe no select (modo offline)
+                    const repIdStr = String(repId);
+                    const optionExiste = Array.from(select.options).some(opt => String(opt.value) === repIdStr);
+                    if (!optionExiste) {
+                        // Injetar opção para o repositor logado
+                        const novaOpcao = document.createElement('option');
+                        novaOpcao.value = repIdStr;
+                        novaOpcao.textContent = repNome;
+                        novaOpcao.selected = true;
+                        select.appendChild(novaOpcao);
+                    }
+                    select.value = repIdStr;
+                    // Disparar evento change para atualizar filtros dependentes
+                    select.dispatchEvent(new Event('change', { bubbles: true }));
                 }
                 const group = select.closest('.form-group, .filter-group, .filter-item');
                 if (group) {
@@ -1123,6 +1153,7 @@
         textInputIds.forEach(id => {
             const input = container.querySelector(`#${id}`) || document.getElementById(id);
             if (input) {
+                input.value = repNome;
                 const group = input.closest('.form-group, .filter-group, .filter-item');
                 if (group) group.style.display = 'none';
             }
@@ -1422,7 +1453,10 @@
         if (navigationStack.length > 1) {
             navigationStack.pop();
         }
-        navigate(previousTab || 'registro-rota');
+
+        // Garantir que previousTab seja uma tab válida; senão, ir para registro-rota
+        const targetTab = (previousTab && PWA_TABS[previousTab]) ? previousTab : 'registro-rota';
+        navigate(targetTab);
 
         // Refresh route to prevent white screen
         if (typeof window.app !== 'undefined' && window.app.carregarRoteiroRepositor) {
@@ -1619,23 +1653,43 @@
         const ctx = currentAtendimentoContext;
         if (!ctx) return;
         if (typeof window.app !== 'undefined' && window.app.confirmarCancelarAtendimento) {
-            window.app.confirmarCancelarAtendimento(ctx.repId, ctx.clienteId, ctx.clienteNome);
+            const normalizeId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
+            const cliNorm = normalizeId(ctx.clienteId);
 
-            // Quando o modal de confirmação fechar (cancel confirmado), limpar contexto e ir para lista
-            const obs = new MutationObserver(() => {
-                if (!document.querySelector('.modal-backdrop')) {
-                    obs.disconnect();
-                    // Verificar se o cliente ainda está em atendimento no estado local
-                    const normalizeId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
-                    const cliNorm = normalizeId(ctx.clienteId);
-                    const status = window.app?.registroRotaState?.resumoVisitas?.get(cliNorm);
-                    if (!status || status.status !== 'em_atendimento') {
-                        currentAtendimentoContext = null;
-                        navigate('registro-rota');
+            // Observer que detecta ABERTURA e FECHAMENTO do modal de confirmação
+            let modalAberto = false;
+            let obsTimeout = null;
+
+            const obs = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    for (const node of mutation.addedNodes) {
+                        if (node.nodeType === 1 && (node.classList?.contains('modal-backdrop') || node.classList?.contains('modal-overlay'))) {
+                            modalAberto = true;
+                            if (obsTimeout) { clearTimeout(obsTimeout); obsTimeout = null; }
+                        }
+                    }
+                    for (const node of mutation.removedNodes) {
+                        if (node.nodeType === 1 && (node.classList?.contains('modal-backdrop') || node.classList?.contains('modal-overlay')) && modalAberto) {
+                            obs.disconnect();
+                            if (obsTimeout) { clearTimeout(obsTimeout); obsTimeout = null; }
+                            // Verificar se cancelamento foi confirmado (status não é mais em_atendimento)
+                            const status = window.app?.registroRotaState?.resumoVisitas?.get(cliNorm);
+                            if (!status || status.status !== 'em_atendimento') {
+                                currentAtendimentoContext = null;
+                                navigate('registro-rota');
+                            }
+                        }
                     }
                 }
             });
             obs.observe(document.body, { childList: true, subtree: false });
+
+            // Se modal não abre em 1.5s, desconectar observer (erro interno)
+            obsTimeout = setTimeout(() => {
+                if (!modalAberto) obs.disconnect();
+            }, 1500);
+
+            window.app.confirmarCancelarAtendimento(ctx.repId, ctx.clienteId, ctx.clienteNome);
         }
     }
 
@@ -1792,10 +1846,9 @@
             : 'Nunca';
 
         pwaContent.innerHTML = `
-            <div class="pwa-page-header-bar" style="display:flex; align-items:center; padding: 12px 16px; background: white; border-bottom: 1px solid #e5e7eb; position: sticky; top: 0; z-index: 10;">
-                <button onclick="pwaApp.navigate('pwa-home')" style="background: none; border: none; font-size: 20px; color: #1f2937; cursor: pointer; display: flex; align-items: center; gap: 8px; font-weight: 500;">
-                    <i class="bi bi-arrow-left"></i> Voltar para tela inicial
-                </button>
+            <div class="pwa-page-header-bar">
+                <button class="pwa-back-btn" onclick="pwaApp.navigate('pwa-home')">&#8592;</button>
+                <span class="pwa-page-header-title">Sincronização</span>
             </div>
             <div class="pwa-page">
                 <div class="pwa-card" style="text-align:center; padding: 24px 16px; margin-top: 16px;">
