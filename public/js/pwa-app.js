@@ -75,6 +75,7 @@
         atendimentoAbrirAtividade,
         atendimentoAbrirCampanha,
         atendimentoAbrirPesquisa,
+        atendimentoAbrirEspaco,
         atendimentoAbrirCheckout,
         atendimentoCancelar,
         atualizarEstadoBtnCheckout: _atualizarEstadoBtnCheckout,
@@ -1611,8 +1612,9 @@
         if (pwaContent) pwaContent.scrollTop = 0;
 
         currentAtendimentoContext = { repId, clienteId, clienteNome, endereco, dataVisita, enderecoCadastro };
-        // Checar pesquisas pendentes em background para mostrar/esconder botão
+        // Checar pesquisas e espaços pendentes em background para mostrar/esconder botões
         _verificarPesquisaAtendimento(clienteId, repId, dataVisita);
+        _verificarEspacoAtendimento(clienteId);
 
         const hora = new Date().toLocaleTimeString('pt-BR', {
             timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit'
@@ -1647,6 +1649,10 @@
                     <button class="pwa-atendimento-action-btn" onclick="pwaApp.atendimentoAbrirCampanha()">
                         <span class="pwa-atendimento-action-icon">&#128248;</span>
                         <span>Campanha</span>
+                    </button>
+                    <button class="pwa-atendimento-action-btn hidden" id="pwaAtendimentoBtnEspacos" onclick="pwaApp.atendimentoAbrirEspaco()">
+                        <span class="pwa-atendimento-action-icon">&#128230;</span>
+                        <span>Espa&#231;os</span>
                     </button>
                     <button class="pwa-atendimento-action-btn hidden" id="pwaAtendimentoBtnPesquisa" onclick="pwaApp.atendimentoAbrirPesquisa()">
                         <span class="pwa-atendimento-action-icon">&#128196;</span>
@@ -1712,6 +1718,35 @@
         }
     }
 
+    /** Verifica se o cliente tem espaços cadastrados e mostra/esconde botão Espaços */
+    function _verificarEspacoAtendimento(clienteId) {
+        const normalizeId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
+        const cliNorm = normalizeId(clienteId);
+        const clientesComEspaco = window.app?.registroRotaState?.clientesComEspaco;
+        if (clientesComEspaco) {
+            _mostrarBotaoEspacos(clientesComEspaco.has(cliNorm));
+            return;
+        }
+        // Se o set não está disponível, tentar buscar do servidor em background
+        if (navigator.onLine && typeof window.app?.verificarEspacosPendentes === 'function') {
+            const ctx = currentAtendimentoContext;
+            if (!ctx) return;
+            window.app.verificarEspacosPendentes(ctx.repId, cliNorm)
+                .then(res => _mostrarBotaoEspacos(res?.temEspacos === true))
+                .catch(() => _mostrarBotaoEspacos(false));
+        }
+    }
+
+    function _mostrarBotaoEspacos(mostrar) {
+        const btn = document.getElementById('pwaAtendimentoBtnEspacos');
+        if (!btn) return;
+        if (mostrar) {
+            btn.classList.remove('hidden');
+        } else {
+            btn.classList.add('hidden');
+        }
+    }
+
     function _atualizarEstadoBtnCheckout() {
         const btn = document.getElementById('pwaAtendimentoBtnCheckout');
         if (!btn || !currentAtendimentoContext) return;
@@ -1769,6 +1804,15 @@
         if (!ctx) return;
         if (typeof window.app !== 'undefined' && window.app.abrirPesquisaCliente) {
             window.app.abrirPesquisaCliente(ctx.repId, ctx.clienteId, ctx.clienteNome, ctx.dataVisita);
+        }
+    }
+
+    /** Abre registro de espaços a partir da tela de atendimento */
+    function atendimentoAbrirEspaco() {
+        const ctx = currentAtendimentoContext;
+        if (!ctx) return;
+        if (typeof window.app !== 'undefined' && window.app.verificarEAbrirRegistroEspacos) {
+            window.app.verificarEAbrirRegistroEspacos(ctx.repId, ctx.clienteId, ctx.clienteNome, ctx.dataVisita);
         }
     }
 
