@@ -458,8 +458,33 @@
             }
             setDailySyncStep(2, 'done');
 
-            // Passo 3: Finalizar
+            // Passo 3: Visitas recentes para consulta offline
             setDailySyncStep(3, 'active');
+            updateDailySyncStatus('Baixando visitas recentes...');
+
+            try {
+                const repId = typeof authManager !== 'undefined' ? authManager.getRepId?.() : null;
+                if (repId) {
+                    const hoje = new Date().toISOString().split('T')[0];
+                    const quinzeDiasAtras = new Date();
+                    quinzeDiasAtras.setDate(quinzeDiasAtras.getDate() - 15);
+                    const dataInicio = quinzeDiasAtras.toISOString().split('T')[0];
+                    const visitasUrl = `${API_BASE_URL}/api/registro-rota/sessoes?data_checkin_inicio=${dataInicio}&data_checkin_fim=${hoje}&rep_id=${repId}&status=todos`;
+                    const visitasRes = await syncService.fetchWithTimeout(visitasUrl, { headers }).then(r => r.json());
+                    if (visitasRes.sessoes) {
+                        await offlineDB.setSyncMeta('consultaVisitasCache', {
+                            sessoes: visitasRes.sessoes,
+                            cachedAt: new Date().toISOString(),
+                            repId,
+                            dataInicio,
+                            dataFim: hoje
+                        });
+                    }
+                }
+            } catch (e) {
+                console.warn('[PWA] Erro ao cachear visitas:', e);
+            }
+
             updateDailySyncStatus('Carregando dados para navegação...');
 
             // Recarregar cache em memória com dados recém-sincronizados
@@ -1067,6 +1092,19 @@
             window.app.navigateTo(consultaId, {}, { replaceHistory: true, pwaMode: true, pwaContainer: container });
 
             setTimeout(() => {
+                // Auto-preencher repId nos selects de consulta em modo PWA
+                const repId = typeof authManager !== 'undefined' ? String(authManager.getRepId?.() || '') : '';
+                if (repId) {
+                    container.querySelectorAll('select[id*="Repositor"], select[id*="repositor"]').forEach(sel => {
+                        if (!sel.querySelector(`option[value="${repId}"]`)) {
+                            const opt = document.createElement('option');
+                            opt.value = repId;
+                            opt.textContent = repId;
+                            sel.appendChild(opt);
+                        }
+                        sel.value = repId;
+                    });
+                }
                 ajustarFiltrosPWA(container);
                 esconderSelectRepositor(container);
             }, 500);
@@ -1453,13 +1491,24 @@
         }
 
         // Chamar a lógica original do app.js
-        setTimeout(() => {
+        setTimeout(async () => {
             // Se o modal não foi salvo (primeira navegação ou erro), tentar injetar do DOM
             if (!modalSalvo) {
                 injectCaptureModalInline();
             }
             if (typeof window.app !== 'undefined' && window.app._originalAbrirModalCaptura) {
-                window.app._originalAbrirModalCaptura(repId, clienteId, clienteNome, enderecoLinha, dataVisita, tipoRegistro, enderecoCadastro, novaVisita);
+                await window.app._originalAbrirModalCaptura(repId, clienteId, clienteNome, enderecoLinha, dataVisita, tipoRegistro, enderecoCadastro, novaVisita);
+            }
+            // Checkout: interceptar botão salvar para mostrar overlay bloqueante
+            if (tipoRegistro === 'checkout') {
+                const btnSalvar = document.getElementById('btnSalvarVisita');
+                if (btnSalvar) {
+                    btnSalvar.onclick = async () => {
+                        mostrarOverlaySync('Enviando checkout...');
+                        await window.app.salvarVisita?.();
+                        ocultarOverlaySync();
+                    };
+                }
             }
         }, 50);
     }
@@ -1695,6 +1744,21 @@
     function atendimentoAbrirCheckout() {
         const ctx = currentAtendimentoContext;
         if (!ctx) return;
+
+        // Verificar se há atividades registradas antes de permitir checkout
+        const normId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
+        const cliNorm = normId(ctx.clienteId);
+        const state = window.app?.registroRotaState;
+        const statusCliente = state?.resumoVisitas?.get(cliNorm);
+        const atividadesCount = Number(statusCliente?.atividades_count || 0);
+        const temAtividadesLocal = state?._atividadesLocal?.clienteId === cliNorm;
+        const temCampanhaLocal = (state?._campanhaFotosLocal || []).some(f => normId(f.clienteId) === cliNorm);
+
+        if (atividadesCount <= 0 && !temAtividadesLocal && !temCampanhaLocal) {
+            window.app?.showNotification('Registre ao menos 1 atividade ou campanha antes do checkout.', 'warning');
+            return;
+        }
+
         if (typeof window.app !== 'undefined' && window.app.abrirModalCaptura) {
             window.app.abrirModalCaptura(ctx.repId, ctx.clienteId, ctx.clienteNome, ctx.endereco, ctx.dataVisita, 'checkout', ctx.enderecoCadastro);
         }
@@ -1746,10 +1810,31 @@
     }
 
     /**
+     * Mostra overlay bloqueante de sincronização (impede navegação durante envio)
+     */
+    function mostrarOverlaySync(msg) {
+        ocultarOverlaySync(); // remover se já existir
+        const overlay = document.createElement('div');
+        overlay.id = 'pwaCheckoutOverlay';
+        overlay.innerHTML = `
+            <div class="pwa-checkout-overlay-inner">
+                <div class="pwa-spinner"></div>
+                <p class="pwa-checkout-overlay-msg">${msg || 'Enviando...'}</p>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+    }
+
+    function ocultarOverlaySync() {
+        document.getElementById('pwaCheckoutOverlay')?.remove();
+    }
+
+    /**
      * Chamado pelo fecharModalCaptura após checkout/cancelamento concluído
      * para retornar à tela de atendimento ou à lista.
      */
     function voltarDeCheckinParaAtendimento() {
+        ocultarOverlaySync();
         restoreCaptureModal();
         if (typeof window.app !== 'undefined') {
             try {

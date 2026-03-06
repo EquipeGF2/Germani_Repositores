@@ -12315,6 +12315,21 @@ class App {
         }
 
         this.atualizarGaleriaCaptura();
+
+        // PWA: Restaurar fotos de campanha já salvas (mesmo atendimento)
+        if (tipoPadrao === 'campanha' && window.authManager?.isPWA) {
+            const normId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
+            const fotosPreExistentes = (this.registroRotaState._campanhaFotosLocal || [])
+                .filter(f => normId(f.clienteId) === clienteIdNorm);
+            if (fotosPreExistentes.length > 0) {
+                for (const fotoLocal of fotosPreExistentes) {
+                    const url = URL.createObjectURL(fotoLocal.blob);
+                    this.registroRotaState.fotosCapturadas.push({ blob: fotoLocal.blob, url, _alreadySaved: true });
+                }
+                this.atualizarGaleriaCaptura();
+            }
+        }
+
         this.ajustarAreaCamera();
         await this.ativarCamera();
         this.iniciarCapturaGPS();
@@ -13029,10 +13044,17 @@ class App {
         const btnCapturar = document.getElementById('btnCapturarFoto');
         const btnNova = document.getElementById('btnNovaFoto');
 
-        const total = this.registroRotaState.fotosCapturadas.length;
+        const todasFotos = this.registroRotaState.fotosCapturadas;
+        const total = todasFotos.length;
+        const fotosNovas = todasFotos.filter(f => !f._alreadySaved);
+        const totalSalvas = total - fotosNovas.length;
 
         if (contador) {
-            contador.textContent = `Fotos: ${total}`;
+            if (tipo === 'campanha' && totalSalvas > 0) {
+                contador.textContent = `Fotos: ${fotosNovas.length} novas + ${totalSalvas} registradas`;
+            } else {
+                contador.textContent = `Fotos: ${total}`;
+            }
         }
 
         // galeriaWrapper visibility will be handled by the cameraArea toggle logic below
@@ -13040,13 +13062,21 @@ class App {
         if (galeria) {
             galeria.innerHTML = '';
             // Renderizar galeria para todos os tipos (checkin, checkout, campanha)
-            this.registroRotaState.fotosCapturadas.forEach((foto, index) => {
+            todasFotos.forEach((foto, index) => {
                 const thumb = document.createElement('div');
-                thumb.className = 'camera-thumb';
-                thumb.innerHTML = `
-                    <img src="${foto.url}" alt="Foto ${index + 1}">
-                    <button type="button" data-index="${index}" class="btn-remover-foto">✖</button>
-                `;
+                if (foto._alreadySaved) {
+                    thumb.className = 'camera-thumb camera-thumb-saved';
+                    thumb.innerHTML = `
+                        <img src="${foto.url}" alt="Salva ${index + 1}">
+                        <span class="thumb-saved-badge">&#10003;</span>
+                    `;
+                } else {
+                    thumb.className = 'camera-thumb';
+                    thumb.innerHTML = `
+                        <img src="${foto.url}" alt="Foto ${index + 1}">
+                        <button type="button" data-index="${index}" class="btn-remover-foto">✖</button>
+                    `;
+                }
                 galeria.appendChild(thumb);
             });
 
@@ -13059,7 +13089,9 @@ class App {
         }
 
         if (btnSalvar) {
-            btnSalvar.disabled = !(this.registroRotaState.gpsCoords && total > 0);
+            // Para campanha: só habilitar se houver fotos novas (não só já-salvas)
+            const temFotosParaSalvar = tipo === 'campanha' ? fotosNovas.length > 0 : total > 0;
+            btnSalvar.disabled = !(this.registroRotaState.gpsCoords && temFotosParaSalvar);
         }
 
         if (btnCapturar) {
@@ -13096,6 +13128,7 @@ class App {
 
     removerFotoIndice(indice) {
         const foto = this.registroRotaState.fotosCapturadas[indice];
+        if (foto?._alreadySaved) return; // Fotos já registradas não podem ser removidas
         if (foto?.url) URL.revokeObjectURL(foto.url);
 
         this.registroRotaState.fotosCapturadas.splice(indice, 1);
@@ -13332,7 +13365,8 @@ class App {
             const fotos = this.registroRotaState.fotosCapturadas || [];
             const enderecoResolvido = (this.registroRotaState.enderecoResolvido || atual.enderecoLinha || '').trim();
 
-            if (!fotos.length) {
+            const fotosNovas = fotos.filter(f => !f._alreadySaved);
+            if (!fotosNovas.length) {
                 this.showNotification('Capture uma foto antes de salvar', 'warning');
                 return;
             }
@@ -13404,7 +13438,7 @@ class App {
                 }
             }
 
-            const listaFotos = tipoRegistro === 'campanha' ? fotos : fotos.slice(0, 1);
+            const listaFotos = tipoRegistro === 'campanha' ? fotosNovas : fotosNovas.slice(0, 1);
 
             if (btnSalvar) {
                 btnSalvar.disabled = true;
@@ -14687,7 +14721,24 @@ class App {
 
     async consultarVisitas() {
         try {
-            const repId = document.getElementById('consultaRepositor')?.value;
+            const isPWA = window.authManager?.isPWA;
+            let repId = document.getElementById('consultaRepositor')?.value;
+
+            // PWA: auto-usar repId do usuário logado se select está vazio ou oculto
+            if (!repId && isPWA) {
+                repId = String(window.authManager?.getRepId?.() || '');
+                const selRep = document.getElementById('consultaRepositor');
+                if (selRep && repId) {
+                    if (!selRep.querySelector(`option[value="${repId}"]`)) {
+                        const opt = document.createElement('option');
+                        opt.value = repId;
+                        opt.textContent = repId;
+                        selRep.appendChild(opt);
+                    }
+                    selRep.value = repId;
+                }
+            }
+
             const clienteFiltro = document.getElementById('consultaCliente')?.value;
             const dataInicio = document.getElementById('consultaDataInicio')?.value;
             const dataFim = document.getElementById('consultaDataFim')?.value;
@@ -14703,15 +14754,40 @@ class App {
                 return;
             }
 
-            // Usar rota de sessões para agrupar checkin/checkout
-            const url = new URL(`${this.registroRotaState.backendUrl}/api/registro-rota/sessoes`);
-            url.searchParams.set('data_checkin_inicio', dataInicio);
-            url.searchParams.set('data_checkin_fim', dataFim);
-            if (repId) url.searchParams.set('rep_id', repId);
-            url.searchParams.set('status', status);
+            let sessoes;
 
-            const result = await fetchJson(url.toString());
-            let sessoes = result.sessoes || [];
+            if (!navigator.onLine) {
+                // Modo offline: usar cache das visitas
+                const cache = await window.offlineDB?.getSyncMeta?.('consultaVisitasCache');
+                if (!cache?.sessoes) {
+                    const container = document.getElementById('visitasContainer');
+                    if (container) container.innerHTML = '<p style="text-align:center;color:#f59e0b;padding:20px;">Modo offline — sincronize ao conectar para ver as visitas.</p>';
+                    return;
+                }
+                sessoes = cache.sessoes;
+                this.showNotification('Exibindo dados offline (últimos 15 dias)', 'warning');
+            } else {
+                // Usar rota de sessões para agrupar checkin/checkout
+                const url = new URL(`${this.registroRotaState.backendUrl}/api/registro-rota/sessoes`);
+                url.searchParams.set('data_checkin_inicio', dataInicio);
+                url.searchParams.set('data_checkin_fim', dataFim);
+                if (repId) url.searchParams.set('rep_id', repId);
+                url.searchParams.set('status', status);
+
+                const result = await fetchJson(url.toString());
+                sessoes = result.sessoes || [];
+            }
+
+            // Filtros aplicados manualmente no offline (online o servidor já filtra)
+            if (!navigator.onLine) {
+                if (repId) sessoes = sessoes.filter(s => String(s.rep_id || s.repositor_id || '') === String(repId));
+                if (dataInicio) sessoes = sessoes.filter(s => (s.checkin_at || '').slice(0, 10) >= dataInicio);
+                if (dataFim) sessoes = sessoes.filter(s => (s.checkin_at || '').slice(0, 10) <= dataFim);
+                if (status && status !== 'todos') {
+                    if (status === 'em_atendimento') sessoes = sessoes.filter(s => s.checkin_at && !s.checkout_at);
+                    else if (status === 'finalizado') sessoes = sessoes.filter(s => !!s.checkout_at);
+                }
+            }
 
             if (clienteFiltro) {
                 sessoes = sessoes.filter((sessao) => String(sessao.cliente_id) === String(clienteFiltro));
