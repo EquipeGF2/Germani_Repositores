@@ -14574,11 +14574,10 @@ class App {
                 const fieldId = this.gerarIdCampo(atv);
                 const element = document.getElementById(fieldId);
 
-                if (!element) continue;
-
                 let valor;
                 switch (atv.atv_tipo) {
                     case 'number':
+                        if (!element) continue;
                         valor = parseInt(element.value) || null;
                         break;
                     case 'boolean':
@@ -14587,6 +14586,7 @@ class App {
                         break;
                     case 'checkbox':
                     default:
+                        if (!element) continue;
                         valor = element.checked;
                         break;
                 }
@@ -20695,11 +20695,8 @@ class App {
                 case 'numero':
                     const minAttr = campo.pca_min !== null ? `data-min="${campo.pca_min}"` : '';
                     const maxAttr = campo.pca_max !== null ? `data-max="${campo.pca_max}"` : '';
-                    const rangeHint = (campo.pca_min !== null || campo.pca_max !== null)
-                        ? `<small style="color: #6b7280; display: block; margin-top: 4px;">Valor permitido: ${campo.pca_min ?? 'sem mín.'} até ${campo.pca_max ?? 'sem máx.'}</small>`
-                        : '';
                     // Usa type="text" com inputmode="decimal" para aceitar vírgula como separador decimal
-                    inputHtml = `<input type="text" inputmode="decimal" id="campo_${campo.pca_id}" class="form-control" ${minAttr} ${maxAttr} ${isRequired} placeholder="Ex: 10,5">${rangeHint}`;
+                    inputHtml = `<input type="text" inputmode="decimal" id="campo_${campo.pca_id}" class="form-control" ${minAttr} ${maxAttr} ${isRequired} placeholder="Ex: 10,5">`;
                     break;
                 case 'sim_nao':
                     inputHtml = `
@@ -23001,8 +22998,25 @@ class App {
                 return;
             }
 
-            if (!espacosStatus.espacosPendentes || espacosStatus.espacosPendentes.length === 0) {
-                this.showNotification('Todos os espaços já foram registrados hoje!', 'success');
+            // Se todos os espaços já foram registrados, buscar todos para permitir re-registro
+            let espacosParaRegistrar = espacosStatus.espacosPendentes || [];
+            if (espacosParaRegistrar.length === 0) {
+                try {
+                    const cliNorm = String(clienteId).trim().replace(/\.0$/, '');
+                    const respTodos = await fetchJson(`${API_BASE_URL}/api/espacos/clientes/${encodeURIComponent(cliNorm)}`);
+                    if (respTodos?.data && respTodos.data.length > 0) {
+                        espacosParaRegistrar = respTodos.data.map(e => ({
+                            tipo_espaco_id: e.ces_tipo_espaco_id,
+                            tipo_nome: e.tipo_nome,
+                            quantidade_esperada: e.ces_quantidade,
+                            ces_quantidade: e.ces_quantidade
+                        }));
+                    }
+                } catch (_) {}
+            }
+
+            if (espacosParaRegistrar.length === 0) {
+                this.showNotification('Este cliente não possui espaços cadastrados.', 'warning');
                 return;
             }
 
@@ -23021,7 +23035,7 @@ class App {
             }
 
             // Abrir modal de registro de espaços
-            this.abrirModalRegistroEspacos(repId, clienteId, clienteNome, dataVisita, espacosStatus.espacosPendentes, gpsCoords);
+            this.abrirModalRegistroEspacos(repId, clienteId, clienteNome, dataVisita, espacosParaRegistrar, gpsCoords);
         } catch (error) {
             console.error('Erro ao verificar espaços:', error);
             this.showNotification('Erro ao verificar espaços do cliente.', 'error');
