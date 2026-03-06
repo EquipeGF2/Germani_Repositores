@@ -248,9 +248,15 @@ class AuthManager {
         return { success: true, usuario: this.usuario, fromCache: true };
       }
 
-      // Prioridade 2: Sem cache → tentar servidor (timeout reduzido para 5s)
+      // Prioridade 2: Aguardar pre-warm se servidor ainda não acordou
+      if (!this.servidorPronto && this._preWarmPromise) {
+        console.log('[AUTH] Aguardando servidor acordar antes de tentar login...');
+        try { await this._preWarmPromise; } catch (_) { /* continuar mesmo se falhar */ }
+      }
+
+      // Prioridade 3: Tentar servidor (10s — servidor já deve estar pronto)
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
+      const timeout = setTimeout(() => controller.abort(), 10000);
 
       let response;
       try {

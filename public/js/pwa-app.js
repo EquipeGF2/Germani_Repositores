@@ -77,7 +77,9 @@
         atendimentoAbrirPesquisa,
         atendimentoAbrirCheckout,
         atendimentoCancelar,
-        atualizarEstadoBtnCheckout: _atualizarEstadoBtnCheckout
+        atualizarEstadoBtnCheckout: _atualizarEstadoBtnCheckout,
+        getRoteiroCache: () => cachedData.roteiro || [],
+        getClientesCache: () => cachedData.clientes || []
     };
 
     async function init() {
@@ -500,6 +502,10 @@
             if (typeof syncService !== 'undefined') {
                 syncService.enviarPendentes().catch(e => console.warn('[PWA] Erro envio pendentes:', e));
             }
+            // Sincronizar despesas de viagem salvas offline
+            if (typeof app !== 'undefined' && typeof app.syncDespesasPendentes === 'function') {
+                app.syncDespesasPendentes().catch(e => console.warn('[PWA] Erro sync despesas offline:', e));
+            }
 
             setDailySyncStep(3, 'done');
             updateDailySyncStatus('Pronto!');
@@ -564,6 +570,10 @@
                 await loadLocalData();
                 localStorage.setItem('pwa_ultimo_sync_dia', getHojeBR());
                 localStorage.setItem('ultimo_sync', new Date().toISOString());
+                // Sincronizar despesas de viagem salvas offline
+                if (typeof app !== 'undefined' && typeof app.syncDespesasPendentes === 'function') {
+                    await app.syncDespesasPendentes().catch(e => console.warn('[PWA] Erro sync despesas:', e));
+                }
                 showSyncIndicator(false);
                 showToast('Sincronizado com sucesso');
             } else {
