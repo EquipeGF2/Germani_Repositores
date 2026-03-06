@@ -13575,6 +13575,53 @@ class App {
                 btnSalvar.textContent = tipoRegistro === 'checkout' ? 'Enviando checkout...' : 'Enviando...';
             }
 
+            // Helper: atualizar mensagem do overlay de checkout (PWA)
+            const atualizarOverlayCheckout = (msg) => {
+                const el = document.querySelector('#pwaCheckoutOverlay .pwa-checkout-overlay-msg');
+                if (el) el.textContent = msg;
+            };
+
+            // === PWA OFFLINE: Checkout sem internet → salvar localmente ===
+            if (isPWA && tipoRegistro === 'checkout' && !navigator.onLine) {
+                try {
+                    if (window.offlineDB) {
+                        await window.offlineDB.setSyncMeta(`pendingCheckout_${clienteId}`, {
+                            repId, clienteId, clienteNome, dataVisita,
+                            gpsCoords: { ...gpsCoords },
+                            enderecoResolvido,
+                            timestamp: new Date().toISOString(),
+                            checkinLocal: this.registroRotaState._checkinLocal
+                                ? { ...this.registroRotaState._checkinLocal, fotoBlob: this.registroRotaState._checkinLocal.fotoBlob }
+                                : null,
+                            atividadesLocal: this.registroRotaState._atividadesLocal || null,
+                            campanhaFotos: this.registroRotaState._campanhaFotosLocal || null,
+                            checkoutFotoBlob: fotosNovas[0]?.blob || null
+                        });
+                    }
+                } catch (e) {
+                    console.warn('[PWA] Erro ao salvar checkout offline:', e);
+                }
+                // Atualizar status local para finalizado (otimista)
+                this.atualizarStatusClienteLocal(clienteId, {
+                    status: 'finalizado',
+                    checkout_data_hora: new Date().toISOString(),
+                    rv_id: rvSessaoId,
+                    atividades_count: statusCliente?.atividades_count,
+                    rep_id: repId
+                });
+                // Limpar state local offline
+                this.registroRotaState._checkinLocal = null;
+                try { localStorage.removeItem('PWA_CHECKIN_LOCAL_META'); } catch (_) {}
+                this.registroRotaState._atividadesLocal = null;
+                this.registroRotaState._campanhaFotosLocal = null;
+
+                this.showNotification('Offline — checkout salvo! Será enviado ao conectar à internet.', 'success');
+                this._sessaoCache = {};
+                await this.fecharModalCaptura();
+                this.atualizarCardCliente(clienteId);
+                return;
+            }
+
             // === PWA: Antes do checkout, enviar checkin local pendente ===
             let rvIdResolvido = rvSessaoId;
             if (isPWA && tipoRegistro === 'checkout' && this.registroRotaState._checkinLocal) {
@@ -13583,6 +13630,7 @@ class App {
                     if (btnSalvar) btnSalvar.textContent = 'Enviando checkout...';
 
                     // 1. Enviar checkin pendente ao servidor
+                    atualizarOverlayCheckout('Enviando check-in...');
                     const checkinForm = new FormData();
                     checkinForm.append('rep_id', checkin.repId);
                     checkinForm.append('cliente_id', checkin.clienteId);
@@ -13618,7 +13666,8 @@ class App {
 
                     // 2. Se há atividades locais pendentes, enviar
                     if (this.registroRotaState._atividadesLocal?.clienteId === clienteId) {
-                        if (btnSalvar) btnSalvar.textContent = 'Enviando checkout...';
+                        if (btnSalvar) btnSalvar.textContent = 'Enviando atividades...';
+                        atualizarOverlayCheckout('Enviando atividades...');
                         const atv = this.registroRotaState._atividadesLocal;
                         try {
                             await fetch(`${this.registroRotaState.backendUrl}/api/registro-rota/sessoes/${rvCheckin}/servicos`, {
@@ -13637,6 +13686,7 @@ class App {
                         const fotosLocais = this.registroRotaState._campanhaFotosLocal.filter(f => f.clienteId === clienteId);
                         if (fotosLocais.length > 0) {
                             if (btnSalvar) btnSalvar.textContent = `Enviando campanha (${fotosLocais.length} fotos)...`;
+                            atualizarOverlayCheckout(`Enviando campanha (${fotosLocais.length} fotos)...`);
                             try {
                                 const campanhaForm = new FormData();
                                 campanhaForm.append('rep_id', repId);
@@ -13667,8 +13717,11 @@ class App {
                     this.registroRotaState._checkinLocal = null;
                     try { localStorage.removeItem('PWA_CHECKIN_LOCAL_META'); } catch (_) {}
                     if (btnSalvar) btnSalvar.textContent = 'Enviando checkout...';
+                    atualizarOverlayCheckout('Enviando checkout...');
                 }
             }
+
+            if (tipoRegistro === 'checkout') atualizarOverlayCheckout('Enviando checkout...');
 
             const formData = new FormData();
             formData.append('rep_id', repId);
@@ -14473,11 +14526,25 @@ class App {
             selectCliente.disabled = true;
             selectCliente.innerHTML = '<option value="">Carregando clientes...</option>';
 
-            const url = new URL(`${this.registroRotaState.backendUrl}/api/registro-rota/roteiro/clientes`);
-            url.searchParams.set('repositor_id', repositorId);
+            let clientes = [];
 
-            const data = await fetchJson(url);
-            const clientes = data.clientes || [];
+            if (!navigator.onLine) {
+                // Modo offline: usar clientes do IndexedDB (sincronizados na última sincronização)
+                try {
+                    const clientesOffline = await window.offlineDB?.getClientes?.() || [];
+                    clientes = clientesOffline.map(c => ({
+                        cliente_codigo: c.cli_codigo || c.cli_id || '',
+                        cliente_nome: c.cli_nome || c.cli_razao_social || c.cli_fantasia || ''
+                    })).filter(c => c.cliente_codigo);
+                } catch (e) {
+                    console.warn('Erro ao carregar clientes offline:', e);
+                }
+            } else {
+                const url = new URL(`${this.registroRotaState.backendUrl}/api/registro-rota/roteiro/clientes`);
+                url.searchParams.set('repositor_id', repositorId);
+                const data = await fetchJson(url);
+                clientes = data.clientes || [];
+            }
 
             this.consultaVisitasState.clientesRoteiro = clientes;
             this.consultaVisitasState.repositorSelecionado = repositorId;
@@ -14497,7 +14564,9 @@ class App {
             console.error('Erro ao carregar clientes do roteiro:', error);
             selectCliente.innerHTML = '<option value="">Nenhum cliente carregado</option>';
             selectCliente.disabled = false;
-            this.showNotification('Não foi possível carregar a lista de clientes para o repositor selecionado.', 'warning');
+            if (navigator.onLine) {
+                this.showNotification('Não foi possível carregar a lista de clientes.', 'warning');
+            }
         }
     }
 
@@ -14526,7 +14595,21 @@ class App {
 
         if (selectRepositor) {
             selectRepositor.onchange = (event) => this.carregarClientesRoteiroPorRep(event.target.value);
-            this.carregarClientesRoteiroPorRep(selectRepositor.value || '');
+            // PWA: auto-usar repId do usuário logado para carregar clientes
+            let repIdInicial = selectRepositor.value || '';
+            if (!repIdInicial && window.authManager?.isPWA) {
+                repIdInicial = String(window.authManager?.getRepId?.() || '');
+                if (repIdInicial) {
+                    if (!selectRepositor.querySelector(`option[value="${repIdInicial}"]`)) {
+                        const opt = document.createElement('option');
+                        opt.value = repIdInicial;
+                        opt.textContent = repIdInicial;
+                        selectRepositor.appendChild(opt);
+                    }
+                    selectRepositor.value = repIdInicial;
+                }
+            }
+            this.carregarClientesRoteiroPorRep(repIdInicial);
         }
     }
 
