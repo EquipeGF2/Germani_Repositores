@@ -13500,9 +13500,9 @@ class App {
                 y += lineH;
             }
 
-            // Otimização: reduzir qualidade JPEG para 0.75 (ainda boa, mas menor)
+            // Otimização: reduzir qualidade JPEG para 0.65 (carregamento mais rápido em mobile)
             const stampedBlob = await new Promise((resolve) => {
-                canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.75);
+                canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.65);
             });
 
             return stampedBlob || blob;
@@ -13908,10 +13908,18 @@ class App {
 
             arquivos.forEach((arquivo) => formData.append('fotos', arquivo));
 
-            const resposta = await fetchJson(`${this.registroRotaState.backendUrl}/api/registro-rota/visitas`, {
-                method: 'POST',
-                body: formData
-            });
+            const uploadController = new AbortController();
+            const uploadTimeout = setTimeout(() => uploadController.abort(), 45000); // 45s timeout
+            let resposta;
+            try {
+                resposta = await fetchJson(`${this.registroRotaState.backendUrl}/api/registro-rota/visitas`, {
+                    method: 'POST',
+                    body: formData,
+                    signal: uploadController.signal
+                });
+            } finally {
+                clearTimeout(uploadTimeout);
+            }
             const dataRegistro = resposta?.data_hora || new Date().toISOString();
             const rvResposta = resposta?.rv_id || resposta?.sessao_id || rvSessaoId;
             const statusResposta = resposta?.__status || 200;
@@ -14160,13 +14168,13 @@ class App {
                 rv_sessao_id: sessaoIdLocal,
                 cliente_id: clienteIdNorm,
                 cliente_nome: clienteNome,
-                qtd_frentes: atvLocal?.payload?.qtd_frentes || null,
-                usou_merchandising: atvLocal?.payload?.usou_merchandising || null,
-                serv_abastecimento: atvLocal?.payload?.serv_abastecimento || null,
-                serv_espaco_loja: atvLocal?.payload?.serv_espaco_loja || null,
-                serv_ruptura_loja: atvLocal?.payload?.serv_ruptura_loja || null,
-                serv_pontos_extras: atvLocal?.payload?.serv_pontos_extras || null,
-                qtd_pontos_extras: atvLocal?.payload?.qtd_pontos_extras || null
+                qtd_frentes: atvLocal?.payload?.qtd_frentes ?? null,
+                usou_merchandising: atvLocal?.payload?.usou_merchandising ?? null,
+                serv_abastecimento: atvLocal?.payload?.serv_abastecimento ?? null,
+                serv_espaco_loja: atvLocal?.payload?.serv_espaco_loja ?? null,
+                serv_ruptura_loja: atvLocal?.payload?.serv_ruptura_loja ?? null,
+                serv_pontos_extras: atvLocal?.payload?.serv_pontos_extras ?? null,
+                qtd_pontos_extras: atvLocal?.payload?.qtd_pontos_extras ?? null
             };
         } else if (isPWA && !navigator.onLine) {
             // PWA offline: tenta usar os dados em cache ou criar mock se sabemos que está aberto
@@ -14176,13 +14184,13 @@ class App {
                 rv_sessao_id: statusLocal?.rv_id || `LOCAL_TEMP_${Date.now()}`,
                 cliente_id: clienteIdNorm,
                 cliente_nome: clienteNome,
-                qtd_frentes: atvLocal?.payload?.qtd_frentes || null,
-                usou_merchandising: atvLocal?.payload?.usou_merchandising || null,
-                serv_abastecimento: atvLocal?.payload?.serv_abastecimento || null,
-                serv_espaco_loja: atvLocal?.payload?.serv_espaco_loja || null,
-                serv_ruptura_loja: atvLocal?.payload?.serv_ruptura_loja || null,
-                serv_pontos_extras: atvLocal?.payload?.serv_pontos_extras || null,
-                qtd_pontos_extras: atvLocal?.payload?.qtd_pontos_extras || null
+                qtd_frentes: atvLocal?.payload?.qtd_frentes ?? null,
+                usou_merchandising: atvLocal?.payload?.usou_merchandising ?? null,
+                serv_abastecimento: atvLocal?.payload?.serv_abastecimento ?? null,
+                serv_espaco_loja: atvLocal?.payload?.serv_espaco_loja ?? null,
+                serv_ruptura_loja: atvLocal?.payload?.serv_ruptura_loja ?? null,
+                serv_pontos_extras: atvLocal?.payload?.serv_pontos_extras ?? null,
+                qtd_pontos_extras: atvLocal?.payload?.qtd_pontos_extras ?? null
             };
         } else {
             // Buscar sessão ativa - usar fallback de timeout se demorar
@@ -14193,21 +14201,39 @@ class App {
                 sessaoAberta = await this.buscarSessaoAberta(repId, dataPlanejada, true, controller.signal);
                 clearTimeout(timeoutId);
             } catch (e) {
-                // Em caso de timeout, confia no cache
+                // Em caso de timeout, confia no cache local
                 const atvLocal = this.registroRotaState._atividadesLocal || {};
                 sessaoAberta = {
                     sessao_id: statusLocal?.rv_id || `LOCAL_TEMP_${Date.now()}`,
                     rv_sessao_id: statusLocal?.rv_id || `LOCAL_TEMP_${Date.now()}`,
                     cliente_id: clienteIdNorm,
                     cliente_nome: clienteNome,
-                    qtd_frentes: atvLocal?.payload?.qtd_frentes || null,
-                    usou_merchandising: atvLocal?.payload?.usou_merchandising || null,
-                    serv_abastecimento: atvLocal?.payload?.serv_abastecimento || null,
-                    serv_espaco_loja: atvLocal?.payload?.serv_espaco_loja || null,
-                    serv_ruptura_loja: atvLocal?.payload?.serv_ruptura_loja || null,
-                    serv_pontos_extras: atvLocal?.payload?.serv_pontos_extras || null,
-                    qtd_pontos_extras: atvLocal?.payload?.qtd_pontos_extras || null
+                    qtd_frentes: atvLocal?.payload?.qtd_frentes ?? null,
+                    usou_merchandising: atvLocal?.payload?.usou_merchandising ?? null,
+                    serv_abastecimento: atvLocal?.payload?.serv_abastecimento ?? null,
+                    serv_espaco_loja: atvLocal?.payload?.serv_espaco_loja ?? null,
+                    serv_ruptura_loja: atvLocal?.payload?.serv_ruptura_loja ?? null,
+                    serv_pontos_extras: atvLocal?.payload?.serv_pontos_extras ?? null,
+                    qtd_pontos_extras: atvLocal?.payload?.qtd_pontos_extras ?? null
                 };
+            }
+
+            // PWA: sobrepor com dados locais salvos se existirem (preserva campos no re-open)
+            if (isPWA) {
+                const atvLocal = this.registroRotaState._atividadesLocal;
+                if (atvLocal?.clienteId === clienteIdNorm && atvLocal.payload) {
+                    sessaoAberta = sessaoAberta || { sessao_id: statusLocal?.rv_id, cliente_id: clienteIdNorm };
+                    sessaoAberta = {
+                        ...sessaoAberta,
+                        qtd_frentes: atvLocal.payload.qtd_frentes ?? sessaoAberta.qtd_frentes ?? null,
+                        usou_merchandising: atvLocal.payload.usou_merchandising ?? sessaoAberta.usou_merchandising ?? null,
+                        serv_abastecimento: atvLocal.payload.serv_abastecimento ?? sessaoAberta.serv_abastecimento ?? null,
+                        serv_espaco_loja: atvLocal.payload.serv_espaco_loja ?? sessaoAberta.serv_espaco_loja ?? null,
+                        serv_ruptura_loja: atvLocal.payload.serv_ruptura_loja ?? sessaoAberta.serv_ruptura_loja ?? null,
+                        serv_pontos_extras: atvLocal.payload.serv_pontos_extras ?? sessaoAberta.serv_pontos_extras ?? null,
+                        qtd_pontos_extras: atvLocal.payload.qtd_pontos_extras ?? sessaoAberta.qtd_pontos_extras ?? null
+                    };
+                }
             }
 
             // Se não encontrou pela data, buscar qualquer atendimento aberto (pode ser de outro dia)
@@ -14651,6 +14677,16 @@ class App {
                 if (!response.ok) {
                     const error = await this.extrairMensagemErro(response);
                     throw new Error(error || 'Erro ao salvar atividades');
+                }
+
+                // PWA: salvar localmente também para preservar campos ao re-abrir o formulário
+                if (isPWA) {
+                    this.registroRotaState._atividadesLocal = {
+                        sessaoId: sessao.sessaoId,
+                        clienteId: sessao.clienteId,
+                        repId: sessao.repId,
+                        payload
+                    };
                 }
             }
 
