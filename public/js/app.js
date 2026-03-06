@@ -7953,8 +7953,6 @@ class App {
 
         const diaSemana = document.getElementById('filtro_dia_consulta_roteiro')?.value || '';
         const cidade = (document.getElementById('filtro_cidade_consulta_roteiro')?.value || '').trim();
-        const dataInicio = document.getElementById('filtro_data_inicio_consulta_roteiro')?.value || '';
-        const dataFim = document.getElementById('filtro_data_fim_consulta_roteiro')?.value || '';
         const supervisor = document.getElementById('filtro_supervisor_consulta_roteiro')?.value || '';
         const representante = document.getElementById('filtro_representante_consulta_roteiro')?.value || '';
 
@@ -7963,8 +7961,8 @@ class App {
             repositorIds: repositorId ? [repositorId] : [],
             diaSemana: diaSemana || '',
             cidade: cidade ? cidade.toUpperCase() : '',
-            dataInicio: dataInicio || null,
-            dataFim: dataFim || null,
+            dataInicio: null,
+            dataFim: null,
             supervisor,
             representante
         };
@@ -10797,20 +10795,60 @@ class App {
 
         let roteiro, resumo, atendimentosAbertos;
 
-        // Helper: carregar roteiro offline do IndexedDB
+        // Helper: carregar roteiro offline do IndexedDB + cache em memória (com enriquecimento de dados do cliente)
         const carregarRoteiroOffline = async () => {
-            if (typeof window.offlineDB === 'undefined') return [];
             try {
-                await window.offlineDB.init();
-                const todos = await window.offlineDB.getAll('roteiro');
+                // 1. Tentar IndexedDB
+                let todos = [];
+                if (typeof window.offlineDB !== 'undefined') {
+                    await window.offlineDB.init();
+                    todos = await window.offlineDB.getAll('roteiro').catch(() => []);
+                }
+
+                // 2. Fallback para cache em memória (pwa-app.js)
+                if (todos.length === 0 && typeof window.pwaApp?.getRoteiroCache === 'function') {
+                    todos = window.pwaApp.getRoteiroCache();
+                }
+
+                if (todos.length === 0) return [];
+
+                // 3. Filtrar por dia da semana (fallback: todos se nenhum bater)
                 const filtrado = todos.filter(r =>
                     (r.dia_semana || '').toLowerCase() === diaSemana
                 );
-                // Normalizar campo cli_codigo para compatibilidade
-                return (filtrado.length > 0 ? filtrado : todos).map(r => ({
-                    ...r,
-                    cli_codigo: r.cli_codigo || r.cliente_id
-                }));
+                const base = filtrado.length > 0 ? filtrado : todos;
+
+                // 4. Construir mapa de clientes para enriquecimento
+                let clientesMap = {};
+                try {
+                    let clientes = [];
+                    if (typeof window.offlineDB !== 'undefined') {
+                        clientes = await window.offlineDB.getAll('clientes').catch(() => []);
+                    }
+                    if (clientes.length === 0 && typeof window.pwaApp?.getClientesCache === 'function') {
+                        clientes = window.pwaApp.getClientesCache();
+                    }
+                    clientes.forEach(c => {
+                        const id = String(c.cli_codigo || c.cliente_id || '').trim();
+                        if (id) clientesMap[id] = c;
+                    });
+                } catch (_) { /* sem enriquecimento de clientes */ }
+
+                // 5. Normalizar e enriquecer cada item com dados do cliente
+                return base.map(r => {
+                    const cliId = String(r.cli_codigo || r.cliente_id || '').trim();
+                    const cli = clientesMap[cliId] || {};
+                    return {
+                        ...r,
+                        cli_codigo: r.cli_codigo || r.cliente_id,
+                        cli_nome: r.cli_nome || cli.cli_nome || '',
+                        cli_cidade: r.cli_cidade || cli.cli_cidade || '',
+                        cli_estado: r.cli_estado || cli.cli_estado || '',
+                        cli_endereco: r.cli_endereco || cli.cli_endereco || '',
+                        cli_numero: r.cli_numero || cli.cli_numero || '',
+                        cli_bairro: r.cli_bairro || cli.cli_bairro || ''
+                    };
+                });
             } catch (_) { return []; }
         };
 
@@ -16000,6 +16038,56 @@ class App {
         this.abrirCameraRubrica(rubricaId);
     }
 
+    /**
+     * Sincronizar despesas de viagem salvas offline quando a conexão retornar
+     */
+    async syncDespesasPendentes() {
+        if (!navigator.onLine) return;
+        if (typeof window.offlineDB === 'undefined') return;
+        try {
+            await window.offlineDB.init();
+            const pending = await window.offlineDB.getSyncMeta('pendingDespesas') || [];
+            if (pending.length === 0) return;
+
+            console.log(`[SYNC] Sincronizando ${pending.length} despesa(s) offline...`);
+            const remaining = [];
+
+            for (const despesa of pending) {
+                try {
+                    const formData = new FormData();
+                    formData.append('repositor_id', despesa.repositorId);
+                    formData.append('dct_id', despesa.tipoId);
+                    if (despesa.observacao) formData.append('observacao', despesa.observacao);
+
+                    // Converter base64 de volta para File
+                    for (const foto of (despesa.fotos || [])) {
+                        const res = await fetch(foto.b64);
+                        const blob = await res.blob();
+                        formData.append('arquivos', new File([blob], foto.name || 'foto.jpg', { type: foto.type || 'image/jpeg' }));
+                    }
+
+                    await fetchJson(`${API_BASE_URL}/api/documentos/upload-multiplo`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    console.log('[SYNC] Despesa sincronizada:', despesa.id);
+                } catch (err) {
+                    console.error('[SYNC] Erro ao sincronizar despesa:', despesa.id, err);
+                    remaining.push(despesa);
+                }
+            }
+
+            await window.offlineDB.setSyncMeta('pendingDespesas', remaining);
+            const synced = pending.length - remaining.length;
+            if (synced > 0) {
+                console.log(`[SYNC] ${synced} despesa(s) sincronizada(s)`);
+                this.showNotification(`${synced} despesa(s) offline sincronizada(s) com sucesso!`, 'success');
+            }
+        } catch (e) {
+            console.error('[SYNC] Erro geral ao sincronizar despesas pendentes:', e);
+        }
+    }
+
     async abrirCameraRubrica(rubricaId) {
         const rubrica = this.documentosState.rubricas?.find(r => r.id === rubricaId);
         if (!rubrica) return;
@@ -16788,6 +16876,49 @@ class App {
 
                 // Adicionar dados estruturados à observação
                 observacao = rubricasJson + (observacao ? `\n\nObs: ${observacao}` : '');
+
+                // Se offline, salvar na fila local e retornar sem enviar ao servidor
+                if (!navigator.onLine) {
+                    try {
+                        await window.offlineDB.init();
+                        const pending = await window.offlineDB.getSyncMeta('pendingDespesas') || [];
+                        // Converter fotos (File) para base64 para armazenar no IndexedDB
+                        const fotosB64 = [];
+                        for (const rubrica of rubricasComValor) {
+                            for (const foto of (rubrica.fotos || [])) {
+                                if (foto.file) {
+                                    const b64 = await new Promise(resolve => {
+                                        const reader = new FileReader();
+                                        reader.onload = e => resolve(e.target.result);
+                                        reader.readAsDataURL(foto.file);
+                                    });
+                                    fotosB64.push({ rubricaCodigo: rubrica.codigo, b64, name: foto.file.name || 'foto.jpg', type: foto.file.type || 'image/jpeg' });
+                                }
+                            }
+                        }
+                        pending.push({
+                            id: Date.now(),
+                            repositorId,
+                            tipoId,
+                            observacao,
+                            rubricas: rubricasData,
+                            total: totalDespesas,
+                            fotos: fotosB64,
+                            createdAt: new Date().toISOString(),
+                            syncStatus: 'pending'
+                        });
+                        await window.offlineDB.setSyncMeta('pendingDespesas', pending);
+                        this.showNotification('Despesa salva offline! Será enviada automaticamente quando houver conexão.', 'success');
+                    } catch (e) {
+                        console.error('[OFFLINE] Erro ao salvar despesa offline:', e);
+                        this.showNotification('Erro ao salvar despesa offline', 'error');
+                    }
+                    // Limpar formulário
+                    this.documentosState.rubricas = [];
+                    await this.carregarRubricasGasto();
+                    this.atualizarTotalDespesas();
+                    return;
+                }
             } else {
                 // Upload normal - usar fila de uploads
                 arquivosParaEnvio = this.documentosState.filaUploads.filter(i => i.status !== 'sucesso');

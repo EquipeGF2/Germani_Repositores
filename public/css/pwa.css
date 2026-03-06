@@ -1861,8 +1861,35 @@ body.pwa-mode #modalCameraDocumentos .captura-thumbs-wrapper {
     flex-shrink: 0 !important;
     padding: 10px !important;
     background: #fff;
-    max-height: 150px;
-    overflow-y: auto;
+    max-height: 110px;
+    overflow: hidden;
+}
+
+/* Thumbnails horizontais para câmera de documentos (igual estilo campanha) */
+body.pwa-mode #modalCameraDocumentos .camera-thumbs {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    gap: 8px !important;
+    grid-template-columns: unset !important;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+}
+
+body.pwa-mode #modalCameraDocumentos .camera-thumbs::-webkit-scrollbar {
+    display: none;
+}
+
+body.pwa-mode #modalCameraDocumentos .camera-thumb {
+    width: 80px !important;
+    height: 80px !important;
+    min-width: 80px !important;
+    flex-shrink: 0 !important;
+    aspect-ratio: 1 !important;
+    object-fit: cover !important;
+    border-radius: 6px !important;
 }
 
 body.pwa-mode #modalCameraDocumentos .captura-hint {
