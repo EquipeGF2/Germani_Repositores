@@ -240,8 +240,17 @@ class AuthManager {
     try {
       console.log('[AUTH] Tentando login PWA...', { username });
 
+      // Prioridade 1: Cache offline válido → login instantâneo (sem esperar servidor)
+      if (this.tentarLoginOffline(username)) {
+        console.log('[AUTH] Login instantâneo via cache offline');
+        // Tentar renovar token em background sem bloquear a UI
+        this._renovarTokenBackground(username, password);
+        return { success: true, usuario: this.usuario, fromCache: true };
+      }
+
+      // Prioridade 2: Sem cache → tentar servidor (timeout reduzido para 5s)
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+      const timeout = setTimeout(() => controller.abort(), 5000);
 
       let response;
       try {
@@ -280,6 +289,34 @@ class AuthManager {
       }
       console.error('[AUTH] Erro no login PWA:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Renova token em background sem bloquear a UI (chamado após login pelo cache)
+   */
+  async _renovarTokenBackground(username, password) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      const response = await fetch(`${this.apiBaseUrl}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.ok && data.token) {
+          const permissoes = data.permissoes || data.usuario?.permissoes || [];
+          const telas = data.telas || [];
+          this.salvarSessao(data.token, data.usuario, permissoes, telas);
+          console.log('[AUTH] Token renovado em background');
+        }
+      }
+    } catch (_) {
+      // Silencioso — não afeta o usuário que já está logado pelo cache
     }
   }
 
@@ -457,8 +494,23 @@ class AuthManager {
     if (appScreen) appScreen.classList.add('hidden');
     if (pwaScreen) pwaScreen.classList.add('hidden');
 
-    // Pre-warm do servidor em background enquanto o usuário digita
-    this._iniciarPreWarmComRetry();
+    // Se há cache offline válido, mostrar status positivo e não forçar pre-warm
+    const cacheStr = localStorage.getItem('auth_offline_cache');
+    const temCache = (() => {
+      try {
+        const c = JSON.parse(cacheStr || '');
+        return c?.token && (Date.now() - c.savedAt < 24 * 60 * 60 * 1000);
+      } catch { return false; }
+    })();
+
+    if (temCache) {
+      // Cache disponível: pré-warm silencioso sem bloquear ou assustar o usuário
+      this.atualizarStatusServidorPWA('ready');
+      this.preWarmServer().catch(() => {}); // silencioso
+    } else {
+      // Sem cache: pre-warm com indicador de progresso (servidor necessário para login)
+      this._iniciarPreWarmComRetry();
+    }
   }
 
   /**

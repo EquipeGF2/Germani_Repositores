@@ -76,7 +76,8 @@
         atendimentoAbrirCampanha,
         atendimentoAbrirPesquisa,
         atendimentoAbrirCheckout,
-        atendimentoCancelar
+        atendimentoCancelar,
+        atualizarEstadoBtnCheckout: _atualizarEstadoBtnCheckout
     };
 
     async function init() {
@@ -1641,7 +1642,7 @@
                         <span class="pwa-atendimento-action-icon">&#128196;</span>
                         <span>Pesquisa</span>
                     </button>
-                    <button class="pwa-atendimento-action-btn pwa-atendimento-action-checkout" onclick="pwaApp.atendimentoAbrirCheckout()">
+                    <button id="pwaAtendimentoBtnCheckout" class="pwa-atendimento-action-btn pwa-atendimento-action-checkout pwa-checkout-bloqueado" onclick="pwaApp.atendimentoAbrirCheckout()" disabled>
                         <span class="pwa-atendimento-action-icon">&#128682;</span>
                         <span>Checkout</span>
                     </button>
@@ -1654,6 +1655,8 @@
                 </div>
             </div>
         `;
+        // Atualizar estado do botão checkout com base no que já foi registrado
+        _atualizarEstadoBtnCheckout();
     }
 
     /**
@@ -1696,6 +1699,25 @@
             btn.classList.remove('hidden');
         } else {
             btn.classList.add('hidden');
+        }
+    }
+
+    function _atualizarEstadoBtnCheckout() {
+        const btn = document.getElementById('pwaAtendimentoBtnCheckout');
+        if (!btn || !currentAtendimentoContext) return;
+        const normId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
+        const cliNorm = normId(currentAtendimentoContext.clienteId);
+        const state = window.app?.registroRotaState;
+        const statusCliente = state?.resumoVisitas?.get(cliNorm);
+        const atividadesCount = Number(statusCliente?.atividades_count || 0);
+        const temAtividadesLocal = state?._atividadesLocal?.clienteId === cliNorm;
+        const temCampanhaLocal = (state?._campanhaFotosLocal || []).some(f => normId(f.clienteId) === cliNorm);
+        const liberado = atividadesCount > 0 || temAtividadesLocal || temCampanhaLocal;
+        btn.disabled = !liberado;
+        if (liberado) {
+            btn.classList.remove('pwa-checkout-bloqueado');
+        } else {
+            btn.classList.add('pwa-checkout-bloqueado');
         }
     }
 

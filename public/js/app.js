@@ -8066,6 +8066,58 @@ class App {
             return;
         }
 
+        // Offline: usar dados do IndexedDB
+        if (!navigator.onLine) {
+            try {
+                let offlineData = [];
+                if (typeof window.offlineDB !== 'undefined') {
+                    await window.offlineDB.init();
+                    offlineData = await window.offlineDB.getAll('roteiro').catch(() => []);
+                }
+                const repIdLogado = window.authManager?.getRepId?.();
+                const nomeLogado = window.authManager?.usuario?.nome || '';
+                // Mapear itens do offlineDB para o formato esperado pelo renderConsultaRoteiro
+                let registrosOffline = offlineData.map(r => ({
+                    rot_repositor_id: r.rep_id || repIdLogado,
+                    rot_dia_semana: r.dia_semana || '',
+                    rot_cidade: r.cli_cidade || r.cidade || '',
+                    rot_ordem_cidade: r.rot_ordem_cidade || 0,
+                    rot_cliente_codigo: r.cli_codigo || r.cliente_id || '',
+                    rot_ordem_visita: r.rot_ordem_visita || 0,
+                    repo_cod: r.rep_id || repIdLogado,
+                    repo_nome: nomeLogado,
+                    cliente_dados: {
+                        nome: r.cli_nome || r.nome || '',
+                        fantasia: r.cli_fantasia || r.fantasia || '',
+                        endereco: r.cli_endereco || r.endereco || '',
+                        bairro: r.cli_bairro || r.bairro || '',
+                        grupo_desc: r.grupo_desc || ''
+                    }
+                }));
+                // Filtrar por repositor
+                if (filtros.repositorId) {
+                    registrosOffline = registrosOffline.filter(r => String(r.rot_repositor_id) === String(filtros.repositorId));
+                }
+                // Filtrar por dia da semana
+                if (filtros.diaSemana) {
+                    registrosOffline = registrosOffline.filter(r => (r.rot_dia_semana || '').toLowerCase() === filtros.diaSemana.toLowerCase());
+                }
+                // Filtrar por cidade
+                if (filtros.cidade) {
+                    registrosOffline = registrosOffline.filter(r => (r.rot_cidade || '').toUpperCase().includes(filtros.cidade));
+                }
+                this.resultadosConsultaRoteiro = registrosOffline;
+                this.renderConsultaRoteiro(registrosOffline);
+                this.atualizarEstadoBotoesConsultaRoteiro();
+                if (registrosOffline.length === 0) {
+                    this.showNotification('Modo offline — dados limitados ao cache local.', 'info');
+                }
+            } catch (error) {
+                this.showNotification('Erro ao consultar roteiro offline: ' + error.message, 'error');
+            }
+            return;
+        }
+
         try {
             const registros = await db.consultarRoteiro(filtros);
             this.resultadosConsultaRoteiro = registros;
@@ -8079,6 +8131,13 @@ class App {
 
     async carregarRepositoresCache() {
         if (this.repositoresCache && this.repositoresCache.length) return this.repositoresCache;
+        if (!navigator.onLine) {
+            // Offline: usar repositor do usuário logado como fallback
+            const repIdLogado = window.authManager?.getRepId?.();
+            const nomeLogado = window.authManager?.usuario?.nome || '';
+            this.repositoresCache = repIdLogado ? [{ repo_cod: repIdLogado, repo_nome: nomeLogado }] : [];
+            return this.repositoresCache;
+        }
 
         try {
             const repositores = await db.getAllRepositors();
@@ -8104,6 +8163,7 @@ class App {
     }
 
     async atualizarCidadesConsultaRoteiro() {
+        if (!navigator.onLine) return; // Offline: não tentar carregar cidades do servidor
         const selectCidade = document.getElementById('filtro_cidade_consulta_roteiro');
         if (!selectCidade) return;
 
@@ -10737,9 +10797,30 @@ class App {
 
         let roteiro, resumo, atendimentosAbertos;
 
+        // Helper: carregar roteiro offline do IndexedDB
+        const carregarRoteiroOffline = async () => {
+            if (typeof window.offlineDB === 'undefined') return [];
+            try {
+                await window.offlineDB.init();
+                const todos = await window.offlineDB.getAll('roteiro');
+                const filtrado = todos.filter(r =>
+                    (r.dia_semana || '').toLowerCase() === diaSemana
+                );
+                // Normalizar campo cli_codigo para compatibilidade
+                return (filtrado.length > 0 ? filtrado : todos).map(r => ({
+                    ...r,
+                    cli_codigo: r.cli_codigo || r.cliente_id
+                }));
+            } catch (_) { return []; }
+        };
+
         if (cacheValido) {
             // PWA: reutilizar dados em cache - navegação instantânea
-            roteiro = await db.carregarRoteiroRepositorDia(repId, diaSemana);
+            if (!navigator.onLine) {
+                roteiro = await carregarRoteiroOffline();
+            } else {
+                roteiro = await db.carregarRoteiroRepositorDia(repId, diaSemana);
+            }
             resumo = [...this.registroRotaState.resumoVisitas.values()];
             atendimentosAbertos = [...(this.registroRotaState.atendimentosAbertos?.values() || [])];
         } else if (isPWA) {
@@ -10751,7 +10832,11 @@ class App {
                     <p style="margin-top:8px;color:#666;font-size:13px;">Carregando...</p>
                 </div>
             `;
-            roteiro = await db.carregarRoteiroRepositorDia(repId, diaSemana);
+            if (!navigator.onLine) {
+                roteiro = await carregarRoteiroOffline();
+            } else {
+                roteiro = await db.carregarRoteiroRepositorDia(repId, diaSemana);
+            }
             resumo = [];
             atendimentosAbertos = [];
 
@@ -13077,6 +13162,11 @@ class App {
                         <button type="button" data-index="${index}" class="btn-remover-foto">✖</button>
                     `;
                 }
+                // Clique na miniatura abre preview no espaço da câmera
+                thumb.addEventListener('click', (e) => {
+                    if (e.target.classList.contains('btn-remover-foto')) return;
+                    this.mostrarPreviewFoto(foto.url);
+                });
                 galeria.appendChild(thumb);
             });
 
@@ -13132,6 +13222,42 @@ class App {
         if (foto?.url) URL.revokeObjectURL(foto.url);
 
         this.registroRotaState.fotosCapturadas.splice(indice, 1);
+        this.atualizarGaleriaCaptura();
+    }
+
+    mostrarPreviewFoto(url) {
+        const cameraArea = document.getElementById('cameraArea');
+        const galeriaWrapper = document.getElementById('galeriaCampanhaWrapper');
+        if (!cameraArea) return;
+
+        // Remover preview anterior se existir
+        const previo = cameraArea.querySelector('.camera-preview-thumb');
+        if (previo) previo.remove();
+
+        // Criar overlay de preview dentro da cameraArea
+        const preview = document.createElement('div');
+        preview.className = 'camera-preview-thumb';
+        preview.innerHTML = `
+            <img src="${url}" alt="Preview foto">
+            <button type="button" class="btn-fechar-preview" title="Fechar">✖</button>
+        `;
+        preview.querySelector('.btn-fechar-preview').addEventListener('click', () => this.fecharPreviewFoto());
+        preview.addEventListener('click', (e) => {
+            if (e.target === preview) this.fecharPreviewFoto();
+        });
+        cameraArea.appendChild(preview);
+
+        // Mostrar cameraArea e esconder galeria (para checkin/checkout onde cameraArea estava oculta)
+        cameraArea.style.display = 'block';
+        if (galeriaWrapper) galeriaWrapper.style.display = 'none';
+    }
+
+    fecharPreviewFoto() {
+        const cameraArea = document.getElementById('cameraArea');
+        if (cameraArea) {
+            const preview = cameraArea.querySelector('.camera-preview-thumb');
+            if (preview) preview.remove();
+        }
         this.atualizarGaleriaCaptura();
     }
 
@@ -13568,11 +13694,60 @@ class App {
                 this._sessaoCache = {};
                 await this.fecharModalCaptura();
                 this.atualizarCardCliente(clienteId);
+                // Atualizar estado do botão checkout (liberar após campanha registrada)
+                if (window.pwaApp?.atualizarEstadoBtnCheckout) window.pwaApp.atualizarEstadoBtnCheckout();
                 return;
             }
 
             if (btnSalvar) {
                 btnSalvar.textContent = tipoRegistro === 'checkout' ? 'Enviando checkout...' : 'Enviando...';
+            }
+
+            // Helper: atualizar mensagem do overlay de checkout (PWA)
+            const atualizarOverlayCheckout = (msg) => {
+                const el = document.querySelector('#pwaCheckoutOverlay .pwa-checkout-overlay-msg');
+                if (el) el.textContent = msg;
+            };
+
+            // === PWA OFFLINE: Checkout sem internet → salvar localmente ===
+            if (isPWA && tipoRegistro === 'checkout' && !navigator.onLine) {
+                try {
+                    if (window.offlineDB) {
+                        await window.offlineDB.setSyncMeta(`pendingCheckout_${clienteId}`, {
+                            repId, clienteId, clienteNome, dataVisita,
+                            gpsCoords: { ...gpsCoords },
+                            enderecoResolvido,
+                            timestamp: new Date().toISOString(),
+                            checkinLocal: this.registroRotaState._checkinLocal
+                                ? { ...this.registroRotaState._checkinLocal, fotoBlob: this.registroRotaState._checkinLocal.fotoBlob }
+                                : null,
+                            atividadesLocal: this.registroRotaState._atividadesLocal || null,
+                            campanhaFotos: this.registroRotaState._campanhaFotosLocal || null,
+                            checkoutFotoBlob: fotosNovas[0]?.blob || null
+                        });
+                    }
+                } catch (e) {
+                    console.warn('[PWA] Erro ao salvar checkout offline:', e);
+                }
+                // Atualizar status local para finalizado (otimista)
+                this.atualizarStatusClienteLocal(clienteId, {
+                    status: 'finalizado',
+                    checkout_data_hora: new Date().toISOString(),
+                    rv_id: rvSessaoId,
+                    atividades_count: statusCliente?.atividades_count,
+                    rep_id: repId
+                });
+                // Limpar state local offline
+                this.registroRotaState._checkinLocal = null;
+                try { localStorage.removeItem('PWA_CHECKIN_LOCAL_META'); } catch (_) {}
+                this.registroRotaState._atividadesLocal = null;
+                this.registroRotaState._campanhaFotosLocal = null;
+
+                this.showNotification('Offline — checkout salvo! Será enviado ao conectar à internet.', 'success');
+                this._sessaoCache = {};
+                await this.fecharModalCaptura();
+                this.atualizarCardCliente(clienteId);
+                return;
             }
 
             // === PWA: Antes do checkout, enviar checkin local pendente ===
@@ -13583,6 +13758,7 @@ class App {
                     if (btnSalvar) btnSalvar.textContent = 'Enviando checkout...';
 
                     // 1. Enviar checkin pendente ao servidor
+                    atualizarOverlayCheckout('Enviando check-in...');
                     const checkinForm = new FormData();
                     checkinForm.append('rep_id', checkin.repId);
                     checkinForm.append('cliente_id', checkin.clienteId);
@@ -13618,7 +13794,8 @@ class App {
 
                     // 2. Se há atividades locais pendentes, enviar
                     if (this.registroRotaState._atividadesLocal?.clienteId === clienteId) {
-                        if (btnSalvar) btnSalvar.textContent = 'Enviando checkout...';
+                        if (btnSalvar) btnSalvar.textContent = 'Enviando atividades...';
+                        atualizarOverlayCheckout('Enviando atividades...');
                         const atv = this.registroRotaState._atividadesLocal;
                         try {
                             await fetch(`${this.registroRotaState.backendUrl}/api/registro-rota/sessoes/${rvCheckin}/servicos`, {
@@ -13637,6 +13814,7 @@ class App {
                         const fotosLocais = this.registroRotaState._campanhaFotosLocal.filter(f => f.clienteId === clienteId);
                         if (fotosLocais.length > 0) {
                             if (btnSalvar) btnSalvar.textContent = `Enviando campanha (${fotosLocais.length} fotos)...`;
+                            atualizarOverlayCheckout(`Enviando campanha (${fotosLocais.length} fotos)...`);
                             try {
                                 const campanhaForm = new FormData();
                                 campanhaForm.append('rep_id', repId);
@@ -13667,8 +13845,11 @@ class App {
                     this.registroRotaState._checkinLocal = null;
                     try { localStorage.removeItem('PWA_CHECKIN_LOCAL_META'); } catch (_) {}
                     if (btnSalvar) btnSalvar.textContent = 'Enviando checkout...';
+                    atualizarOverlayCheckout('Enviando checkout...');
                 }
             }
+
+            if (tipoRegistro === 'checkout') atualizarOverlayCheckout('Enviando checkout...');
 
             const formData = new FormData();
             formData.append('rep_id', repId);
@@ -14449,6 +14630,8 @@ class App {
             this.fecharModalAtividades();
             // Atualizar apenas o card do cliente (sem recarregar tudo)
             this.atualizarCardCliente(sessao.clienteId);
+            // Atualizar estado do botão checkout (liberar após atividades registradas)
+            if (window.pwaApp?.atualizarEstadoBtnCheckout) window.pwaApp.atualizarEstadoBtnCheckout();
         } catch (error) {
             console.error('Erro ao salvar atividades:', error);
             this.showNotification('Erro ao salvar atividades: ' + error.message, 'error');
@@ -14473,11 +14656,25 @@ class App {
             selectCliente.disabled = true;
             selectCliente.innerHTML = '<option value="">Carregando clientes...</option>';
 
-            const url = new URL(`${this.registroRotaState.backendUrl}/api/registro-rota/roteiro/clientes`);
-            url.searchParams.set('repositor_id', repositorId);
+            let clientes = [];
 
-            const data = await fetchJson(url);
-            const clientes = data.clientes || [];
+            if (!navigator.onLine) {
+                // Modo offline: usar clientes do IndexedDB (sincronizados na última sincronização)
+                try {
+                    const clientesOffline = await window.offlineDB?.getClientes?.() || [];
+                    clientes = clientesOffline.map(c => ({
+                        cliente_codigo: c.cli_codigo || c.cli_id || '',
+                        cliente_nome: c.cli_nome || c.cli_razao_social || c.cli_fantasia || ''
+                    })).filter(c => c.cliente_codigo);
+                } catch (e) {
+                    console.warn('Erro ao carregar clientes offline:', e);
+                }
+            } else {
+                const url = new URL(`${this.registroRotaState.backendUrl}/api/registro-rota/roteiro/clientes`);
+                url.searchParams.set('repositor_id', repositorId);
+                const data = await fetchJson(url);
+                clientes = data.clientes || [];
+            }
 
             this.consultaVisitasState.clientesRoteiro = clientes;
             this.consultaVisitasState.repositorSelecionado = repositorId;
@@ -14497,7 +14694,9 @@ class App {
             console.error('Erro ao carregar clientes do roteiro:', error);
             selectCliente.innerHTML = '<option value="">Nenhum cliente carregado</option>';
             selectCliente.disabled = false;
-            this.showNotification('Não foi possível carregar a lista de clientes para o repositor selecionado.', 'warning');
+            if (navigator.onLine) {
+                this.showNotification('Não foi possível carregar a lista de clientes.', 'warning');
+            }
         }
     }
 
@@ -14526,7 +14725,21 @@ class App {
 
         if (selectRepositor) {
             selectRepositor.onchange = (event) => this.carregarClientesRoteiroPorRep(event.target.value);
-            this.carregarClientesRoteiroPorRep(selectRepositor.value || '');
+            // PWA: auto-usar repId do usuário logado para carregar clientes
+            let repIdInicial = selectRepositor.value || '';
+            if (!repIdInicial && window.authManager?.isPWA) {
+                repIdInicial = String(window.authManager?.getRepId?.() || '');
+                if (repIdInicial) {
+                    if (!selectRepositor.querySelector(`option[value="${repIdInicial}"]`)) {
+                        const opt = document.createElement('option');
+                        opt.value = repIdInicial;
+                        opt.textContent = repIdInicial;
+                        selectRepositor.appendChild(opt);
+                    }
+                    selectRepositor.value = repIdInicial;
+                }
+            }
+            this.carregarClientesRoteiroPorRep(repIdInicial);
         }
     }
 
@@ -15190,6 +15403,18 @@ class App {
         const exportBtns = document.querySelector('.despesa-export-buttons');
         if (!container) return;
 
+        if (!navigator.onLine) {
+            container.innerHTML = `
+                <div class="empty-state" style="padding: 40px;">
+                    <div class="empty-state-icon">&#128268;</div>
+                    <p><strong>Modo offline</strong></p>
+                    <p style="color: #6b7280; font-size: 0.9rem;">Consulta de despesas não disponível sem conexão.<br>Conecte-se à internet e tente novamente.</p>
+                </div>
+            `;
+            if (exportBtns) exportBtns.style.display = 'none';
+            return;
+        }
+
         const dataInicio = document.getElementById('despesaDataInicio')?.value;
         const dataFim = document.getElementById('despesaDataFim')?.value;
 
@@ -15678,7 +15903,24 @@ class App {
         if (!container) return;
 
         try {
-            const rubricas = await db.listarTiposGasto(true); // Apenas ativos
+            let rubricas = [];
+            if (!navigator.onLine && typeof window.offlineDB !== 'undefined') {
+                // Offline: usar cache do IndexedDB
+                try {
+                    await window.offlineDB.init();
+                    const cached = await window.offlineDB.getAll('tiposGasto').catch(() => []);
+                    rubricas = cached.map(r => ({
+                        gst_id: r.gst_id || r.id,
+                        gst_codigo: r.gst_codigo || r.codigo,
+                        gst_nome: r.gst_nome || r.nome,
+                        gst_ativo: r.gst_ativo !== false
+                    })).filter(r => r.gst_ativo !== false);
+                } catch (_) {
+                    rubricas = [];
+                }
+            } else {
+                rubricas = await db.listarTiposGasto(true); // Apenas ativos
+            }
 
             if (rubricas.length === 0) {
                 container.innerHTML = '<p style="color: #6b7280; text-align: center; padding: 20px;">Nenhuma rubrica cadastrada. Cadastre em Configurações do Sistema.</p>';
@@ -16662,6 +16904,20 @@ class App {
 
     async filtrarDocumentosConsulta() {
         try {
+            if (!navigator.onLine) {
+                const container = document.getElementById('documentosContainer');
+                if (container) {
+                    container.innerHTML = `
+                        <div class="empty-state" style="padding: 40px;">
+                            <div class="empty-state-icon">&#128268;</div>
+                            <p><strong>Modo offline</strong></p>
+                            <p style="color: #6b7280; font-size: 0.9rem;">Consulta de documentos não disponível sem conexão.<br>Conecte-se à internet e tente novamente.</p>
+                        </div>
+                    `;
+                }
+                return;
+            }
+
             const repositorId = document.getElementById('consultaRepositor').value;
             const tipoId = document.getElementById('consultaTipo').value;
             const dataInicio = document.getElementById('consultaDataInicio').value;

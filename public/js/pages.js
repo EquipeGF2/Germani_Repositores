@@ -2064,13 +2064,24 @@ export const pages = {
     },
 
     'registro-rota': async () => {
-        const repositores = await db.getAllRepositors();
+        let repositores = [];
+        try {
+            repositores = await db.getAllRepositors();
+        } catch (_) {
+            // Offline: repositores serão injetados pelo fallback abaixo
+        }
 
         // PWA com repositor logado: mostrar apenas o repositor logado
         const isPWA = window.authManager?.isPWA;
         const repIdLogado = window.authManager?.getRepId?.();
         const perfilLogado = window.authManager?.usuario?.perfil;
         const filtrarParaRepositor = isPWA && perfilLogado === 'repositor' && repIdLogado;
+
+        // Fallback offline: injetar repositor do usuário logado se lista vazia
+        if (!repositores.length && filtrarParaRepositor) {
+            const nomeLogado = window.authManager?.usuario?.nome || `Repositor ${repIdLogado}`;
+            repositores = [{ repo_cod: repIdLogado, repo_nome: nomeLogado }];
+        }
 
         const repositoresFiltrados = filtrarParaRepositor
             ? repositores.filter(repo => String(repo.repo_cod) === String(repIdLogado))
