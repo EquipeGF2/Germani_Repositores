@@ -11115,7 +11115,7 @@ class App {
         roteiro.forEach(cliente => {
             const cliId = normalizeClienteId(cliente.cli_codigo);
             const cliNome = String(cliente.cli_nome || '');
-            const badgePendente = cliente.cli_pendente_anterior ? ' <span style="background:#f59e0b;color:white;padding:2px 6px;border-radius:4px;font-size:11px;margin-left:6px;">PENDENTE DIA ANTERIOR</span>' : '';
+            const badgePendente = cliente.cli_pendente_anterior ? '<div style="margin-top:4px;"><span style="background:#f59e0b;color:white;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;display:inline-block;">PENDENTE DIA ANTERIOR</span></div>' : '';
 
             const cidadeUF = [cliente.cli_cidade, cliente.cli_estado].filter(Boolean).join('/');
 
@@ -11241,7 +11241,8 @@ class App {
             item.dataset.enderecoCadastro = enderecoCadastro;
             item.innerHTML = `
                 <div class="route-item-info">
-                    <div class="route-item-name">${cliId} - ${cliNome}${badgePendente}</div>
+                    <div class="route-item-name">${cliId} - ${cliNome}</div>
+                    ${badgePendente}
                     <div class="route-item-address">${linhaEndereco}</div>
                     <div class="route-item-distance" id="distancia-${cliId}" style="font-size:12px;color:#666;margin-top:4px;">
                         📍 Calculando distância...
@@ -20491,8 +20492,15 @@ class App {
      * Mostra TODAS as pesquisas disponíveis (obrigatórias e não obrigatórias)
      */
     async abrirPesquisaCliente(repId, clienteId, clienteNome, dataVisita) {
-        // Buscar TODAS as pesquisas (não apenas obrigatórias)
-        const todasPesquisas = await this.buscarPesquisasPendentes(repId, clienteId, dataVisita, false);
+        // Tentar usar dados já carregados (cache após checkin) para evitar nova requisição ao servidor
+        const cliNorm = String(clienteId || '').trim().replace(/\.0$/, '');
+        const mapaCached = this.registroRotaState?.pesquisasPendentesMap;
+        let todasPesquisas = mapaCached?.has(cliNorm) ? (mapaCached.get(cliNorm) || []) : null;
+
+        // Se não há dados em cache, buscar do banco
+        if (!todasPesquisas || todasPesquisas.length === 0) {
+            todasPesquisas = await this.buscarPesquisasPendentes(repId, clienteId, dataVisita, false);
+        }
 
         if (!todasPesquisas || todasPesquisas.length === 0) {
             this.showNotification('Nenhuma pesquisa disponível para este cliente.', 'info');
