@@ -1067,8 +1067,12 @@
 
     function renderConsultas() {
         pwaContent.innerHTML = `
-            <div class="pwa-page">
-                <div class="pwa-section-title">Consultas</div>
+            <div class="pwa-page pwa-fullscreen-page">
+                <div class="pwa-page-header-bar">
+                    <button class="pwa-back-btn" onclick="pwaApp.voltarHome()">&#8592;</button>
+                    <span class="pwa-page-header-title">Consultas</span>
+                </div>
+                <div class="pwa-page-body">
                 ${CONSULTAS.map(c => `
                     <div class="pwa-consulta-item" onclick="pwaApp.navigate('${c.id}')">
                         <span class="pwa-consulta-icon">${c.icon}</span>
@@ -1076,6 +1080,7 @@
                         <span class="pwa-consulta-arrow">&#8250;</span>
                     </div>
                 `).join('')}
+                </div>
             </div>
         `;
     }
