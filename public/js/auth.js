@@ -79,10 +79,22 @@ class AuthManager {
       rep_name: usuario.nome_completo,
       perfil: usuario.perfil
     }));
+
+    // Cache offline: permite login sem internet após primeiro login do dia
+    // Guarda dados do usuário sem senha — o token é mantido para reuso offline
+    try {
+      localStorage.setItem('auth_offline_cache', JSON.stringify({
+        token,
+        usuario,
+        telas: telas || [],
+        permissoes: permissoes || [],
+        savedAt: Date.now()
+      }));
+    } catch (_) {}
   }
 
   /**
-   * Limpar sessão
+   * Limpar sessão (mantém cache offline para relogin sem internet)
    */
   limparSessao() {
     this.token = null;
@@ -98,6 +110,38 @@ class AuthManager {
     localStorage.removeItem('auth_telas_timestamp');
     localStorage.removeItem('auth_deve_trocar_senha');
     localStorage.removeItem('GERMANI_AUTH_USER');
+    // Nota: auth_offline_cache NÃO é removido — permite relogin offline no mesmo dia
+  }
+
+  /**
+   * Tentar login usando cache offline (quando servidor indisponível)
+   * Válido por 24h desde o último login online bem-sucedido
+   */
+  tentarLoginOffline(username) {
+    try {
+      const cacheStr = localStorage.getItem('auth_offline_cache');
+      if (!cacheStr) return false;
+      const cache = JSON.parse(cacheStr);
+      if (!cache?.token || !cache?.usuario) return false;
+
+      // Verificar se é o mesmo usuário
+      if (cache.usuario.username !== username) return false;
+
+      // Verificar validade: 24 horas
+      const MAX_IDADE = 24 * 60 * 60 * 1000;
+      if (Date.now() - cache.savedAt > MAX_IDADE) {
+        localStorage.removeItem('auth_offline_cache');
+        return false;
+      }
+
+      // Restaurar sessão do cache
+      this.salvarSessao(cache.token, cache.usuario, cache.permissoes, cache.telas, false);
+      console.log('[AUTH] Login offline bem-sucedido usando cache do dia anterior');
+      return true;
+    } catch (e) {
+      console.warn('[AUTH] Erro ao tentar login offline:', e);
+      return false;
+    }
   }
 
   /**
@@ -190,17 +234,26 @@ class AuthManager {
   }
 
   /**
-   * Login PWA (original)
+   * Login PWA (original) com suporte a login offline
    */
   async login(username, password) {
     try {
       console.log('[AUTH] Tentando login PWA...', { username });
 
-      const response = await fetch(`${this.apiBaseUrl}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+      let response;
+      try {
+        response = await fetch(`${this.apiBaseUrl}/api/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+          signal: controller.signal
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
 
       const data = await response.json();
 
@@ -216,6 +269,15 @@ class AuthManager {
 
       return { success: true, usuario: data.usuario };
     } catch (error) {
+      // Se falhou por conexão (offline / timeout), tentar cache offline
+      const isOfflineError = error.name === 'AbortError' || error.name === 'TypeError' || !navigator.onLine;
+      if (isOfflineError) {
+        console.warn('[AUTH] Servidor indisponível, tentando login offline...');
+        if (this.tentarLoginOffline(username)) {
+          return { success: true, usuario: this.usuario, offline: true };
+        }
+        throw new Error('Sem conexão com o servidor. Faça login online pelo menos uma vez por dia para usar no modo offline.');
+      }
       console.error('[AUTH] Erro no login PWA:', error);
       throw error;
     }

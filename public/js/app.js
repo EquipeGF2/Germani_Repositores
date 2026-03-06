@@ -10759,6 +10759,26 @@ class App {
                 this.registroRotaState._cacheCarregado = true;
                 this.registroRotaState._cacheRepId = repId;
                 this.registroRotaState._cacheDataVisita = dataVisita;
+
+                // Restaurar metadados do checkin offline após page refresh
+                if (!this.registroRotaState._checkinLocal) {
+                    try {
+                        const metaStr = localStorage.getItem('PWA_CHECKIN_LOCAL_META');
+                        if (metaStr) {
+                            const meta = JSON.parse(metaStr);
+                            // Válido apenas se for do mesmo repositor e do mesmo dia
+                            const hoje = new Date().toISOString().slice(0, 10);
+                            const metaDia = meta.timestamp ? meta.timestamp.slice(0, 10) : '';
+                            if (String(meta.repId) === String(repId) && metaDia === hoje) {
+                                // Restaurar sem o blob (indicador de checkin pendente sem foto)
+                                this.registroRotaState._checkinLocal = { ...meta, fotoBlob: null, _restoredFromCache: true };
+                                console.log('[PWA] Checkin local restaurado do cache:', meta.clienteId);
+                            } else {
+                                localStorage.removeItem('PWA_CHECKIN_LOCAL_META');
+                            }
+                        }
+                    } catch (_) {}
+                }
             }
 
             // Buscar status do backend em background e atualizar a UI quando chegar
@@ -11392,6 +11412,7 @@ class App {
                 // If it's only a local offline checkin with no server ID yet
                 if (hasLocalCheckin && (!rvId || rvId.startsWith('LOCAL_'))) {
                     this.registroRotaState._checkinLocal = null;
+                    try { localStorage.removeItem('PWA_CHECKIN_LOCAL_META'); } catch (_) {}
                     if (this.registroRotaState._atividadesLocal?.clienteId === clienteIdNorm) {
                         this.registroRotaState._atividadesLocal = null;
                     }
@@ -13302,7 +13323,10 @@ class App {
             const statusCliente = atual.statusCliente;
             const atendimentoPersistido = this.recuperarAtendimentoPersistido(repId, clienteId) || {};
             const novaVisitaFlag = Boolean(this.registroRotaState.novaVisita && tipoRegistro === 'checkin');
-            const rvSessaoId = novaVisitaFlag ? null : (statusCliente?.rv_id || atendimentoPersistido.rv_id || null);
+            const abertoMapRvId = (this.registroRotaState.atendimentosAbertos instanceof Map)
+                ? this.registroRotaState.atendimentosAbertos.get(clienteId)?.rv_id
+                : null;
+            const rvSessaoId = novaVisitaFlag ? null : (statusCliente?.rv_id || atendimentoPersistido.rv_id || abertoMapRvId || null);
 
             const gpsCoords = this.registroRotaState.gpsCoords;
             const fotos = this.registroRotaState.fotosCapturadas || [];
@@ -13365,8 +13389,11 @@ class App {
             }
 
             // Para campanha e checkout, verificar se a sessão existe no backend
-            // No PWA com checkin local pendente, pular essa verificação (será resolvido no envio batch)
-            const temCheckinLocalPendente = isPWA && this.registroRotaState._checkinLocal?.clienteId === clienteId;
+            // No PWA com checkin local pendente OU atendimento ativo local, pular verificação
+            const temCheckinLocalPendente = isPWA && (
+                this.registroRotaState._checkinLocal?.clienteId === clienteId ||
+                statusCliente?.status === 'em_atendimento'
+            );
             if (['campanha', 'checkout'].includes(tipoRegistro) && !rvSessaoId && !temCheckinLocalPendente) {
                 const sessaoBackend = await this.buscarSessaoAberta(repId, dataVisita);
                 if (sessaoBackend && normalizeClienteId(sessaoBackend.cliente_id) === clienteId) {
@@ -13450,6 +13477,14 @@ class App {
                     novaVisita: novaVisitaFlag,
                     timestamp: dataRegistro
                 };
+
+                // Persistir metadados (sem blob) no localStorage para sobreviver a page refresh
+                try {
+                    localStorage.setItem('PWA_CHECKIN_LOCAL_META', JSON.stringify({
+                        localId, repId, clienteId, clienteNome, dataVisita,
+                        novaVisita: novaVisitaFlag, timestamp: dataRegistro
+                    }));
+                } catch (_) {};
 
                 // Atualizar estado local imediatamente
                 this.atualizarStatusClienteLocal(clienteId, {
@@ -13596,6 +13631,7 @@ class App {
 
                     // Limpar checkin local
                     this.registroRotaState._checkinLocal = null;
+                    try { localStorage.removeItem('PWA_CHECKIN_LOCAL_META'); } catch (_) {}
                     if (btnSalvar) btnSalvar.textContent = 'Enviando checkout...';
                 }
             }
@@ -13716,6 +13752,7 @@ class App {
                         rep_id: repId
                     });
                     this.registroRotaState._checkinLocal = null;
+                    try { localStorage.removeItem('PWA_CHECKIN_LOCAL_META'); } catch (_) {}
                     if (this.registroRotaState._atividadesLocal?.clienteId === clienteIdNorm_) {
                         this.registroRotaState._atividadesLocal = null;
                     }

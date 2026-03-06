@@ -767,23 +767,29 @@ body.pwa-mode #canvasCaptura {
     object-fit: cover;
 }
 
-/* Footer do modal: botões empilhados */
+/* Footer do modal: botões compactos no topo */
 body.pwa-mode .captura-footer {
-    padding: 10px 12px !important;
-    gap: 8px !important;
-    flex-wrap: wrap;
-    border-top: 1px solid #e5e7eb;
+    padding: 6px 10px !important;
+    gap: 6px !important;
+    flex-wrap: nowrap;
+    border-top: none;
+    border-bottom: 1px solid #e5e7eb;
     background: #fff;
     position: sticky;
-    top: 0; /* Changed from bottom: 0 to top: 0 to move closer to header */
-    order: -1; /* Move buttons above body */
+    top: 0;
+    order: -1;
     z-index: 10;
+    flex-shrink: 0;
+}
+
+body.pwa-mode .captura-actions-left {
+    display: none !important; /* Esconder btn permitir câmera no topo */
 }
 
 body.pwa-mode .captura-actions-right {
     display: flex;
     gap: 6px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     width: 100%;
     justify-content: space-between;
 }
@@ -791,30 +797,36 @@ body.pwa-mode .captura-actions-right {
 body.pwa-mode .captura-actions-right .btn {
     flex: 1;
     min-width: 0;
-    padding: 10px 6px !important;
-    font-size: 12px !important;
+    padding: 8px 4px !important;
+    font-size: 11px !important;
     text-align: center;
     justify-content: center;
-    overflow: visible;
-    white-space: normal;
-    word-break: break-word;
-    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
 }
 
 body.pwa-mode .captura-actions-right .btn .btn-text {
-    overflow: visible;
-    white-space: normal;
-    word-break: break-word;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-/* Localização no PWA */
+/* Localização no PWA: compacta */
 body.pwa-mode .captura-localizacao {
-    padding: 8px 12px 0 !important;
+    padding: 4px 10px 0 !important;
+    flex-shrink: 0;
 }
 
 body.pwa-mode .gps-chip {
     width: 100% !important;
-    padding: 8px 12px !important;
+    padding: 6px 10px !important;
+}
+
+/* Ocultar hint text no PWA (economiza espaço) */
+body.pwa-mode #capturaHint {
+    display: none !important;
 }
 
 /* Resumo de atividades no PWA */
@@ -1451,8 +1463,93 @@ body.pwa-mode .pwa-hidden {
 
 
 /* ==========================================
-   PWA GALLERY OVERRIDE (Campanha)
+   PWA GALLERY OVERRIDE (Campanha - horizontal acima da câmera)
    ========================================== */
+
+/* captura-main vira flex column para controlar ordem */
+body.pwa-mode .pwa-inline-modal .captura-main {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 !important;
+    min-height: 0 !important;
+}
+
+/* Galeria fica ACIMA da câmera (order: -1) */
+body.pwa-mode .pwa-inline-modal .captura-thumbs-wrapper {
+    order: -1;
+    flex-shrink: 0;
+    display: flex !important;
+    flex-direction: column;
+    max-height: 90px;
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+body.pwa-mode .pwa-inline-modal .captura-thumbs-header {
+    padding: 2px 8px;
+    font-size: 10px;
+    color: #6b7280;
+    display: flex;
+    justify-content: space-between;
+    flex-shrink: 0;
+}
+
+/* Linha horizontal de miniaturas com scroll */
+body.pwa-mode .pwa-inline-modal .camera-thumbs {
+    display: flex !important;
+    flex-direction: row !important;
+    grid-template-columns: unset !important;
+    gap: 6px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    padding: 4px 8px !important;
+    flex: 1;
+    align-items: center;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+
+body.pwa-mode .pwa-inline-modal .camera-thumbs::-webkit-scrollbar {
+    display: none;
+}
+
+/* Miniaturas: quadradas e compactas */
+body.pwa-mode .pwa-inline-modal .camera-thumb {
+    width: 60px !important;
+    height: 60px !important;
+    min-width: 60px !important;
+    aspect-ratio: unset !important;
+    border-radius: 6px !important;
+    flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+}
+
+body.pwa-mode .pwa-inline-modal .camera-thumb img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    background: #000;
+    border-radius: 6px;
+}
+
+body.pwa-mode .pwa-inline-modal .camera-thumb .btn-remover-foto {
+    width: 20px !important;
+    height: 20px !important;
+    font-size: 11px !important;
+    top: 2px !important;
+    right: 2px !important;
+    background: rgba(220, 38, 38, 0.9) !important;
+    border-radius: 50% !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 !important;
+    line-height: 1;
+    min-width: unset !important;
+}
+
+/* Gallery fora do inline (non-PWA / outros) */
 body.pwa-mode .camera-thumbs {
     display: grid !important;
     grid-template-columns: 1fr !important;
@@ -2069,26 +2166,46 @@ body.pwa-mode .modal-footer-inline {
    CAMPANHA: FOOTER DE BOTÕES ACIMA DA GALERIA
    ========================================== */
 
-/* Em PWA inline o footer de captura deve ficar no TOPO, acima das fotos */
+/* Em PWA inline o footer de captura deve ficar no TOPO */
 body.pwa-mode .pwa-inline-modal .captura-footer {
-    order: -1;
+    order: -2;
     position: sticky;
     top: 0;
     bottom: auto !important;
     border-top: none !important;
     border-bottom: 1px solid #e5e7eb;
     z-index: 20;
+    flex-shrink: 0;
 }
 
-/* O modal-body (câmera + galeria) fica abaixo do footer, preenchendo o espaço até o rodapé */
+/* GPS logo abaixo dos botões */
+body.pwa-mode .pwa-inline-modal .captura-localizacao {
+    order: -1;
+    flex-shrink: 0;
+}
+
+/* O modal-body (câmera + galeria) preenche o espaço restante */
 body.pwa-mode .pwa-inline-modal .captura-body {
     order: 0;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
+    overflow: hidden;
     flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
+    padding: 0 !important;
+}
+
+/* camera-wrapper ocupa todo espaço restante */
+body.pwa-mode .pwa-inline-modal .camera-wrapper {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+body.pwa-mode .pwa-inline-modal .camera-area {
+    flex: 1;
+    min-height: 0;
 }
 
 /* ==========================================

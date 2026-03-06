@@ -97,6 +97,7 @@
         setupSyncBadge();
         setupBackNavigation();
         interceptModalCaptura();
+        setupFiltroRepositorObserver();
 
         // Carregar dados locais do IndexedDB para cache em memória
         await loadLocalData();
@@ -1160,6 +1161,41 @@
         });
     }
 
+    /**
+     * Observa o pwaContent e esconde campos de filtro repositor quando aparecerem no DOM.
+     * Garante que campos dinâmicos (carregados assincronamente) também sejam ocultados.
+     */
+    function setupFiltroRepositorObserver() {
+        const repId = getRepId();
+        if (!repId) return;
+
+        const FILTER_IDS = new Set([
+            'consultaRepositor', 'perfRepositor', 'filtro_repositor_consulta_roteiro',
+            'uploadRepositor', 'registroRepositor', 'filtro_repositor',
+            'filtro_repositor_cadastro', 'filtro_repositor_roteiro',
+            'filtro_repositor_checking_cancelado', 'filtro_repositor_validacao',
+            'filtro_supervisor', 'filtro_representante', 'filtro_cidade_roteiro',
+            'filtro_nome_repositor', 'filtro_nome_repositor_roteiro'
+        ]);
+
+        const ocultarElemento = (el) => {
+            const group = el.closest('.form-group, .filter-group, .filter-item, .pwa-filter-group');
+            if (group) { group.style.display = 'none'; } else { el.style.display = 'none'; }
+        };
+
+        const obs = new MutationObserver(() => {
+            FILTER_IDS.forEach(id => {
+                const el = document.getElementById(id);
+                if (el && el.style.display !== 'none' && !el.closest('.pwa-filtros-wrapper[style*="none"]')) {
+                    ocultarElemento(el);
+                }
+            });
+        });
+
+        const content = document.getElementById('pwaContent') || document.body;
+        obs.observe(content, { childList: true, subtree: true });
+    }
+
     function toggleFiltros() {
         const wrapper = document.querySelector('.pwa-filtros-wrapper');
         if (wrapper) {
@@ -1397,6 +1433,22 @@
             inlineArea.innerHTML = '';
             modalSalvo.classList.remove('active');
             modalSalvo.classList.add('pwa-inline-modal');
+
+            // Limpar estado visual anterior (evita foto do checkin aparecer na campanha)
+            const canvasClear = modalSalvo.querySelector('#canvasCaptura');
+            if (canvasClear) {
+                try { canvasClear.getContext('2d').clearRect(0, 0, canvasClear.width, canvasClear.height); } catch (_) {}
+                canvasClear.style.display = 'none';
+            }
+            const galeriaClear = modalSalvo.querySelector('#galeriaCampanha');
+            if (galeriaClear) galeriaClear.innerHTML = '';
+            const galWrapperClear = modalSalvo.querySelector('#galeriaCampanhaWrapper');
+            if (galWrapperClear) galWrapperClear.style.display = 'none';
+            if (window.app?.registroRotaState) {
+                window.app.registroRotaState.fotosCapturadas.forEach(f => f?.url && URL.revokeObjectURL(f.url));
+                window.app.registroRotaState.fotosCapturadas = [];
+            }
+
             inlineArea.appendChild(modalSalvo);
         }
 
