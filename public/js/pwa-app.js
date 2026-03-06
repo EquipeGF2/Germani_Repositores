@@ -1650,11 +1650,11 @@
                         <span class="pwa-atendimento-action-icon">&#128248;</span>
                         <span>Campanha</span>
                     </button>
-                    <button class="pwa-atendimento-action-btn hidden" id="pwaAtendimentoBtnEspacos" onclick="pwaApp.atendimentoAbrirEspaco()">
+                    <button class="pwa-atendimento-action-btn" id="pwaAtendimentoBtnEspacos" onclick="pwaApp.atendimentoAbrirEspaco()">
                         <span class="pwa-atendimento-action-icon">&#128230;</span>
                         <span>Espa&#231;os</span>
                     </button>
-                    <button class="pwa-atendimento-action-btn hidden" id="pwaAtendimentoBtnPesquisa" onclick="pwaApp.atendimentoAbrirPesquisa()">
+                    <button class="pwa-atendimento-action-btn" id="pwaAtendimentoBtnPesquisa" onclick="pwaApp.atendimentoAbrirPesquisa()">
                         <span class="pwa-atendimento-action-icon">&#128196;</span>
                         <span>Pesquisa</span>
                     </button>
