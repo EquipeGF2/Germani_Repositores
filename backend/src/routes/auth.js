@@ -1,9 +1,15 @@
 import express from 'express';
+import crypto from 'crypto';
 import { tursoService } from '../services/turso.js';
 import { authService } from '../services/auth.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
+
+// Gerar SHA-256 hex de uma string (mesmo algoritmo usado no frontend)
+function sha256(str) {
+  return crypto.createHash('sha256').update(str).digest('hex');
+}
 
 // Verificar senha com fallback para texto plano (migra automaticamente para bcrypt)
 async function verificarSenhaComFallback(password, usuario) {
@@ -70,6 +76,18 @@ router.post('/login', async (req, res) => {
 
         console.log(`[LOGIN] Login bem-sucedido (via busca flexível): "${username}"${loginResult.upgraded ? ' [senha migrada para bcrypt]' : ''}`);
         await tursoService.registrarUltimoLogin(usuarioCI.usuario_id);
+
+        // Salvar SHA-256 para login direto via Turso (migração gradual)
+        if (!usuarioCI.password_sha256) {
+          try {
+            const hash = sha256(password);
+            await tursoService.salvarPasswordSha256(usuarioCI.usuario_id, hash);
+            console.log(`[LOGIN] SHA-256 salvo para usuário ID=${usuarioCI.usuario_id} (login direto habilitado)`);
+          } catch (e) {
+            console.warn('[LOGIN] Erro ao salvar SHA-256:', e.message);
+          }
+        }
+
         const token = authService.generateToken(usuarioCI);
         const permissoes = authService.getPermissoesPerfil(usuarioCI.perfil);
 
@@ -138,6 +156,17 @@ router.post('/login', async (req, res) => {
 
     // Registrar último login
     await tursoService.registrarUltimoLogin(usuario.usuario_id);
+
+    // Salvar SHA-256 para login direto via Turso (migração gradual)
+    if (!usuario.password_sha256) {
+      try {
+        const hash = sha256(password);
+        await tursoService.salvarPasswordSha256(usuario.usuario_id, hash);
+        console.log(`[LOGIN] SHA-256 salvo para usuário ID=${usuario.usuario_id} (login direto habilitado)`);
+      } catch (e) {
+        console.warn('[LOGIN] Erro ao salvar SHA-256:', e.message);
+      }
+    }
 
     // Gerar token
     const token = authService.generateToken(usuario);
@@ -641,6 +670,13 @@ router.post('/change-password', requireAuth, async (req, res) => {
       passwordHash: novoHash
     });
 
+    // Atualizar SHA-256 para login direto
+    try {
+      await tursoService.salvarPasswordSha256(req.user.usuario_id, sha256(senha_nova));
+    } catch (e) {
+      console.warn('[CHANGE-PASSWORD] Erro ao atualizar SHA-256:', e.message);
+    }
+
     // Marcar que a senha foi trocada (remove flag de troca obrigatória)
     await tursoService.marcarSenhaTrocada(req.user.usuario_id);
 
@@ -686,6 +722,13 @@ router.post('/force-change-password', requireAuth, async (req, res) => {
     await tursoService.atualizarUsuario(req.user.usuario_id, {
       passwordHash: novoHash
     });
+
+    // Atualizar SHA-256 para login direto
+    try {
+      await tursoService.salvarPasswordSha256(req.user.usuario_id, sha256(senha_nova));
+    } catch (e) {
+      console.warn('[FORCE-CHANGE-PASSWORD] Erro ao atualizar SHA-256:', e.message);
+    }
 
     // Marcar que a senha foi trocada
     await tursoService.marcarSenhaTrocada(req.user.usuario_id);
@@ -741,6 +784,13 @@ router.post('/reset-admin', async (req, res) => {
     // Atualizar senha do admin
     const passwordHash = await authService.hashPassword(nova_senha);
     await tursoService.atualizarUsuario(admin.usuario_id, { passwordHash });
+
+    // Atualizar SHA-256 para login direto
+    try {
+      await tursoService.salvarPasswordSha256(admin.usuario_id, sha256(nova_senha));
+    } catch (e) {
+      console.warn('[RESET-ADMIN] Erro ao atualizar SHA-256:', e.message);
+    }
 
     console.log(`[RESET-ADMIN] Senha do admin (ID=${admin.usuario_id}) resetada com sucesso`);
 

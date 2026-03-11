@@ -1,7 +1,8 @@
 /**
  * Gerenciador de Autenticação
- * Sistema JWT com controle de sessão e permissões
- * Suporta login PWA e login Web separados
+ * Login PWA: direto no Turso com SHA-256 (instantâneo, sem cold start)
+ * Login Web: via backend Express com JWT
+ * Fallback: se SHA-256 não disponível, usa backend (bcrypt)
  */
 
 class AuthManager {
@@ -16,6 +17,7 @@ class AuthManager {
     this.modoLoginWeb = false; // Flag para indicar se está no modo de login web obrigatório
     this.servidorPronto = false; // Flag para indicar se o servidor está respondendo
     this._preWarmPromise = null; // Promise do pre-warm em andamento
+    this._tursoClient = null; // Cliente Turso para login direto (lazy init)
   }
 
   /**
@@ -127,8 +129,8 @@ class AuthManager {
       // Verificar se é o mesmo usuário
       if (cache.usuario.username !== username) return false;
 
-      // Verificar validade: 24 horas
-      const MAX_IDADE = 24 * 60 * 60 * 1000;
+      // Verificar validade: 14 horas
+      const MAX_IDADE = 14 * 60 * 60 * 1000;
       if (Date.now() - cache.savedAt > MAX_IDADE) {
         localStorage.removeItem('auth_offline_cache');
         return false;
@@ -234,7 +236,140 @@ class AuthManager {
   }
 
   /**
-   * Login PWA (original) com suporte a login offline
+   * Gerar hash SHA-256 de uma string usando Web Crypto API (nativo do browser)
+   */
+  async _sha256(str) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(str);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /**
+   * Obter cliente Turso para login direto (lazy init)
+   */
+  async _getTursoClient() {
+    if (this._tursoClient) return this._tursoClient;
+
+    try {
+      // Importar createClient e config dinamicamente
+      const [{ createClient }, tursoConfigModule] = await Promise.all([
+        import('https://esm.sh/@libsql/client@0.6.0/web'),
+        import('./turso-config.js').catch(() => null)
+      ]);
+
+      // Usar config do módulo importado ou do window (fallback)
+      const config = tursoConfigModule?.TURSO_CONFIG?.main || window.TURSO_CONFIG?.main;
+      if (!config?.url || !config?.authToken || config.authToken === 'seu-token-principal') {
+        console.warn('[AUTH] Turso config não disponível para login direto');
+        return null;
+      }
+
+      this._tursoClient = createClient({
+        url: config.url,
+        authToken: config.authToken
+      });
+      return this._tursoClient;
+    } catch (e) {
+      console.warn('[AUTH] Erro ao criar cliente Turso:', e.message);
+      return null;
+    }
+  }
+
+  /**
+   * Tentar login direto no Turso com SHA-256 (instantâneo, sem cold start)
+   * Retorna null se não disponível (usuário sem SHA-256 ou erro de conexão)
+   */
+  async _loginDiretoTurso(username, password) {
+    try {
+      const client = await this._getTursoClient();
+      if (!client) return null;
+
+      const sha256Hash = await this._sha256(password);
+
+      // Query direta no Turso: busca por username + SHA-256
+      const result = await client.execute({
+        sql: `SELECT usuario_id, username, nome_completo, email, rep_id, perfil, ativo, password_sha256
+              FROM cc_usuarios
+              WHERE username = ? AND password_sha256 = ? AND ativo = 1`,
+        args: [username.trim(), sha256Hash]
+      });
+
+      if (!result.rows || result.rows.length === 0) {
+        // Tentar case-insensitive
+        const resultCI = await client.execute({
+          sql: `SELECT usuario_id, username, nome_completo, email, rep_id, perfil, ativo, password_sha256
+                FROM cc_usuarios
+                WHERE LOWER(TRIM(username)) = LOWER(?) AND password_sha256 = ? AND ativo = 1`,
+          args: [username.trim(), sha256Hash]
+        });
+
+        if (!resultCI.rows || resultCI.rows.length === 0) {
+          return null; // SHA-256 não encontrado — fallback para backend
+        }
+
+        return resultCI.rows[0];
+      }
+
+      return result.rows[0];
+    } catch (e) {
+      console.warn('[AUTH] Erro no login direto Turso:', e.message);
+      return null;
+    }
+  }
+
+  /**
+   * Buscar telas do usuário diretamente no Turso
+   */
+  async _buscarTelasDiretoTurso(usuarioId, perfil) {
+    try {
+      const client = await this._getTursoClient();
+      if (!client) return [];
+
+      if (perfil === 'admin') {
+        const result = await client.execute({
+          sql: `SELECT tela_id, tela_titulo, tela_categoria, tela_icone FROM cc_web_telas WHERE ativo = 1 ORDER BY ordem`,
+          args: []
+        });
+        return (result.rows || []).map(t => ({
+          id: t.tela_id, titulo: t.tela_titulo, categoria: t.tela_categoria, icone: t.tela_icone, pode_editar: 1
+        }));
+      }
+
+      const result = await client.execute({
+        sql: `SELECT t.tela_id, t.tela_titulo, t.tela_categoria, t.tela_icone, ut.pode_editar
+              FROM cc_usuario_telas_web ut
+              JOIN cc_web_telas t ON ut.tela_id = t.tela_id
+              WHERE ut.usuario_id = ? AND t.ativo = 1
+              ORDER BY t.ordem`,
+        args: [usuarioId]
+      });
+
+      const telas = (result.rows || []).map(t => ({
+        id: t.tela_id, titulo: t.tela_titulo, categoria: t.tela_categoria, icone: t.tela_icone, pode_editar: t.pode_editar || 0
+      }));
+
+      // Se não tem telas configuradas, dar acesso a todas
+      if (telas.length === 0) {
+        const allTelas = await client.execute({
+          sql: `SELECT tela_id, tela_titulo, tela_categoria, tela_icone FROM cc_web_telas WHERE ativo = 1 ORDER BY ordem`,
+          args: []
+        });
+        return (allTelas.rows || []).map(t => ({
+          id: t.tela_id, titulo: t.tela_titulo, categoria: t.tela_categoria, icone: t.tela_icone, pode_editar: 0
+        }));
+      }
+
+      return telas;
+    } catch (e) {
+      console.warn('[AUTH] Erro ao buscar telas direto:', e.message);
+      return [];
+    }
+  }
+
+  /**
+   * Login PWA com login direto no Turso (SHA-256) + fallback backend
    */
   async login(username, password) {
     try {
@@ -248,13 +383,63 @@ class AuthManager {
         return { success: true, usuario: this.usuario, fromCache: true };
       }
 
-      // Prioridade 2: Aguardar pre-warm se servidor ainda não acordou
+      // Prioridade 2: Login direto no Turso com SHA-256 (instantâneo, sem cold start)
+      console.log('[AUTH] Tentando login direto no Turso (SHA-256)...');
+      const usuarioTurso = await this._loginDiretoTurso(username, password);
+
+      if (usuarioTurso) {
+        console.log('[AUTH] Login direto Turso bem-sucedido!', { username: usuarioTurso.username });
+
+        // Buscar telas diretamente do Turso
+        const telas = await this._buscarTelasDiretoTurso(usuarioTurso.usuario_id, usuarioTurso.perfil);
+
+        // Montar objeto de permissões baseado no perfil
+        const permissoesMap = {
+          admin: ['home', 'cadastro-repositor', 'roteiro-repositor', 'cadastro-rateio', 'validacao-dados',
+                  'consulta-visitas', 'consulta-campanha', 'consulta-alteracoes', 'consulta-roteiro',
+                  'consulta-documentos', 'registro-rota', 'registro-documentos', 'relatorio-visitas',
+                  'relatorio-campanha', 'relatorio-roteiro', 'gerenciar-usuarios'],
+          repositor: ['home', 'registro-rota', 'registro-documentos', 'consulta-campanha',
+                      'consulta-roteiro', 'consulta-documentos', 'consulta-visitas']
+        };
+        const permissoes = permissoesMap[usuarioTurso.perfil] || permissoesMap.repositor;
+
+        const usuario = {
+          usuario_id: usuarioTurso.usuario_id,
+          username: usuarioTurso.username,
+          nome_completo: usuarioTurso.nome_completo,
+          email: usuarioTurso.email,
+          perfil: usuarioTurso.perfil,
+          rep_id: usuarioTurso.rep_id,
+          permissoes
+        };
+
+        // Gerar um token local simples (não JWT — será renovado pelo backend em background)
+        const tokenLocal = btoa(JSON.stringify({
+          usuario_id: usuario.usuario_id,
+          username: usuario.username,
+          perfil: usuario.perfil,
+          rep_id: usuario.rep_id,
+          ts: Date.now()
+        }));
+
+        this.salvarSessao(tokenLocal, usuario, permissoes, telas);
+
+        // Renovar token JWT real via backend em background (silencioso)
+        this._renovarTokenBackground(username, password);
+
+        return { success: true, usuario, fromTursoDirect: true };
+      }
+
+      // Prioridade 3: Fallback para backend (SHA-256 ainda não salvo — primeiro login)
+      console.log('[AUTH] SHA-256 não disponível, usando backend (primeiro login ou migração)...');
+
+      // Aguardar pre-warm se servidor ainda não acordou
       if (!this.servidorPronto && this._preWarmPromise) {
-        console.log('[AUTH] Aguardando servidor acordar antes de tentar login...');
+        console.log('[AUTH] Aguardando servidor acordar...');
         try { await this._preWarmPromise; } catch (_) { /* continuar mesmo se falhar */ }
       }
 
-      // Prioridade 3: Tentar servidor (10s — servidor já deve estar pronto)
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
 
@@ -280,7 +465,7 @@ class AuthManager {
       const permissoes = data.permissoes || data.usuario?.permissoes || [];
       const telas = data.telas || [];
       this.salvarSessao(data.token, data.usuario, permissoes, telas);
-      console.log('[AUTH] Login PWA bem-sucedido!', { usuario: data.usuario.username, telasCount: telas.length });
+      console.log('[AUTH] Login PWA via backend bem-sucedido!', { usuario: data.usuario.username, telasCount: telas.length });
 
       return { success: true, usuario: data.usuario };
     } catch (error) {
@@ -291,7 +476,7 @@ class AuthManager {
         if (this.tentarLoginOffline(username)) {
           return { success: true, usuario: this.usuario, offline: true };
         }
-        throw new Error('Sem conexão com o servidor. Faça login online pelo menos uma vez por dia para usar no modo offline.');
+        throw new Error('Sem conexão com o servidor. Faça login online pelo menos uma vez para usar no modo offline.');
       }
       console.error('[AUTH] Erro no login PWA:', error);
       throw error;
@@ -505,7 +690,7 @@ class AuthManager {
     const temCache = (() => {
       try {
         const c = JSON.parse(cacheStr || '');
-        return c?.token && (Date.now() - c.savedAt < 24 * 60 * 60 * 1000);
+        return c?.token && (Date.now() - c.savedAt < 14 * 60 * 60 * 1000);
       } catch { return false; }
     })();
 
@@ -514,8 +699,10 @@ class AuthManager {
       this.atualizarStatusServidorPWA('ready');
       this.preWarmServer().catch(() => {}); // silencioso
     } else {
-      // Sem cache: pre-warm com indicador de progresso (servidor necessário para login)
-      this._iniciarPreWarmComRetry();
+      // Login direto no Turso disponível — mostrar como pronto imediatamente
+      // O pre-warm do backend acontece em background (necessário apenas como fallback)
+      this.atualizarStatusServidorPWA('ready');
+      this.preWarmServer().catch(() => {}); // silencioso em background
     }
   }
 
