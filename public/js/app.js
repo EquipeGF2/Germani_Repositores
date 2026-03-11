@@ -10853,27 +10853,43 @@ class App {
         };
 
         if (cacheValido) {
-            // PWA: reutilizar dados em cache - navegação instantânea
-            if (!navigator.onLine) {
-                roteiro = await carregarRoteiroOffline();
-            } else {
-                roteiro = await db.carregarRoteiroRepositorDia(repId, diaSemana);
-            }
+            // PWA: reutilizar dados em memória - navegação instantânea (zero queries)
+            roteiro = this.registroRotaState.roteiroAtual || await carregarRoteiroOffline();
             resumo = [...this.registroRotaState.resumoVisitas.values()];
             atendimentosAbertos = [...(this.registroRotaState.atendimentosAbertos?.values() || [])];
+
+            // Background: atualizar do Turso silenciosamente (sem bloquear UI)
+            if (navigator.onLine) {
+                db.carregarRoteiroRepositorDia(repId, diaSemana).then(roteiroFresco => {
+                    if (roteiroFresco && roteiroFresco.length > 0) {
+                        this.registroRotaState.roteiroAtual = roteiroFresco;
+                    }
+                }).catch(() => {});
+            }
         } else if (isPWA) {
-            // PWA primeira carga: buscar roteiro do Turso direto (rápido) e renderizar imediatamente
-            // Status virão do backend em background depois
+            // PWA primeira carga: IndexedDB primeiro (instantâneo), Turso em background
+            // Mostrar loading breve
             container.innerHTML = `
                 <div style="text-align:center;padding:20px;">
                     <div class="pwa-spinner-small" style="margin:0 auto;"></div>
                     <p style="margin-top:8px;color:#666;font-size:13px;">Carregando...</p>
                 </div>
             `;
-            if (!navigator.onLine) {
-                roteiro = await carregarRoteiroOffline();
-            } else {
+            // Sempre tentar IndexedDB primeiro (instantâneo)
+            roteiro = await carregarRoteiroOffline();
+
+            // Se IndexedDB vazio e online, fallback para Turso
+            if ((!roteiro || roteiro.length === 0) && navigator.onLine) {
                 roteiro = await db.carregarRoteiroRepositorDia(repId, diaSemana);
+            }
+
+            // Se conseguiu do IndexedDB e está online, atualizar do Turso em background
+            if (roteiro && roteiro.length > 0 && navigator.onLine) {
+                db.carregarRoteiroRepositorDia(repId, diaSemana).then(roteiroFresco => {
+                    if (roteiroFresco && roteiroFresco.length > 0) {
+                        this.registroRotaState.roteiroAtual = roteiroFresco;
+                    }
+                }).catch(() => {});
             }
             resumo = [];
             atendimentosAbertos = [];
@@ -10981,15 +10997,30 @@ class App {
             return;
         }
 
-        // Buscar clientes com espaços cadastrados (em background, silencioso se falhar)
+        // Buscar clientes com espaços cadastrados (cache-first)
         const clienteIds = roteiro.map(c => normalizeClienteId(c.cli_codigo));
-        if (!cacheValido) this.registroRotaState.clientesComEspaco = new Set();
-        if (!cacheValido) fetch(`${API_BASE_URL}/api/espacos/clientes-com-espaco?clientes=${clienteIds.join(',')}`)
+        if (!cacheValido) {
+            this.registroRotaState.clientesComEspaco = new Set();
+            // Restaurar do cache local primeiro
+            try {
+                const cachedEspacos = localStorage.getItem(`espacos_clientes_${repId}`);
+                if (cachedEspacos) {
+                    const parsed = JSON.parse(cachedEspacos);
+                    this.registroRotaState.clientesComEspaco = new Set(parsed);
+                    this.atualizarBotoesEspacosRoteiro();
+                }
+            } catch (_) {}
+        }
+        // Atualizar do servidor em background
+        if (!cacheValido && navigator.onLine) fetch(`${API_BASE_URL}/api/espacos/clientes-com-espaco?clientes=${clienteIds.join(',')}`)
             .then(r => r.ok ? r.json() : null)
             .then(resp => {
                 if (resp?.ok && resp.data) {
-                    this.registroRotaState.clientesComEspaco = new Set(resp.data.map(c => normalizeClienteId(c)));
+                    const lista = resp.data.map(c => normalizeClienteId(c));
+                    this.registroRotaState.clientesComEspaco = new Set(lista);
                     this.atualizarBotoesEspacosRoteiro();
+                    // Salvar no cache para próxima vez
+                    try { localStorage.setItem(`espacos_clientes_${repId}`, JSON.stringify(lista)); } catch (_) {}
                 }
             })
             .catch(() => { /* silencioso */ });
@@ -12894,6 +12925,37 @@ class App {
             this.registroRotaState.pesquisasPendentesMap = new Map();
         }
 
+        const isPWA = window.authManager?.isPWA;
+        const cacheKey = `pesquisas_cache_${repId}_${dataVisita}`;
+
+        // PWA: tentar restaurar cache do localStorage primeiro (instantâneo)
+        if (isPWA && this.registroRotaState.pesquisasPendentesMap.size === 0) {
+            try {
+                const cached = localStorage.getItem(cacheKey);
+                if (cached) {
+                    const parsed = JSON.parse(cached);
+                    // Cache válido por 4 horas
+                    if (parsed.timestamp && (Date.now() - parsed.timestamp) < 4 * 60 * 60 * 1000) {
+                        Object.entries(parsed.data).forEach(([cliId, pesquisas]) => {
+                            this.registroRotaState.pesquisasPendentesMap.set(cliId, pesquisas);
+                        });
+                        // Atualizar cards com dados cacheados imediatamente
+                        roteiro.forEach(cliente => {
+                            const cliId = String(cliente.cli_codigo || '').trim().replace(/\.0$/, '');
+                            this.atualizarCardCliente(cliId);
+                        });
+                        console.log(`📋 Pesquisas restauradas do cache: ${this.registroRotaState.pesquisasPendentesMap.size} clientes`);
+                    }
+                }
+            } catch (_) {}
+        }
+
+        // Se offline e já tem cache, não fazer mais nada
+        if (!navigator.onLine && this.registroRotaState.pesquisasPendentesMap.size > 0) {
+            console.log('📋 Offline - usando pesquisas do cache');
+            return;
+        }
+
         // Processar em chunks de 8 clientes para melhor performance
         const CHUNK_SIZE = 8;
         const chunks = [];
@@ -12919,6 +12981,7 @@ class App {
                     }
                 } catch (error) {
                     console.warn(`Erro ao verificar pesquisas do cliente ${cliId}:`, error);
+                    // Manter dados do cache se falhar - não remover do mapa
                 }
             }));
 
@@ -12927,6 +12990,15 @@ class App {
                 const cliId = String(cliente.cli_codigo || '').trim().replace(/\.0$/, '');
                 this.atualizarCardCliente(cliId);
             });
+        }
+
+        // PWA: salvar no localStorage para próxima carga instantânea
+        if (isPWA && this.registroRotaState.pesquisasPendentesMap.size > 0) {
+            try {
+                const cacheData = {};
+                this.registroRotaState.pesquisasPendentesMap.forEach((v, k) => { cacheData[k] = v; });
+                localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: cacheData }));
+            } catch (_) {}
         }
 
         console.log('📋 Verificação de pesquisas concluída');
@@ -20540,7 +20612,14 @@ class App {
 
         // Se não há dados em cache, buscar do banco
         if (!todasPesquisas || todasPesquisas.length === 0) {
-            todasPesquisas = await this.buscarPesquisasPendentes(repId, clienteId, dataVisita, false);
+            try {
+                this.showNotification('Carregando pesquisas...', 'info');
+                todasPesquisas = await this.buscarPesquisasPendentes(repId, clienteId, dataVisita, false);
+            } catch (error) {
+                console.error('Erro ao buscar pesquisas:', error);
+                this.showNotification('Erro ao carregar pesquisas. Verifique sua conexão.', 'error');
+                return;
+            }
         }
 
         if (!todasPesquisas || todasPesquisas.length === 0) {
@@ -22943,6 +23022,31 @@ class App {
     // === Verificação de Espaços Pendentes (para registro de rota) ===
 
     async verificarEspacosPendentes(repositorId, clienteId) {
+        const cliNorm = String(clienteId).trim().replace(/\.0$/, '');
+
+        // 1. Tentar cache local primeiro (instantâneo)
+        try {
+            if (typeof offlineDB !== 'undefined') {
+                const cached = await offlineDB.getEspacosCliente(cliNorm);
+                if (cached) {
+                    // Atualizar do servidor em background se online
+                    if (navigator.onLine) {
+                        this._atualizarEspacosCache(repositorId, cliNorm).catch(() => {});
+                    }
+                    return cached;
+                }
+            }
+        } catch (_) {}
+
+        // 2. Se não tem cache, buscar do servidor
+        if (navigator.onLine) {
+            return await this._buscarEspacosDoServidor(repositorId, cliNorm);
+        }
+
+        return { temEspacos: false, espacosPendentes: [], espacosRegistrados: [] };
+    }
+
+    async _buscarEspacosDoServidor(repositorId, clienteId) {
         try {
             const dataHoje = new Date().toISOString().split('T')[0];
             const response = await fetchJson(
@@ -22950,6 +23054,10 @@ class App {
             );
 
             if (response?.ok && response.data) {
+                // Salvar no cache local
+                if (typeof offlineDB !== 'undefined') {
+                    offlineDB.salvarEspacosCliente(clienteId, response.data).catch(() => {});
+                }
                 return response.data;
             }
             return { temEspacos: false, espacosPendentes: [], espacosRegistrados: [] };
@@ -22959,10 +23067,15 @@ class App {
         }
     }
 
+    async _atualizarEspacosCache(repositorId, clienteId) {
+        const dados = await this._buscarEspacosDoServidor(repositorId, clienteId);
+        if (dados.temEspacos && typeof offlineDB !== 'undefined') {
+            await offlineDB.salvarEspacosCliente(clienteId, dados);
+        }
+    }
+
     async verificarEAbrirRegistroEspacos(repId, clienteId, clienteNome, dataVisita) {
         try {
-            this.showNotification('Verificando espaços...', 'info');
-
             const espacosStatus = await this.verificarEspacosPendentes(repId, clienteId);
 
             if (!espacosStatus.temEspacos) {
@@ -22975,15 +23088,27 @@ class App {
             if (espacosParaRegistrar.length === 0) {
                 try {
                     const cliNorm = String(clienteId).trim().replace(/\.0$/, '');
-                    const respTodos = await fetchJson(`${API_BASE_URL}/api/espacos/clientes/${encodeURIComponent(cliNorm)}`);
-                    if (respTodos?.data && respTodos.data.length > 0) {
-                        espacosParaRegistrar = respTodos.data.map(e => ({
-                            tipo_espaco_id: e.ces_tipo_espaco_id,
-                            tipo_nome: e.tipo_nome,
-                            quantidade_esperada: e.ces_quantidade,
-                            ces_quantidade: e.ces_quantidade
-                        }));
+                    // Tentar cache local primeiro
+                    let espacosCli = null;
+                    if (typeof offlineDB !== 'undefined') {
+                        const cached = await offlineDB.getEspacosCliente(cliNorm);
+                        if (cached?.espacosPendentes?.length > 0) {
+                            espacosCli = cached.espacosPendentes;
+                        }
                     }
+                    // Se não tem cache e está online, buscar do servidor
+                    if (!espacosCli && navigator.onLine) {
+                        const respTodos = await fetchJson(`${API_BASE_URL}/api/espacos/clientes/${encodeURIComponent(cliNorm)}`);
+                        if (respTodos?.data && respTodos.data.length > 0) {
+                            espacosCli = respTodos.data.map(e => ({
+                                tipo_espaco_id: e.ces_tipo_espaco_id,
+                                tipo_nome: e.tipo_nome,
+                                quantidade_esperada: e.ces_quantidade,
+                                ces_quantidade: e.ces_quantidade
+                            }));
+                        }
+                    }
+                    if (espacosCli) espacosParaRegistrar = espacosCli;
                 } catch (_) {}
             }
 
@@ -23051,33 +23176,30 @@ class App {
         }
 
         modal.innerHTML = `
-            <div class="modal-content" style="max-width: 600px; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-content" style="max-width: 600px; display: flex; flex-direction: column; max-height: 90vh;">
                 <div class="modal-header">
-                    <h3>📦 Registro de Espaços</h3>
+                    <div>
+                        <h3 class="modal-title-pwa-hidden">Registro de Espaços</h3>
+                        <div style="font-size: 13px; color: #6b7280; margin-top: 4px;">
+                            ${clienteId} - ${clienteNome} | ${espacosExpandidos.length} espaço(s)
+                        </div>
+                    </div>
                     <button class="modal-close" onclick="window.app.fecharModalRegistroEspacos()">&times;</button>
                 </div>
-                <div class="modal-body">
-                    <div class="alert alert-warning" style="margin-bottom: 16px;">
-                        <strong>⚠️ Obrigatório:</strong> Registre cada espaço com foto antes do checkout.
-                    </div>
-                    <p style="margin-bottom: 16px;"><strong>Cliente:</strong> ${clienteId} - ${clienteNome}</p>
-                    <p style="margin-bottom: 16px; color: #6b7280; font-size: 13px;">
-                        Total de espaços a registrar: <strong>${espacosExpandidos.length}</strong>
-                    </p>
-
+                <div class="modal-body" style="overflow-y: auto; flex: 1;">
                     <div id="listaEspacosPendentes">
                         ${espacosExpandidos.map((esp, idx) => `
-                            <div class="espaco-pendente-item" data-idx="${idx}" id="espacoItem${idx}" style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <div class="espaco-pendente-item" data-idx="${idx}" id="espacoItem${idx}" style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 10px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                     <div>
                                         <strong>${esp.tipo_nome || esp.tipo_espaco_nome || 'Espaço'}</strong>
                                         ${esp.totalUnidades > 1 ? `<span style="color: #6b7280;"> (${esp.unidade}/${esp.totalUnidades})</span>` : ''}
                                     </div>
-                                    <span class="badge badge-warning" id="statusEspaco${idx}">📷 Foto pendente</span>
+                                    <span class="badge badge-warning" id="statusEspaco${idx}">Foto pendente</span>
                                 </div>
 
-                                <div id="fotoPreview${idx}" style="margin-bottom: 12px; display: none;">
-                                    <img id="fotoImg${idx}" style="max-width: 100%; border-radius: 8px; max-height: 200px; object-fit: cover;">
+                                <div id="fotoPreview${idx}" style="margin-bottom: 8px; display: none;">
+                                    <img id="fotoImg${idx}" style="max-width: 100%; border-radius: 8px; max-height: 150px; object-fit: cover;">
                                 </div>
 
                                 <div class="form-group" style="margin-bottom: 8px;">
@@ -23088,21 +23210,21 @@ class App {
 
                                 <div style="display: flex; gap: 8px;">
                                     <button class="btn btn-secondary btn-sm" id="btnFoto${idx}" onclick="window.app.abrirCameraEspaco(${idx})">
-                                        📷 Tirar Foto
+                                        Tirar Foto
                                     </button>
                                     <button class="btn btn-primary btn-sm" id="btnConfirmar${idx}"
                                             onclick="window.app.registrarEspacoItemComFoto(${idx}, ${esp.tipo_espaco_id || esp.ces_tipo_espaco_id})" disabled>
-                                        ✅ Confirmar
+                                        Confirmar
                                     </button>
                                 </div>
                             </div>
                         `).join('')}
                     </div>
                 </div>
-                <div class="modal-footer">
+                <div class="modal-footer" style="padding-top: 15px; border-top: 1px solid #e5e7eb; display: flex; justify-content: flex-end; gap: 10px;">
                     <button type="button" class="btn btn-secondary" onclick="window.app.fecharModalRegistroEspacos()">Cancelar</button>
                     <button type="button" class="btn btn-primary" id="btnFinalizarEspacos" onclick="window.app.finalizarRegistroEspacos()" disabled>
-                        Continuar para Checkout (0/${espacosExpandidos.length})
+                        Salvar (0/${espacosExpandidos.length})
                     </button>
                 </div>
             </div>
@@ -23296,59 +23418,38 @@ class App {
         const { repId, clienteId, dataVisita, gpsCoords } = this.espacosRegistroState;
 
         btnConfirmar.disabled = true;
-        btnConfirmar.textContent = 'Enviando...';
+        btnConfirmar.textContent = 'Salvando...';
 
         try {
-            // Upload da foto primeiro - usando endpoint específico para espaços
-            const formData = new FormData();
-            formData.append('foto', esp.fotoFile);
-            formData.append('cliente_id', clienteId);
-            formData.append('repositor_id', repId);
+            // Salvar localmente no IndexedDB (cache-first, envio em background depois)
+            const dadosFila = {
+                repId,
+                clienteId: String(clienteId).trim().replace(/\.0$/, ''),
+                tipoEspacoId,
+                observacao,
+                dataRegistro: dataVisita,
+                gpsCoords,
+                fotoBlob: esp.fotoFile,  // Blob é suportado pelo structured clone do IndexedDB
+                fotoName: esp.fotoFile.name || `espaco-${repId}-${clienteId}-${idx}-${Date.now()}.jpg`
+            };
 
-            const uploadResp = await fetch(`${API_BASE_URL}/api/espacos/upload-foto`, {
-                method: 'POST',
-                body: formData
-            });
-            const uploadResult = await uploadResp.json();
+            await offlineDB.adicionarEspacoFila(dadosFila);
 
-            if (!uploadResult?.ok) {
-                throw new Error(uploadResult?.message || 'Erro ao enviar foto');
-            }
+            // Marcar como salvo na UI
+            this.espacosRegistroState.registrosRealizados.push(idx);
 
-            // Registrar espaço com URL da foto
-            const response = await fetchJson(`${API_BASE_URL}/api/espacos/registros`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    repositor_id: repId,
-                    cliente_id: clienteId,
-                    tipo_espaco_id: tipoEspacoId,
-                    quantidade_esperada: 1,
-                    quantidade_registrada: 1,
-                    foto_url: uploadResult.url || uploadResult.fileId,
-                    observacao,
-                    data_registro: dataVisita
-                })
-            });
+            statusBadge.className = 'badge badge-success';
+            statusBadge.textContent = 'Salvo';
+            itemDiv.style.opacity = '0.7';
+            itemDiv.style.pointerEvents = 'none';
 
-            if (response?.ok) {
-                this.espacosRegistroState.registrosRealizados.push(idx);
-
-                statusBadge.className = 'badge badge-success';
-                statusBadge.textContent = '✅ Registrado';
-                itemDiv.style.opacity = '0.7';
-                itemDiv.style.pointerEvents = 'none';
-
-                this.atualizarBotaoFinalizarEspacos();
-                this.showNotification('Espaço registrado com sucesso!', 'success');
-            } else {
-                throw new Error(response?.message || 'Erro ao registrar');
-            }
+            this.atualizarBotaoFinalizarEspacos();
+            this.showNotification('Espaço salvo! Será enviado automaticamente.', 'success');
         } catch (error) {
-            console.error('Erro ao registrar espaço:', error);
+            console.error('Erro ao salvar espaço:', error);
             btnConfirmar.disabled = false;
-            btnConfirmar.textContent = '✅ Confirmar';
-            this.showNotification(error.message || 'Erro ao registrar espaço', 'error');
+            btnConfirmar.textContent = 'Confirmar';
+            this.showNotification(error.message || 'Erro ao salvar espaço', 'error');
         }
     }
 
@@ -23359,7 +23460,7 @@ class App {
         const total = this.espacosRegistroState.espacosPendentes.length;
         const registrados = this.espacosRegistroState.registrosRealizados.length;
 
-        btn.textContent = `Continuar para Checkout (${registrados}/${total})`;
+        btn.textContent = `Salvar (${registrados}/${total})`;
         btn.disabled = registrados < total;
     }
 
@@ -23375,8 +23476,8 @@ class App {
         // Fechar modal de espaços
         this.fecharModalRegistroEspacos();
 
-        // Informar que pode prosseguir com checkout
-        this.showNotification('Espaços registrados! Clique em Salvar para finalizar o checkout.', 'success');
+        // Informar que espaços foram salvos
+        this.showNotification('Espaços salvos com sucesso!', 'success');
     }
 
     fecharModalRegistroEspacos() {

@@ -6,7 +6,7 @@
 class OfflineDB {
   constructor() {
     this.dbName = 'GermaniPWA';
-    this.dbVersion = 2;
+    this.dbVersion = 3;
     this.db = null;
     this.MAX_RETRY_ATTEMPTS = 5;  // Limite de tentativas antes de marcar como dead_letter
   }
@@ -102,6 +102,18 @@ class OfflineDB {
         if (!db.objectStoreNames.contains('filaPesquisas')) {
           const filaPesquisas = db.createObjectStore('filaPesquisas', { keyPath: 'localId', autoIncrement: true });
           filaPesquisas.createIndex('status', 'syncStatus', { unique: false });
+        }
+
+        // Espaços pendentes de envio (fotos + registros)
+        if (!db.objectStoreNames.contains('filaEspacos')) {
+          const filaEspacos = db.createObjectStore('filaEspacos', { keyPath: 'localId', autoIncrement: true });
+          filaEspacos.createIndex('status', 'syncStatus', { unique: false });
+        }
+
+        // Cache de espaços dos clientes (para acesso offline)
+        if (!db.objectStoreNames.contains('espacosClientes')) {
+          const espacosClientes = db.createObjectStore('espacosClientes', { keyPath: 'clienteId' });
+          espacosClientes.createIndex('updatedAt', 'updatedAt', { unique: false });
         }
 
         // ========== METADADOS DE SINCRONIZAÇÃO ==========
@@ -337,6 +349,39 @@ class OfflineDB {
   }
 
   /**
+   * Adicionar registro de espaço à fila (foto como Blob + dados)
+   */
+  async adicionarEspacoFila(espaco) {
+    const dados = {
+      ...espaco,
+      syncStatus: 'pending',
+      createdAt: new Date().toISOString(),
+      attempts: 0
+    };
+    return await this.add('filaEspacos', dados);
+  }
+
+  /**
+   * Salvar espaços de um cliente no cache local
+   */
+  async salvarEspacosCliente(clienteId, espacos) {
+    await this.put('espacosClientes', {
+      clienteId: String(clienteId).trim().replace(/\.0$/, ''),
+      espacos,
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  /**
+   * Obter espaços de um cliente do cache local
+   */
+  async getEspacosCliente(clienteId) {
+    const id = String(clienteId).trim().replace(/\.0$/, '');
+    const cached = await this.get('espacosClientes', id);
+    return cached?.espacos || null;
+  }
+
+  /**
    * Obter itens pendentes de envio (status pending)
    */
   async getPendentes(storeName) {
@@ -366,7 +411,7 @@ class OfflineDB {
    */
   async contarDeadLetters() {
     let total = 0;
-    for (const storeName of ['filaSessoes', 'filaRegistros', 'filaFotos', 'filaRota', 'filaPesquisas']) {
+    for (const storeName of ['filaSessoes', 'filaRegistros', 'filaFotos', 'filaRota', 'filaPesquisas', 'filaEspacos']) {
       const items = await this.getDeadLetters(storeName);
       total += items.length;
     }
@@ -440,6 +485,7 @@ class OfflineDB {
     const fotos = await this.getParaEnvio('filaFotos');
     const rotas = await this.getParaEnvio('filaRota');
     const pesquisas = await this.getParaEnvio('filaPesquisas');
+    const espacos = await this.getParaEnvio('filaEspacos');
     const deadLetters = await this.contarDeadLetters();
 
     return {
@@ -448,7 +494,8 @@ class OfflineDB {
       fotos: fotos.length,
       rotas: rotas.length,
       pesquisas: pesquisas.length,
-      total: sessoes.length + registros.length + fotos.length + rotas.length + pesquisas.length,
+      espacos: espacos.length,
+      total: sessoes.length + registros.length + fotos.length + rotas.length + pesquisas.length + espacos.length,
       deadLetters
     };
   }
@@ -468,7 +515,7 @@ class OfflineDB {
 
     let removidos = 0;
 
-    for (const storeName of ['filaSessoes', 'filaRegistros', 'filaFotos', 'filaRota', 'filaPesquisas']) {
+    for (const storeName of ['filaSessoes', 'filaRegistros', 'filaFotos', 'filaRota', 'filaPesquisas', 'filaEspacos']) {
       const todos = await this.getAll(storeName);
       for (const item of todos) {
         // Remover sincronizados com mais de 7 dias
