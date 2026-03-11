@@ -2118,6 +2118,11 @@ class TursoService {
     await this.execute(sql, [usuarioId]);
   }
 
+  async salvarPasswordSha256(usuarioId, sha256Hash) {
+    const sql = 'UPDATE cc_usuarios SET password_sha256 = ? WHERE usuario_id = ?';
+    await this.execute(sql, [sha256Hash, usuarioId]);
+  }
+
   async desativarUsuario(usuarioId) {
     const sql = 'UPDATE cc_usuarios SET ativo = 0, atualizado_em = datetime("now", "-03:00") WHERE usuario_id = ?';
     await this.execute(sql, [usuarioId]);
@@ -3670,6 +3675,11 @@ class TursoService {
         await this.execute(`ALTER TABLE cc_usuarios ADD COLUMN senha_resetada_em TEXT`, []);
         console.log('✅ Coluna senha_resetada_em adicionada');
       }
+
+      if (!columns.includes('password_sha256')) {
+        await this.execute(`ALTER TABLE cc_usuarios ADD COLUMN password_sha256 TEXT`, []);
+        console.log('✅ Coluna password_sha256 adicionada (login direto Turso)');
+      }
     } catch (e) {
       console.log('[ensureWebLoginSchema] Colunas já existem ou erro:', e.message);
     }
@@ -3887,14 +3897,16 @@ class TursoService {
 
   // Resetar senha do usuário (admin)
   async resetarSenhaUsuario(usuarioId, novaSenha) {
+    const { default: crypto } = await import('crypto');
     const { authService } = await import('./auth.js');
     const passwordHash = await authService.hashPassword(novaSenha);
+    const sha256Hash = crypto.createHash('sha256').update(novaSenha).digest('hex');
 
     await this.execute(`
       UPDATE cc_usuarios
-      SET password_hash = ?, deve_trocar_senha = 1, senha_resetada_em = datetime('now'), atualizado_em = datetime('now')
+      SET password_hash = ?, password_sha256 = ?, deve_trocar_senha = 1, senha_resetada_em = datetime('now'), atualizado_em = datetime('now')
       WHERE usuario_id = ?
-    `, [passwordHash, usuarioId]);
+    `, [passwordHash, sha256Hash, usuarioId]);
   }
 
   // Marcar que usuário trocou a senha

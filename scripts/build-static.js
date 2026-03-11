@@ -69,6 +69,11 @@ export const TURSO_CONFIG = {
     authToken: '${TURSO_COMERCIAL_TOKEN}'
   }
 };
+
+// Expor no window para scripts não-module (ex: auth.js usa para login direto no Turso)
+if (typeof window !== 'undefined') {
+  window.TURSO_CONFIG = TURSO_CONFIG;
+}
 `;
 
 const configPath = path.join(outDir, 'js', 'turso-config.js');
