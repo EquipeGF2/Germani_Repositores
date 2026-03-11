@@ -390,6 +390,62 @@ class SyncService {
         }
       }
 
+      // Enviar espaços pendentes (upload foto + registrar)
+      const espacosPendentes = await offlineDB.getParaEnvio('filaEspacos');
+      for (const espaco of espacosPendentes) {
+        try {
+          let fotoUrl = null;
+
+          // Upload da foto (se houver blob)
+          if (espaco.fotoBlob) {
+            const formData = new FormData();
+            formData.append('foto', espaco.fotoBlob, espaco.fotoName || 'espaco.jpg');
+            formData.append('cliente_id', espaco.clienteId);
+            formData.append('repositor_id', espaco.repId);
+
+            const uploadResp = await this.fetchWithTimeout(
+              `${this.apiBaseUrl}/api/espacos/upload-foto`,
+              { method: 'POST', body: formData }
+            );
+            const uploadResult = await uploadResp.json();
+            if (uploadResult?.ok) {
+              fotoUrl = uploadResult.url || uploadResult.fileId;
+            }
+          }
+
+          // Registrar espaço no servidor
+          const response = await this.fetchWithTimeout(`${this.apiBaseUrl}/api/espacos/registros`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              repositor_id: espaco.repId,
+              cliente_id: espaco.clienteId,
+              tipo_espaco_id: espaco.tipoEspacoId,
+              quantidade_esperada: 1,
+              quantidade_registrada: 1,
+              foto_url: fotoUrl,
+              observacao: espaco.observacao || '',
+              data_registro: espaco.dataRegistro
+            })
+          });
+          const result = await response.json();
+
+          if (result?.ok) {
+            await offlineDB.marcarEnviado('filaEspacos', espaco.localId, result);
+            totalEnviados++;
+            console.log(`[SyncService] Espaço ${espaco.tipoEspacoId} enviado para cliente ${espaco.clienteId}`);
+          } else {
+            await offlineDB.marcarErro('filaEspacos', espaco.localId, result?.message || 'Erro ao registrar');
+            totalErros++;
+          }
+        } catch (e) {
+          const errorMsg = e.name === 'AbortError' ? 'Timeout na requisição' : e.message;
+          console.error(`[SyncService] Erro ao enviar espaço:`, e);
+          await offlineDB.marcarErro('filaEspacos', espaco.localId, errorMsg);
+          totalErros++;
+        }
+      }
+
       // Enviar pesquisas pendentes (upload fotos + salvar respostas no Turso)
       const pesquisasPendentes = await offlineDB.getParaEnvio('filaPesquisas');
       for (const pesquisa of pesquisasPendentes) {
