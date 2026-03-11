@@ -390,6 +390,66 @@ class SyncService {
         }
       }
 
+      // Enviar pesquisas pendentes (upload fotos + salvar respostas no Turso)
+      const pesquisasPendentes = await offlineDB.getParaEnvio('filaPesquisas');
+      for (const pesquisa of pesquisasPendentes) {
+        try {
+          const fotosUrls = [];
+
+          // Upload de fotos (se houver)
+          if (pesquisa.fotos && pesquisa.fotos.length > 0) {
+            const agora = new Date();
+            const dataStr = agora.toISOString().split('T')[0].replace(/-/g, '');
+            const clienteNorm = String(pesquisa.clienteCodigo).trim().replace(/\.0$/, '');
+
+            for (let i = 0; i < pesquisa.fotos.length; i++) {
+              const foto = pesquisa.fotos[i];
+              if (foto instanceof File || foto instanceof Blob) {
+                const nomeArquivo = `${pesquisa.repId}_${clienteNorm}_${pesquisa.pesId}_${dataStr}_${i + 1}.jpg`;
+
+                const formData = new FormData();
+                formData.append('arquivo', foto, nomeArquivo);
+                formData.append('repositor_id', pesquisa.repId);
+                formData.append('pesquisa_id', pesquisa.pesId);
+                formData.append('cliente_codigo', clienteNorm);
+
+                const uploadResp = await this.fetchWithTimeout(
+                  `${this.apiBaseUrl}/api/pesquisa/upload-foto`,
+                  { method: 'POST', body: formData }
+                );
+                const result = await uploadResp.json();
+                if (result.success && result.url) {
+                  fotosUrls.push(result.url);
+                }
+              }
+            }
+          }
+
+          // Salvar resposta no Turso via db
+          const fotoUrlFinal = fotosUrls.length > 1
+            ? JSON.stringify(fotosUrls)
+            : (fotosUrls[0] || null);
+
+          await db.salvarRespostaPesquisa({
+            pesId: pesquisa.pesId,
+            repId: pesquisa.repId,
+            clienteCodigo: pesquisa.clienteCodigo,
+            visitaId: null,
+            respostas: pesquisa.respostas,
+            fotoUrl: fotoUrlFinal
+          });
+
+          await offlineDB.marcarEnviado('filaPesquisas', pesquisa.localId, { fotosUrls });
+          totalEnviados++;
+          console.log(`[SyncService] Pesquisa ${pesquisa.pesId} enviada com ${fotosUrls.length} foto(s)`);
+        } catch (e) {
+          const errorMsg = e.name === 'AbortError' ? 'Timeout na requisição' : e.message;
+          console.error(`[SyncService] Erro ao enviar pesquisa ${pesquisa.pesId}:`, e);
+          await offlineDB.marcarErro('filaPesquisas', pesquisa.localId, errorMsg);
+          totalErros++;
+        }
+      }
+
       // Limpar itens sincronizados antigos
       await offlineDB.limparSincronizados();
 

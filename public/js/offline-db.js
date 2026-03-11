@@ -6,7 +6,7 @@
 class OfflineDB {
   constructor() {
     this.dbName = 'GermaniPWA';
-    this.dbVersion = 1;
+    this.dbVersion = 2;
     this.db = null;
     this.MAX_RETRY_ATTEMPTS = 5;  // Limite de tentativas antes de marcar como dead_letter
   }
@@ -96,6 +96,12 @@ class OfflineDB {
         if (!db.objectStoreNames.contains('filaRota')) {
           const filaRota = db.createObjectStore('filaRota', { keyPath: 'localId', autoIncrement: true });
           filaRota.createIndex('status', 'syncStatus', { unique: false });
+        }
+
+        // Pesquisas pendentes de envio
+        if (!db.objectStoreNames.contains('filaPesquisas')) {
+          const filaPesquisas = db.createObjectStore('filaPesquisas', { keyPath: 'localId', autoIncrement: true });
+          filaPesquisas.createIndex('status', 'syncStatus', { unique: false });
         }
 
         // ========== METADADOS DE SINCRONIZAÇÃO ==========
@@ -317,6 +323,20 @@ class OfflineDB {
   }
 
   /**
+   * Adicionar pesquisa à fila de envio
+   * Fotos são armazenadas como File/Blob (IndexedDB suporta structured clone)
+   */
+  async adicionarPesquisaFila(pesquisa) {
+    const dados = {
+      ...pesquisa,
+      syncStatus: 'pending',
+      createdAt: new Date().toISOString(),
+      attempts: 0
+    };
+    return await this.add('filaPesquisas', dados);
+  }
+
+  /**
    * Obter itens pendentes de envio (status pending)
    */
   async getPendentes(storeName) {
@@ -346,7 +366,7 @@ class OfflineDB {
    */
   async contarDeadLetters() {
     let total = 0;
-    for (const storeName of ['filaSessoes', 'filaRegistros', 'filaFotos', 'filaRota']) {
+    for (const storeName of ['filaSessoes', 'filaRegistros', 'filaFotos', 'filaRota', 'filaPesquisas']) {
       const items = await this.getDeadLetters(storeName);
       total += items.length;
     }
@@ -419,6 +439,7 @@ class OfflineDB {
     const registros = await this.getParaEnvio('filaRegistros');
     const fotos = await this.getParaEnvio('filaFotos');
     const rotas = await this.getParaEnvio('filaRota');
+    const pesquisas = await this.getParaEnvio('filaPesquisas');
     const deadLetters = await this.contarDeadLetters();
 
     return {
@@ -426,7 +447,8 @@ class OfflineDB {
       registros: registros.length,
       fotos: fotos.length,
       rotas: rotas.length,
-      total: sessoes.length + registros.length + fotos.length + rotas.length,
+      pesquisas: pesquisas.length,
+      total: sessoes.length + registros.length + fotos.length + rotas.length + pesquisas.length,
       deadLetters
     };
   }
@@ -446,7 +468,7 @@ class OfflineDB {
 
     let removidos = 0;
 
-    for (const storeName of ['filaSessoes', 'filaRegistros', 'filaFotos', 'filaRota']) {
+    for (const storeName of ['filaSessoes', 'filaRegistros', 'filaFotos', 'filaRota', 'filaPesquisas']) {
       const todos = await this.getAll(storeName);
       for (const item of todos) {
         // Remover sincronizados com mais de 7 dias

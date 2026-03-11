@@ -2145,8 +2145,17 @@
             }
         });
 
-        document.getElementById('pwaMenuSair')?.addEventListener('click', () => {
+        document.getElementById('pwaMenuSair')?.addEventListener('click', async () => {
             if (confirm('Deseja realmente sair?')) {
+                // Tentar enviar pendentes (pesquisas, fotos, etc.) antes de sair
+                if (typeof syncService !== 'undefined' && navigator.onLine) {
+                    try {
+                        showToast('Enviando dados pendentes...');
+                        await syncService.enviarPendentes();
+                    } catch (e) {
+                        console.warn('[PWA] Erro ao enviar pendentes no logout:', e);
+                    }
+                }
                 if (typeof authManager !== 'undefined') authManager.logout();
                 window.location.reload();
             }
