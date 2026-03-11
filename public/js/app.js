@@ -11232,10 +11232,10 @@ class App {
                 ? `<button onclick="app.abrirPesquisaCliente(${repId}, '${cliId}', '${nomeEsc}', '${dataVisita}')" class="btn-small btn-pesquisa" style="background:#8b5cf6;color:white;">📝 Pesquisa (${pesquisasPendentes.length})</button>`
                 : '';
 
-            // Botão de espaços - aparece se em atendimento E cliente tem espaços cadastrados
+            // Botão de espaços - aparece APENAS se em atendimento E cliente tem espaços cadastrados
             const clienteTemEspaco = this.registroRotaState.clientesComEspaco?.has(cliId);
-            const btnEspacos = podeCheckout
-                ? `<button data-btn-espaco="${cliId}" onclick="app.verificarEAbrirRegistroEspacos(${repId}, '${cliId}', '${nomeEsc}', '${dataVisita}')" class="btn-small btn-espacos" style="background:#f59e0b;color:white;${clienteTemEspaco === false ? 'display:none;' : ''}">📦 Espaços</button>`
+            const btnEspacos = (podeCheckout && clienteTemEspaco)
+                ? `<button data-btn-espaco="${cliId}" onclick="app.verificarEAbrirRegistroEspacos(${repId}, '${cliId}', '${nomeEsc}', '${dataVisita}')" class="btn-small btn-espacos" style="background:#f59e0b;color:white;">📦 Espaços</button>`
                 : '';
 
             // Checkout sempre aparece quando em atendimento (pode estar desabilitado)
@@ -20563,6 +20563,21 @@ class App {
                 db.getPesquisasPendentesRepositor(repId, clienteId),
                 db.getPesquisasRespondidas(repId, clienteId, dataRef)
             ]);
+
+            // Também considerar pesquisas salvas na fila local (cache-first, ainda não sincronizadas)
+            try {
+                if (typeof offlineDB !== 'undefined') {
+                    const filaPendente = await offlineDB.getAll('filaPesquisas');
+                    const clienteNorm = String(clienteId).trim().replace(/\.0$/, '');
+                    filaPendente.forEach(item => {
+                        if (item.syncStatus !== 'error'
+                            && String(item.clienteCodigo).trim().replace(/\.0$/, '') === clienteNorm
+                            && String(item.repId) === String(repId)) {
+                            respondidas.add(item.pesId);
+                        }
+                    });
+                }
+            } catch (_) {}
 
             console.log('📋 Verificando pesquisas pendentes:', {
                 repId,
