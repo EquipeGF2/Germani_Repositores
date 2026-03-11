@@ -596,7 +596,15 @@ class AuthManager {
   /**
    * Logout
    */
-  logout() {
+  async logout() {
+    // Tentar enviar pendentes (pesquisas, fotos, etc.) antes de limpar sessão
+    if (typeof syncService !== 'undefined' && navigator.onLine) {
+      try {
+        await syncService.enviarPendentes();
+      } catch (e) {
+        console.warn('[AUTH] Erro ao enviar pendentes no logout:', e);
+      }
+    }
     this.limparSessao();
     window.location.reload();
   }

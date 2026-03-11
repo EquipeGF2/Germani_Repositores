@@ -20254,7 +20254,12 @@ class App {
                             const respostasMap = {};
                             respostasCampos.forEach(rc => {
                                 const pergunta = rc.pergunta || rc.campo || '';
-                                respostasMap[pergunta] = rc.resposta || '-';
+                                let valor = rc.resposta || '-';
+                                // Converter ponto decimal de volta para vírgula (padrão BR)
+                                if (valor !== '-' && !isNaN(valor) && valor.includes('.')) {
+                                    valor = valor.replace('.', ',');
+                                }
+                                respostasMap[pergunta] = valor;
                             });
 
                             return `
@@ -20875,11 +20880,11 @@ class App {
                         <button class="modal-close" onclick="window.app.fecharCameraPesquisa()">&times;</button>
                     </div>
                     <div class="modal-body" style="padding: 16px;">
-                        <div id="cameraPesquisaArea" style="position: relative; background: #1f2937; border-radius: 8px; overflow: hidden; min-height: 300px;">
-                            <div id="cameraPesquisaPlaceholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 300px; color: #9ca3af;">
+                        <div id="cameraPesquisaArea" style="position: relative; background: #1f2937; border-radius: 8px; overflow: hidden; min-height: 200px; max-height: 40vh;">
+                            <div id="cameraPesquisaPlaceholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 200px; color: #9ca3af;">
                                 <p style="margin: 10px 0;">Aguardando câmera...</p>
                             </div>
-                            <video id="videoPesquisaPreview" autoplay playsinline muted style="display: none; width: 100%; border-radius: 8px;"></video>
+                            <video id="videoPesquisaPreview" autoplay playsinline muted style="display: none; width: 100%; max-height: 40vh; border-radius: 8px;"></video>
                             <canvas id="canvasPesquisaCaptura" style="display: none; width: 100%; border-radius: 8px;"></canvas>
                             <div id="cameraPesquisaErro" style="display: none; color: #ef4444; padding: 20px; text-align: center;"></div>
                         </div>
@@ -21164,6 +21169,12 @@ class App {
         // Fechar modal de câmera
         this.fecharCameraPesquisa();
         this.showNotification(`Foto ${this.pesquisaVisitaState.fotosPesquisa.length}/${maxFotos} adicionada`, 'success');
+
+        // Scroll para manter o botão "Adicionar Foto" visível
+        setTimeout(() => {
+            const btn = document.getElementById('btnAdicionarFotoPesquisa');
+            if (btn) btn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 100);
     }
 
     renderizarFotosPesquisa() {
@@ -21329,7 +21340,7 @@ class App {
     }
 
     /**
-     * Finaliza todas as pesquisas em staging: faz upload das fotos e salva no banco
+     * Finaliza todas as pesquisas em staging: salva em cache (IndexedDB) para envio no logout
      */
     async finalizarTodasPesquisas() {
         const { respostasStaging, contextoVisita } = this.pesquisaVisitaState;
@@ -21339,66 +21350,27 @@ class App {
             return;
         }
 
-        this.showNotification(`Enviando ${respostasStaging.size} pesquisa(s)...`, 'info');
-
         try {
-            // Processar cada pesquisa em staging
+            // Salvar cada pesquisa na fila do IndexedDB (cache-first)
             for (const [pesId, entry] of respostasStaging) {
-                const fotosUrls = [];
-
-                // Upload de múltiplas fotos se houver
+                const fotosParaCache = [];
                 if (entry.fotos && entry.fotos.length > 0) {
-                    const agora = new Date();
-                    const dataStr = agora.toISOString().split('T')[0].replace(/-/g, '');
-                    const clienteNorm = String(contextoVisita.clienteId).trim().replace(/\.0$/, '');
-
-                    for (let i = 0; i < entry.fotos.length; i++) {
-                        const fotoItem = entry.fotos[i];
-                        const foto = fotoItem.file;
-
-                        if (foto instanceof File || foto instanceof Blob) {
-                            try {
-                                // Nome único para cada foto
-                                const nomeArquivo = `${contextoVisita.repId}_${clienteNorm}_${pesId}_${dataStr}_${i + 1}.jpg`;
-
-                                const formData = new FormData();
-                                formData.append('arquivo', foto, nomeArquivo);
-                                formData.append('repositor_id', contextoVisita.repId);
-                                formData.append('pesquisa_id', pesId);
-                                formData.append('cliente_codigo', clienteNorm);
-
-                                const uploadResp = await fetchJson(`${API_BASE_URL}/api/pesquisa/upload-foto`, {
-                                    method: 'POST',
-                                    body: formData
-                                });
-
-                                if (uploadResp.success && uploadResp.url) {
-                                    fotosUrls.push(uploadResp.url);
-                                }
-                            } catch (uploadError) {
-                                console.error(`Erro ao fazer upload da foto ${i + 1} da pesquisa ${pesId}:`, uploadError);
-                            }
+                    for (const fotoItem of entry.fotos) {
+                        if (fotoItem.file instanceof File || fotoItem.file instanceof Blob) {
+                            fotosParaCache.push(fotoItem.file);
                         }
                     }
                 }
 
-                // Salvar resposta no banco
-                // Se houver múltiplas fotos, salvar como JSON array
-                const fotoUrlFinal = fotosUrls.length > 1
-                    ? JSON.stringify(fotosUrls)
-                    : (fotosUrls[0] || null);
-
-                const dados = {
-                    pesId: pesId,
+                await offlineDB.adicionarPesquisaFila({
+                    pesId,
                     repId: contextoVisita.repId,
                     clienteCodigo: String(contextoVisita.clienteId),
-                    visitaId: null,
+                    clienteNome: contextoVisita.clienteNome,
                     respostas: entry.respostas,
-                    fotoUrl: fotoUrlFinal
-                };
-
-                await db.salvarRespostaPesquisa(dados);
-                console.log(`✅ Pesquisa ${pesId} salva com ${fotosUrls.length} foto(s)`);
+                    fotos: fotosParaCache
+                });
+                console.log(`📝 Pesquisa ${pesId} salva em cache com ${fotosParaCache.length} foto(s)`);
             }
 
             // Limpar staging
