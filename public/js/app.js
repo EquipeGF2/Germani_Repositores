@@ -23227,10 +23227,6 @@ class App {
                                     <button class="btn btn-secondary btn-sm" id="btnFoto${idx}" onclick="window.app.abrirCameraEspaco(${idx})">
                                         Tirar Foto
                                     </button>
-                                    <button class="btn btn-primary btn-sm" id="btnConfirmar${idx}"
-                                            onclick="window.app.registrarEspacoItemComFoto(${idx}, ${esp.tipo_espaco_id || esp.ces_tipo_espaco_id})" disabled>
-                                        Confirmar
-                                    </button>
                                 </div>
                             </div>
                         `).join('')}
@@ -23383,12 +23379,17 @@ class App {
                 img.src = canvas.toDataURL('image/jpeg', 0.9);
                 preview.style.display = 'block';
             }
-            if (btnConfirmar) btnConfirmar.disabled = false;
             if (btnFoto) btnFoto.textContent = '📷 Trocar Foto';
             if (status) {
-                status.textContent = '📷 Foto pronta';
-                status.className = 'badge badge-info';
+                status.textContent = '✅ Foto registrada';
+                status.className = 'badge badge-success';
             }
+
+            // Marcar como registrado na UI (foto será salva ao clicar Salvar no rodapé)
+            if (!this.espacosRegistroState.registrosRealizados.includes(idx)) {
+                this.espacosRegistroState.registrosRealizados.push(idx);
+            }
+            this.atualizarBotaoFinalizarEspacos();
 
             // Fechar modal de câmera
             this.fecharCameraEspaco();
@@ -23417,56 +23418,7 @@ class App {
         }
     }
 
-    async registrarEspacoItemComFoto(idx, tipoEspacoId) {
-        const esp = this.espacosRegistroState.espacosPendentes[idx];
-        const obsInput = document.getElementById(`obsEspaco${idx}`);
-        const statusBadge = document.getElementById(`statusEspaco${idx}`);
-        const btnConfirmar = document.getElementById(`btnConfirmar${idx}`);
-        const itemDiv = document.getElementById(`espacoItem${idx}`);
-
-        if (!esp.fotoFile) {
-            this.showNotification('Tire uma foto antes de confirmar', 'warning');
-            return;
-        }
-
-        const observacao = obsInput?.value || '';
-        const { repId, clienteId, dataVisita, gpsCoords } = this.espacosRegistroState;
-
-        btnConfirmar.disabled = true;
-        btnConfirmar.textContent = 'Salvando...';
-
-        try {
-            // Salvar localmente no IndexedDB (cache-first, envio em background depois)
-            const dadosFila = {
-                repId,
-                clienteId: String(clienteId).trim().replace(/\.0$/, ''),
-                tipoEspacoId,
-                observacao,
-                dataRegistro: dataVisita,
-                gpsCoords,
-                fotoBlob: esp.fotoFile,  // Blob é suportado pelo structured clone do IndexedDB
-                fotoName: esp.fotoFile.name || `espaco-${repId}-${clienteId}-${idx}-${Date.now()}.jpg`
-            };
-
-            await offlineDB.adicionarEspacoFila(dadosFila);
-
-            // Marcar como salvo na UI
-            this.espacosRegistroState.registrosRealizados.push(idx);
-
-            statusBadge.className = 'badge badge-success';
-            statusBadge.textContent = 'Salvo';
-            itemDiv.style.opacity = '0.7';
-            itemDiv.style.pointerEvents = 'none';
-
-            this.atualizarBotaoFinalizarEspacos();
-            this.showNotification('Espaço salvo! Será enviado automaticamente.', 'success');
-        } catch (error) {
-            console.error('Erro ao salvar espaço:', error);
-            btnConfirmar.disabled = false;
-            btnConfirmar.textContent = 'Confirmar';
-            this.showNotification(error.message || 'Erro ao salvar espaço', 'error');
-        }
-    }
+    // registrarEspacoItemComFoto removido - fotos agora são salvas em lote pelo finalizarRegistroEspacos
 
     atualizarBotaoFinalizarEspacos() {
         const btn = document.getElementById('btnFinalizarEspacos');
@@ -23480,19 +23432,57 @@ class App {
     }
 
     async finalizarRegistroEspacos() {
-        const { espacosPendentes, registrosRealizados } = this.espacosRegistroState;
+        const { espacosPendentes, registrosRealizados, repId, clienteId, dataVisita, gpsCoords } = this.espacosRegistroState;
 
-        // Verificar se todos foram registrados
+        // Verificar se todos foram registrados (foto capturada)
         if (registrosRealizados.length < espacosPendentes.length) {
             this.showNotification('Registre todos os espaços pendentes antes de continuar', 'warning');
             return;
         }
 
-        // Fechar modal de espaços
-        this.fecharModalRegistroEspacos();
+        const btnFinalizar = document.getElementById('btnFinalizarEspacos');
+        if (btnFinalizar) {
+            btnFinalizar.disabled = true;
+            btnFinalizar.textContent = 'Salvando...';
+        }
 
-        // Informar que espaços foram salvos
-        this.showNotification('Espaços salvos com sucesso!', 'success');
+        try {
+            // Salvar todas as fotos no IndexedDB de uma vez
+            for (const idx of registrosRealizados) {
+                const esp = espacosPendentes[idx];
+                if (!esp.fotoFile) continue;
+
+                const tipoEspacoId = esp.tipo_espaco_id || esp.ces_tipo_espaco_id;
+                const obsInput = document.getElementById(`obsEspaco${idx}`);
+                const observacao = obsInput?.value || '';
+
+                const dadosFila = {
+                    repId,
+                    clienteId: String(clienteId).trim().replace(/\.0$/, ''),
+                    tipoEspacoId,
+                    observacao,
+                    dataRegistro: dataVisita,
+                    gpsCoords,
+                    fotoBlob: esp.fotoFile,
+                    fotoName: esp.fotoFile.name || `espaco-${repId}-${clienteId}-${idx}-${Date.now()}.jpg`
+                };
+
+                await offlineDB.adicionarEspacoFila(dadosFila);
+            }
+
+            // Fechar modal de espaços
+            this.fecharModalRegistroEspacos();
+
+            // Informar que espaços foram salvos
+            this.showNotification(`${registrosRealizados.length} espaço(s) salvo(s) com sucesso! Serão enviados automaticamente.`, 'success');
+        } catch (error) {
+            console.error('Erro ao salvar espaços:', error);
+            if (btnFinalizar) {
+                btnFinalizar.disabled = false;
+                btnFinalizar.textContent = `Salvar (${registrosRealizados.length}/${espacosPendentes.length})`;
+            }
+            this.showNotification(error.message || 'Erro ao salvar espaços', 'error');
+        }
     }
 
     fecharModalRegistroEspacos() {
