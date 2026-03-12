@@ -1655,7 +1655,7 @@
                         <span class="pwa-atendimento-action-icon">&#128248;</span>
                         <span>Campanha</span>
                     </button>
-                    <button class="pwa-atendimento-action-btn" id="pwaAtendimentoBtnEspacos" onclick="pwaApp.atendimentoAbrirEspaco()">
+                    <button class="pwa-atendimento-action-btn hidden" id="pwaAtendimentoBtnEspacos" onclick="pwaApp.atendimentoAbrirEspaco()">
                         <span class="pwa-atendimento-action-icon">&#128230;</span>
                         <span>Espa&#231;os</span>
                     </button>
@@ -1727,12 +1727,32 @@
     function _verificarEspacoAtendimento(clienteId) {
         const normalizeId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
         const cliNorm = normalizeId(clienteId);
+
+        // 1. Verificar set já carregado (instantâneo)
         const clientesComEspaco = window.app?.registroRotaState?.clientesComEspaco;
         if (clientesComEspaco) {
             _mostrarBotaoEspacos(clientesComEspaco.has(cliNorm));
             return;
         }
-        // Se o set não está disponível, tentar buscar do servidor em background
+
+        // 2. Verificar cache IndexedDB (rápido, offline-first)
+        if (typeof offlineDB !== 'undefined') {
+            offlineDB.getEspacosCliente(cliNorm)
+                .then(cached => {
+                    if (cached?.temEspacos) {
+                        _mostrarBotaoEspacos(true);
+                        return;
+                    }
+                    // 3. Fallback: buscar do servidor se online
+                    _verificarEspacoServidor(cliNorm);
+                })
+                .catch(() => _verificarEspacoServidor(cliNorm));
+        } else {
+            _verificarEspacoServidor(cliNorm);
+        }
+    }
+
+    function _verificarEspacoServidor(cliNorm) {
         if (navigator.onLine && typeof window.app?.verificarEspacosPendentes === 'function') {
             const ctx = currentAtendimentoContext;
             if (!ctx) return;
