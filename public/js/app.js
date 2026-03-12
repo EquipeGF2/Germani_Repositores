@@ -10829,14 +10829,14 @@ class App {
                         clientes = window.pwaApp.getClientesCache();
                     }
                     clientes.forEach(c => {
-                        const id = String(c.cli_codigo || c.cliente_id || '').trim();
+                        const id = String(c.cli_codigo || c.cliente_id || '').trim().replace(/\.0$/, '');
                         if (id) clientesMap[id] = c;
                     });
                 } catch (_) { /* sem enriquecimento de clientes */ }
 
                 // 5. Normalizar e enriquecer cada item com dados do cliente
                 return base.map(r => {
-                    const cliId = String(r.cli_codigo || r.cliente_id || '').trim();
+                    const cliId = String(r.cli_codigo || r.cliente_id || '').trim().replace(/\.0$/, '');
                     const cli = clientesMap[cliId] || {};
                     return {
                         ...r,
@@ -12700,9 +12700,12 @@ class App {
         }
 
         // PWA: tentar IndexedDB primeiro (coordenadas sincronizadas no download)
-        if (clienteId && typeof offlineDB !== 'undefined') {
+        if (clienteId && typeof window.offlineDB !== 'undefined') {
             try {
-                const coordOff = await offlineDB.getCoordenadas(clienteId);
+                await window.offlineDB.init();
+                // Normalizar clienteId para busca consistente
+                const idNorm = String(clienteId).trim().replace(/\.0$/, '');
+                const coordOff = await window.offlineDB.getCoordenadas(idNorm);
                 if (coordOff && Number.isFinite(coordOff.latitude) && Number.isFinite(coordOff.longitude)) {
                     const result = {
                         lat: coordOff.latitude,
@@ -12718,6 +12721,12 @@ class App {
             } catch (e) {
                 console.warn('Erro ao buscar coordenadas offline:', e);
             }
+        }
+
+        // Se estamos offline, não tentar o backend
+        if (!navigator.onLine) {
+            console.warn('📍 Offline - coordenadas não disponíveis para:', clienteId || endereco);
+            return null;
         }
 
         try {
@@ -12749,6 +12758,22 @@ class App {
 
                 // Salvar no cache local
                 this.geocodeCache[cacheKey] = { coords: result, timestamp: Date.now() };
+
+                // Salvar no IndexedDB para uso offline futuro
+                if (clienteId && typeof window.offlineDB !== 'undefined') {
+                    try {
+                        const idNorm = String(clienteId).trim().replace(/\.0$/, '');
+                        await window.offlineDB.put('coordenadas', {
+                            cliente_id: idNorm,
+                            latitude: coord.latitude,
+                            longitude: coord.longitude,
+                            aproximado: coord.aproximado || false,
+                            precisao: coord.precisao,
+                            fonte: coord.fonte,
+                            atualizado_em: new Date().toISOString()
+                        });
+                    } catch (_) { /* silent */ }
+                }
 
                 console.log(`✓ Geocodificação OK (${response.fonte}/${coord.precisao}):`, coord.latitude, coord.longitude);
                 return result;
@@ -12894,7 +12919,9 @@ class App {
                     const coordsCliente = await this.obterCoordenadasPorEndereco(enderecoCadastro, cliId);
 
                     if (!coordsCliente) {
-                        elDistancia.innerHTML = '📍 Não foi possível localizar';
+                        elDistancia.innerHTML = !navigator.onLine
+                            ? '📍 Distância indisponível offline'
+                            : '📍 Não foi possível localizar';
                         elDistancia.style.color = '#f59e0b';
                         return;
                     }
