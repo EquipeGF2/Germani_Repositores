@@ -1736,14 +1736,30 @@
         const normalizeId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
         const cliNorm = normalizeId(clienteId);
 
-        // 1. Verificar set já carregado (instantâneo)
+        // 1. Verificar set já carregado (instantâneo) - só usar se já foi preenchido (size > 0)
         const clientesComEspaco = window.app?.registroRotaState?.clientesComEspaco;
-        if (clientesComEspaco) {
+        if (clientesComEspaco && clientesComEspaco.size > 0) {
             _mostrarBotaoEspacos(clientesComEspaco.has(cliNorm));
             return;
         }
 
-        // 2. Verificar cache IndexedDB (rápido, offline-first)
+        // 2. Verificar cache localStorage (instantâneo)
+        try {
+            const repId = window.app?.registroRotaState?.repositorSelecionado ||
+                          window.app?.registroRotaState?._cacheRepId;
+            if (repId) {
+                const cachedEspacos = localStorage.getItem(`espacos_clientes_${repId}`);
+                if (cachedEspacos) {
+                    const lista = JSON.parse(cachedEspacos);
+                    if (lista.includes(cliNorm)) {
+                        _mostrarBotaoEspacos(true);
+                        return;
+                    }
+                }
+            }
+        } catch (_) {}
+
+        // 3. Verificar cache IndexedDB (rápido, offline-first)
         if (typeof offlineDB !== 'undefined') {
             offlineDB.getEspacosCliente(cliNorm)
                 .then(cached => {
@@ -1751,7 +1767,7 @@
                         _mostrarBotaoEspacos(true);
                         return;
                     }
-                    // 3. Fallback: buscar do servidor se online
+                    // 4. Fallback: buscar do servidor se online
                     _verificarEspacoServidor(cliNorm);
                 })
                 .catch(() => _verificarEspacoServidor(cliNorm));
