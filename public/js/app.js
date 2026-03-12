@@ -11428,8 +11428,11 @@ class App {
             statusSpan.className = `route-status ${statusClasse}`;
             statusSpan.textContent = statusTexto;
 
-            // Rebuild botões
-            const btnCheckin = checkinDisponivel
+            // Verificar se cliente está fora do perímetro
+            const foraPerimetro = this.registroRotaState._clientesForaPerimetro?.has(cliId);
+
+            // Rebuild botões - sem checkin/NA/nova visita se fora do perímetro
+            const btnCheckin = (checkinDisponivel && !foraPerimetro)
                 ? `<button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'checkin', '${cadastroEsc}')" class="btn-small" ${textoBloqueioCheckin}>✅ Check-in</button>`
                 : '';
             const btnAtividades = podeCheckout
@@ -11448,13 +11451,13 @@ class App {
             const btnCampanha = podeCheckout
                 ? `<button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'campanha', '${cadastroEsc}')" class="btn-small btn-campanha">🎯 Campanha</button>`
                 : '';
-            const btnNovaVisita = podeNovaVisita
+            const btnNovaVisita = (podeNovaVisita && !foraPerimetro)
                 ? `<button onclick="app.abrirModalCaptura(${repId}, '${cliId}', '${nomeEsc}', '${endEsc}', '${dataVisita}', 'checkin', '${cadastroEsc}', true)" class="btn-small">🆕 Nova visita</button>`
                 : '';
             const btnCancelar = statusBase === 'em_atendimento'
                 ? `<button onclick="app.confirmarCancelarAtendimento(${repId}, '${cliId}', '${nomeEsc}')" class="btn-small btn-danger" title="Cancelar atendimento em aberto">🛑 Cancelar</button>`
                 : '';
-            const btnNaoAtendimento = (statusBase === 'sem_checkin' && !checkinBloqueadoPorAtraso)
+            const btnNaoAtendimento = (statusBase === 'sem_checkin' && !checkinBloqueadoPorAtraso && !foraPerimetro)
                 ? `<button onclick="app.abrirModalNaoAtendimento(${repId}, '${cliId}', '${nomeEsc}', '${dataVisita}')" class="btn-small" style="background:#1f2937;color:white;" title="Registrar não atendimento">⛔ Não atendimento</button>`
                 : '';
 
@@ -13211,23 +13214,31 @@ class App {
     desabilitarCheckinCliente(itemElement, cliId, distanciaKm, limiteKm) {
         if (!itemElement) return;
 
-        // Buscar botão de check-in dentro do item
-        const btnCheckin = itemElement.querySelector('button.btn-small');
-        if (btnCheckin && btnCheckin.textContent.includes('Check-in')) {
-            btnCheckin.disabled = true;
-            btnCheckin.style.opacity = '0.5';
-            btnCheckin.style.cursor = 'not-allowed';
-            btnCheckin.title = `Você está a ${distanciaKm}km do cliente. O limite é ${limiteKm}km.`;
+        // Registrar no state que este cliente está fora do perímetro
+        if (!this.registroRotaState._clientesForaPerimetro) {
+            this.registroRotaState._clientesForaPerimetro = new Set();
+        }
+        this.registroRotaState._clientesForaPerimetro.add(cliId);
 
-            // Adicionar aviso visual
-            const actionsDiv = itemElement.querySelector('.route-item-actions');
-            if (actionsDiv && !actionsDiv.querySelector('.aviso-fora-perimetro')) {
-                const aviso = document.createElement('span');
-                aviso.className = 'aviso-fora-perimetro';
-                aviso.style.cssText = 'display:block;color:#b91c1c;font-size:11px;margin-top:6px;font-weight:600;';
-                aviso.textContent = `⚠️ Fora do perímetro (${limiteKm}km)`;
-                actionsDiv.appendChild(aviso);
+        const actionsDiv = itemElement.querySelector('.route-item-actions');
+        if (!actionsDiv) return;
+
+        // Remover botões de Check-in e Não Atendimento (sem ação quando fora do perímetro)
+        const botoes = actionsDiv.querySelectorAll('button.btn-small');
+        botoes.forEach(btn => {
+            const texto = btn.textContent || '';
+            if (texto.includes('Check-in') || texto.includes('Não atendimento') || texto.includes('Nova visita')) {
+                btn.remove();
             }
+        });
+
+        // Adicionar aviso visual (se não existir)
+        if (!actionsDiv.querySelector('.aviso-fora-perimetro')) {
+            const aviso = document.createElement('span');
+            aviso.className = 'aviso-fora-perimetro';
+            aviso.style.cssText = 'display:block;color:#b91c1c;font-size:11px;margin-top:6px;font-weight:600;';
+            aviso.textContent = `⚠️ Fora do perímetro (${distanciaKm}km / limite ${limiteKm}km)`;
+            actionsDiv.appendChild(aviso);
         }
     }
 
