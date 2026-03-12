@@ -23091,52 +23091,76 @@ class App {
 
     async verificarEAbrirRegistroEspacos(repId, clienteId, clienteNome, dataVisita) {
         try {
-            const espacosStatus = await this.verificarEspacosPendentes(repId, clienteId);
+            const cliNorm = String(clienteId).trim().replace(/\.0$/, '');
 
-            if (!espacosStatus.temEspacos) {
-                this.showNotification('Este cliente não possui espaços cadastrados.', 'warning');
-                return;
-            }
-
-            // Se todos os espaços já foram registrados, buscar todos para permitir re-registro
-            let espacosParaRegistrar = espacosStatus.espacosPendentes || [];
-            if (espacosParaRegistrar.length === 0) {
+            // 1. Tentar cache local (instantâneo) - abre modal imediatamente
+            let espacosParaRegistrar = null;
+            if (typeof offlineDB !== 'undefined') {
                 try {
-                    const cliNorm = String(clienteId).trim().replace(/\.0$/, '');
-                    // Tentar cache local primeiro
-                    let espacosCli = null;
-                    if (typeof offlineDB !== 'undefined') {
-                        const cached = await offlineDB.getEspacosCliente(cliNorm);
-                        if (cached?.espacosPendentes?.length > 0) {
-                            espacosCli = cached.espacosPendentes;
-                        }
-                    }
-                    // Se não tem cache e está online, buscar do servidor
-                    if (!espacosCli && navigator.onLine) {
-                        const respTodos = await fetchJson(`${API_BASE_URL}/api/espacos/clientes/${encodeURIComponent(cliNorm)}`);
-                        if (respTodos?.data && respTodos.data.length > 0) {
-                            espacosCli = respTodos.data.map(e => ({
-                                tipo_espaco_id: e.ces_tipo_espaco_id,
-                                tipo_nome: e.tipo_nome,
-                                quantidade_esperada: e.ces_quantidade,
-                                ces_quantidade: e.ces_quantidade
+                    const cached = await offlineDB.getEspacosCliente(cliNorm);
+                    if (cached?.espacosPendentes?.length > 0) {
+                        espacosParaRegistrar = cached.espacosPendentes;
+                    } else if (cached?.temEspacos) {
+                        // Tem espaços mas todos registrados - permitir re-registro
+                        // Buscar lista completa do cache
+                        const cachedAll = await offlineDB.getEspacosCliente(cliNorm);
+                        if (cachedAll?.espacosPendentes?.length > 0) {
+                            espacosParaRegistrar = cachedAll.espacosPendentes;
+                        } else if (cachedAll?.espacosRegistrados?.length > 0) {
+                            // Todos registrados - usar os registrados como base
+                            espacosParaRegistrar = cachedAll.espacosRegistrados.map(e => ({
+                                tipo_espaco_id: e.tipo_espaco_id || e.reg_tipo_espaco_id,
+                                tipo_nome: e.tipo_nome || e.tipo_espaco_nome,
+                                quantidade_esperada: e.quantidade_esperada || e.reg_quantidade_esperada || 1,
+                                ces_quantidade: e.quantidade_esperada || e.reg_quantidade_esperada || 1
                             }));
                         }
                     }
-                    if (espacosCli) espacosParaRegistrar = espacosCli;
                 } catch (_) {}
             }
 
-            if (espacosParaRegistrar.length === 0) {
+            // 2. Se não tem cache, buscar do servidor (com timeout curto)
+            if (!espacosParaRegistrar) {
+                if (navigator.onLine) {
+                    const espacosStatus = await this.verificarEspacosPendentes(repId, clienteId);
+                    if (!espacosStatus.temEspacos) {
+                        this.showNotification('Este cliente não possui espaços cadastrados.', 'warning');
+                        return;
+                    }
+                    espacosParaRegistrar = espacosStatus.espacosPendentes || [];
+                    if (espacosParaRegistrar.length === 0) {
+                        try {
+                            const respTodos = await fetchJson(`${API_BASE_URL}/api/espacos/clientes/${encodeURIComponent(cliNorm)}`);
+                            if (respTodos?.data && respTodos.data.length > 0) {
+                                espacosParaRegistrar = respTodos.data.map(e => ({
+                                    tipo_espaco_id: e.ces_tipo_espaco_id,
+                                    tipo_nome: e.tipo_nome,
+                                    quantidade_esperada: e.ces_quantidade,
+                                    ces_quantidade: e.ces_quantidade
+                                }));
+                            }
+                        } catch (_) {}
+                    }
+                } else {
+                    this.showNotification('Sem dados de espaços disponíveis offline.', 'warning');
+                    return;
+                }
+            }
+
+            if (!espacosParaRegistrar || espacosParaRegistrar.length === 0) {
                 this.showNotification('Este cliente não possui espaços cadastrados.', 'warning');
                 return;
             }
 
-            // Obter GPS atual
+            // 3. Obter GPS sem bloquear (usa último conhecido ou busca com timeout curto)
             let gpsCoords = { latitude: 0, longitude: 0 };
             try {
                 const position = await new Promise((resolve, reject) => {
-                    navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 });
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        timeout: 3000,
+                        maximumAge: 60000,
+                        enableHighAccuracy: false
+                    });
                 });
                 gpsCoords = {
                     latitude: position.coords.latitude,
@@ -23146,8 +23170,13 @@ class App {
                 console.warn('Não foi possível obter GPS:', gpsError);
             }
 
-            // Abrir modal de registro de espaços
+            // 4. Abrir modal imediatamente
             this.abrirModalRegistroEspacos(repId, clienteId, clienteNome, dataVisita, espacosParaRegistrar, gpsCoords);
+
+            // 5. Atualizar cache do servidor em background (não bloqueia)
+            if (navigator.onLine) {
+                this._atualizarEspacosCache(repId, cliNorm).catch(() => {});
+            }
         } catch (error) {
             console.error('Erro ao verificar espaços:', error);
             this.showNotification('Erro ao verificar espaços do cliente.', 'error');
@@ -23155,20 +23184,37 @@ class App {
     }
 
     async abrirModalRegistroEspacos(repId, clienteId, clienteNome, dataVisita, espacosPendentes, gpsCoords) {
-        // Expandir espaços - cada unidade precisa de uma foto
-        // Se tem 2 ilhas, precisa registrar 2 vezes com foto cada
-        const espacosExpandidos = [];
-        espacosPendentes.forEach(esp => {
-            const qtd = esp.quantidade_esperada || esp.ces_quantidade || 1;
-            for (let i = 0; i < qtd; i++) {
-                espacosExpandidos.push({
-                    ...esp,
-                    unidade: i + 1,
-                    totalUnidades: qtd,
-                    fotoCapturada: null
-                });
-            }
-        });
+        const cliNorm = String(clienteId).trim().replace(/\.0$/, '');
+
+        // Restaurar estado existente se for o mesmo cliente (preserva fotos já capturadas)
+        const existingState = this.espacosRegistroState;
+        const isReopen = existingState
+            && String(existingState.clienteId).trim().replace(/\.0$/, '') === cliNorm
+            && existingState.espacosPendentes?.length > 0;
+
+        let espacosExpandidos;
+        let registrosRealizados;
+
+        if (isReopen) {
+            // Reutilizar estado existente (fotos já capturadas ficam preservadas)
+            espacosExpandidos = existingState.espacosPendentes;
+            registrosRealizados = existingState.registrosRealizados || [];
+        } else {
+            // Criar novo estado - expandir espaços
+            espacosExpandidos = [];
+            espacosPendentes.forEach(esp => {
+                const qtd = esp.quantidade_esperada || esp.ces_quantidade || 1;
+                for (let i = 0; i < qtd; i++) {
+                    espacosExpandidos.push({
+                        ...esp,
+                        unidade: i + 1,
+                        totalUnidades: qtd,
+                        fotoCapturada: null
+                    });
+                }
+            });
+            registrosRealizados = [];
+        }
 
         // Armazenar estado
         this.espacosRegistroState = {
@@ -23178,7 +23224,7 @@ class App {
             dataVisita,
             espacosPendentes: espacosExpandidos,
             gpsCoords,
-            registrosRealizados: []
+            registrosRealizados
         };
 
         // Criar ou obter modal
@@ -23203,39 +23249,46 @@ class App {
                 </div>
                 <div class="modal-body" style="overflow-y: auto; flex: 1;">
                     <div id="listaEspacosPendentes">
-                        ${espacosExpandidos.map((esp, idx) => `
+                        ${espacosExpandidos.map((esp, idx) => {
+                            const jaRegistrado = registrosRealizados.includes(idx);
+                            const temFoto = !!esp.fotoFile;
+                            const badgeClass = jaRegistrado ? 'badge badge-success' : 'badge badge-warning';
+                            const badgeText = jaRegistrado ? '✅ Foto registrada' : 'Foto pendente';
+                            const btnFotoText = temFoto ? '📷 Trocar Foto' : 'Tirar Foto';
+                            const obsValue = esp._observacao || '';
+                            return `
                             <div class="espaco-pendente-item" data-idx="${idx}" id="espacoItem${idx}" style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 10px;">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                     <div>
                                         <strong>${esp.tipo_nome || esp.tipo_espaco_nome || 'Espaço'}</strong>
                                         ${esp.totalUnidades > 1 ? `<span style="color: #6b7280;"> (${esp.unidade}/${esp.totalUnidades})</span>` : ''}
                                     </div>
-                                    <span class="badge badge-warning" id="statusEspaco${idx}">Foto pendente</span>
+                                    <span class="${badgeClass}" id="statusEspaco${idx}">${badgeText}</span>
                                 </div>
 
-                                <div id="fotoPreview${idx}" style="margin-bottom: 8px; display: none;">
-                                    <img id="fotoImg${idx}" style="max-width: 100%; border-radius: 8px; max-height: 150px; object-fit: cover;">
+                                <div id="fotoPreview${idx}" style="margin-bottom: 8px; ${temFoto && esp._fotoDataUrl ? '' : 'display: none;'}">
+                                    <img id="fotoImg${idx}" ${temFoto && esp._fotoDataUrl ? `src="${esp._fotoDataUrl}"` : ''} style="max-width: 100%; border-radius: 8px; max-height: 150px; object-fit: cover;">
                                 </div>
 
                                 <div class="form-group" style="margin-bottom: 8px;">
                                     <label style="font-size: 13px;">Observação (opcional):</label>
-                                    <input type="text" id="obsEspaco${idx}" placeholder="Observação..."
+                                    <input type="text" id="obsEspaco${idx}" placeholder="Observação..." value="${obsValue}"
                                            style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px;">
                                 </div>
 
                                 <div style="display: flex; gap: 8px;">
                                     <button class="btn btn-secondary btn-sm" id="btnFoto${idx}" onclick="window.app.abrirCameraEspaco(${idx})">
-                                        Tirar Foto
+                                        ${btnFotoText}
                                     </button>
                                 </div>
                             </div>
-                        `).join('')}
+                        `}).join('')}
                     </div>
                 </div>
                 <div class="modal-footer" style="padding-top: 15px; border-top: 1px solid #e5e7eb; display: flex; justify-content: flex-end; gap: 10px;">
                     <button type="button" class="btn btn-secondary" onclick="window.app.fecharModalRegistroEspacos()">Cancelar</button>
-                    <button type="button" class="btn btn-primary" id="btnFinalizarEspacos" onclick="window.app.finalizarRegistroEspacos()" disabled>
-                        Salvar (0/${espacosExpandidos.length})
+                    <button type="button" class="btn btn-primary" id="btnFinalizarEspacos" onclick="window.app.finalizarRegistroEspacos()" ${registrosRealizados.length >= espacosExpandidos.length ? '' : 'disabled'}>
+                        Salvar (${registrosRealizados.length}/${espacosExpandidos.length})
                     </button>
                 </div>
             </div>
@@ -23365,18 +23418,19 @@ class App {
             const fileName = `foto_espaco_${Date.now()}.jpg`;
             const file = new File([blob], fileName, { type: 'image/jpeg' });
 
-            // Armazenar arquivo
+            // Armazenar arquivo e dataUrl para restauração
+            const fotoDataUrl = canvas.toDataURL('image/jpeg', 0.9);
             this.espacosRegistroState.espacosPendentes[idx].fotoFile = file;
+            this.espacosRegistroState.espacosPendentes[idx]._fotoDataUrl = fotoDataUrl;
 
             // Atualizar preview no modal de espaços
             const preview = document.getElementById(`fotoPreview${idx}`);
             const img = document.getElementById(`fotoImg${idx}`);
-            const btnConfirmar = document.getElementById(`btnConfirmar${idx}`);
             const btnFoto = document.getElementById(`btnFoto${idx}`);
             const status = document.getElementById(`statusEspaco${idx}`);
 
             if (img && preview) {
-                img.src = canvas.toDataURL('image/jpeg', 0.9);
+                img.src = fotoDataUrl;
                 preview.style.display = 'block';
             }
             if (btnFoto) btnFoto.textContent = '📷 Trocar Foto';
@@ -23470,8 +23524,8 @@ class App {
                 await offlineDB.adicionarEspacoFila(dadosFila);
             }
 
-            // Fechar modal de espaços
-            this.fecharModalRegistroEspacos();
+            // Fechar modal e limpar estado (registros concluídos)
+            this.fecharModalRegistroEspacos(true);
 
             // Informar que espaços foram salvos
             this.showNotification(`${registrosRealizados.length} espaço(s) salvo(s) com sucesso! Serão enviados automaticamente.`, 'success');
@@ -23485,15 +23539,27 @@ class App {
         }
     }
 
-    fecharModalRegistroEspacos() {
+    fecharModalRegistroEspacos(limparEstado = false) {
         // Fechar câmera se estiver aberta
         this.fecharCameraEspaco();
+
+        // Salvar observações no estado antes de fechar (para restaurar depois)
+        if (this.espacosRegistroState?.espacosPendentes && !limparEstado) {
+            this.espacosRegistroState.espacosPendentes.forEach((esp, idx) => {
+                const obsInput = document.getElementById(`obsEspaco${idx}`);
+                if (obsInput) esp._observacao = obsInput.value || '';
+            });
+        }
 
         const modal = document.getElementById('modalRegistroEspacos');
         if (modal) {
             modal.classList.remove('active');
         }
-        this.espacosRegistroState = null;
+
+        // Só limpar estado quando registros foram finalizados com sucesso
+        if (limparEstado) {
+            this.espacosRegistroState = null;
+        }
     }
 
     // ==================== FATURAMENTO ====================
