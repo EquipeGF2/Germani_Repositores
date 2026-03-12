@@ -212,7 +212,14 @@ class OfflineDB {
   async salvarRoteiro(itens) {
     await this.clear('roteiro');
     for (const item of itens) {
-      await this.put('roteiro', item);
+      // Normalizar IDs e garantir campo cli_codigo (usado pelo app para enriquecimento)
+      const clienteId = String(item.cliente_id || item.cli_codigo || '').trim().replace(/\.0$/, '');
+      const normalized = {
+        ...item,
+        cliente_id: clienteId,
+        cli_codigo: clienteId
+      };
+      await this.put('roteiro', normalized);
     }
   }
 
@@ -223,7 +230,12 @@ class OfflineDB {
   async salvarClientes(clientes) {
     await this.clear('clientes');
     for (const cliente of clientes) {
-      await this.put('clientes', cliente);
+      // Normalizar cli_codigo para string (consistência)
+      const normalized = {
+        ...cliente,
+        cli_codigo: String(cliente.cli_codigo || '').trim().replace(/\.0$/, '')
+      };
+      await this.put('clientes', normalized);
     }
   }
 
@@ -232,18 +244,52 @@ class OfflineDB {
   }
 
   async getCliente(codigo) {
-    return await this.get('clientes', codigo);
+    const normalized = String(codigo || '').trim().replace(/\.0$/, '');
+    let result = await this.get('clientes', normalized);
+    if (result) return result;
+    // Fallback: tentar tipo original
+    if (normalized !== codigo) {
+      result = await this.get('clientes', codigo);
+    }
+    return result || null;
   }
 
   async salvarCoordenadas(coordenadas) {
     await this.clear('coordenadas');
     for (const coord of coordenadas) {
-      await this.put('coordenadas', coord);
+      // Normalizar cliente_id para string (consistência com o resto do app)
+      const normalized = {
+        ...coord,
+        cliente_id: String(coord.cliente_id || '').trim().replace(/\.0$/, '')
+      };
+      await this.put('coordenadas', normalized);
     }
   }
 
   async getCoordenadas(clienteId) {
-    return await this.get('coordenadas', clienteId);
+    // Tentar busca direta (mesmo tipo que foi salvo)
+    let result = await this.get('coordenadas', clienteId);
+    if (result) return result;
+
+    // Fallback: tentar com tipo alternativo (string vs number)
+    const alt = typeof clienteId === 'string' ? Number(clienteId) : String(clienteId);
+    if (!isNaN(alt)) {
+      result = await this.get('coordenadas', alt);
+      if (result) return result;
+    }
+
+    // Fallback: buscar sem .0 no final (normalização)
+    const normalized = String(clienteId).trim().replace(/\.0$/, '');
+    if (normalized !== String(clienteId)) {
+      result = await this.get('coordenadas', normalized);
+      if (result) return result;
+      const numNorm = Number(normalized);
+      if (!isNaN(numNorm)) {
+        result = await this.get('coordenadas', numNorm);
+      }
+    }
+
+    return result || null;
   }
 
   async salvarTiposDocumento(tipos) {
