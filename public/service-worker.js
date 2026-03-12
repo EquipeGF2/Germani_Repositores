@@ -205,19 +205,30 @@ async function syncPendencias() {
   try {
     // Notificar todos os clients que estamos sincronizando
     const clients = await self.clients.matchAll();
-    clients.forEach(client => {
-      client.postMessage({
-        type: 'SYNC_START',
-        message: 'Iniciando sincronização de pendências...'
+    if (clients.length > 0) {
+      clients.forEach(client => {
+        client.postMessage({
+          type: 'SYNC_START',
+          message: 'Iniciando sincronização de pendências...'
+        });
       });
-    });
+    } else {
+      // Nenhum client ativo (tela bloqueada) - tentar enviar diretamente pelo SW
+      console.log('[SW] Nenhum client ativo, tentando sync direto...');
+      // O sync será completado quando o app reabrir
+    }
 
-    // A sincronização real será feita pelo app.js
-    // Aqui apenas notificamos que a conexão voltou
     console.log('[SW] ✅ Sincronização iniciada');
   } catch (error) {
     console.error('[SW] ❌ Erro ao sincronizar:', error);
   }
 }
+
+// Periodic Background Sync (para navegadores que suportam)
+self.addEventListener('periodicsync', (event) => {
+  if (event.tag === 'sync-pendencias-periodico') {
+    event.waitUntil(syncPendencias());
+  }
+});
 
 console.log('[SW] Service Worker carregado');

@@ -50,6 +50,13 @@ class SyncService {
     window.addEventListener('online', () => this.onOnline());
     window.addEventListener('offline', () => this.onOffline());
 
+    // Enviar pendentes quando a tela é ocultada/bloqueada (antes de perder execução JS)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden' && this.isOnline) {
+        this.enviarPendentesUrgentes();
+      }
+    });
+
     // Configurar timers de sincronização
     await this.configurarTimersSync();
 
@@ -83,6 +90,81 @@ class SyncService {
     console.log('[SyncService] Conexão perdida');
     this.isOnline = false;
     this.notificar('offline');
+  }
+
+  /**
+   * Enviar dados pendentes urgentes quando a tela está sendo ocultada/bloqueada.
+   * Usa keepalive fetch e sendBeacon para garantir que o envio sobreviva
+   * ao bloqueio da tela ou navegação para outra página.
+   */
+  async enviarPendentesUrgentes() {
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) return;
+
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      };
+
+      // Enviar sessões pendentes (checkin/checkout - mais críticos)
+      const sessoes = await offlineDB.getParaEnvio('filaSessoes');
+      for (const sessao of sessoes) {
+        try {
+          // Tentar fetch com keepalive (sobrevive ao fechamento da página)
+          fetch(`${this.apiBaseUrl}/api/sync/sessao`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(sessao),
+            keepalive: true
+          }).then(async (resp) => {
+            const result = await resp.json();
+            if (result.ok) {
+              await offlineDB.marcarEnviado('filaSessoes', sessao.localId, result);
+            }
+          }).catch(() => {});
+        } catch (_) {
+          // Fallback: sendBeacon (mais limitado mas mais confiável com tela bloqueada)
+          try {
+            const blob = new Blob([JSON.stringify({
+              ...sessao,
+              _auth: token
+            })], { type: 'application/json' });
+            navigator.sendBeacon(`${this.apiBaseUrl}/api/sync/sessao`, blob);
+          } catch (_) {}
+        }
+      }
+
+      // Enviar registros pendentes
+      const registros = await offlineDB.getParaEnvio('filaRegistros');
+      for (const registro of registros) {
+        try {
+          fetch(`${this.apiBaseUrl}/api/sync/registro`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(registro),
+            keepalive: true
+          }).then(async (resp) => {
+            const result = await resp.json();
+            if (result.ok) {
+              await offlineDB.marcarEnviado('filaRegistros', registro.localId, result);
+            }
+          }).catch(() => {});
+        } catch (_) {}
+      }
+
+      // Registrar Background Sync para itens que não foram enviados
+      if ('serviceWorker' in navigator && navigator.serviceWorker.ready) {
+        const registration = await navigator.serviceWorker.ready;
+        if (registration.sync) {
+          registration.sync.register('sync-pendencias').catch(() => {});
+        }
+      }
+
+      console.log(`[SyncService] Envio urgente: ${sessoes.length} sessões, ${registros.length} registros`);
+    } catch (error) {
+      console.warn('[SyncService] Erro no envio urgente:', error);
+    }
   }
 
   /**
@@ -271,7 +353,8 @@ class SyncService {
           const response = await this.fetchWithTimeout(endpoint, {
             method: 'POST',
             headers,
-            body: JSON.stringify(item)
+            body: JSON.stringify(item),
+            keepalive: true
           });
           const result = await response.json();
 

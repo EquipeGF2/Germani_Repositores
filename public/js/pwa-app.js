@@ -1357,6 +1357,14 @@
                 });
             }
 
+            // Atualizar cache de não-atendimentos para exibição instantânea
+            try {
+                const cacheKey = `nao_atendimentos_${repId}_${dataVisita}`;
+                const cachedNA = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+                cachedNA.push({ na_cliente_id: clienteId, na_motivo: motivo });
+                localStorage.setItem(cacheKey, JSON.stringify(cachedNA));
+            } catch (_) {}
+
             let enviadoAoServidor = false;
             if (navigator.onLine) {
                 try {
