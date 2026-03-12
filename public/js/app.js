@@ -11025,15 +11025,16 @@ class App {
             })
             .catch(() => { /* silencioso */ });
 
-        // Buscar não atendimentos do dia (silencioso se falhar)
-        if (!cacheValido) fetch(`${API_BASE_URL}/api/registro-rota/nao-atendimentos?repositor_id=${repId}&data=${dataVisita}`)
-            .then(r => r.ok ? r.json() : null)
-            .then(resp => {
-                if (resp?.ok && resp.data) {
-                    resp.data.forEach(na => {
+        // Buscar não atendimentos do dia (cache-first para exibição instantânea)
+        if (!cacheValido) {
+            // Restaurar do cache local primeiro (instantâneo)
+            try {
+                const cachedNA = localStorage.getItem(`nao_atendimentos_${repId}_${dataVisita}`);
+                if (cachedNA) {
+                    const naoAtendidos = JSON.parse(cachedNA);
+                    naoAtendidos.forEach(na => {
                         const cliNorm = normalizeClienteId(na.na_cliente_id);
                         const statusAtual = this.registroRotaState.resumoVisitas.get(cliNorm) || {};
-                        // Só marcar como não atendido se não houver outro status (finalizado, em_atendimento)
                         if (!statusAtual.status || statusAtual.status === 'sem_checkin') {
                             this.registroRotaState.resumoVisitas.set(cliNorm, {
                                 ...statusAtual,
@@ -11042,11 +11043,33 @@ class App {
                             });
                         }
                     });
-                    // Re-renderizar o roteiro para atualizar o status visual
-                    this.atualizarStatusVisuaisRoteiro();
                 }
-            })
-            .catch(() => { /* silencioso */ });
+            } catch (_) {}
+
+            // Atualizar do servidor em background
+            if (navigator.onLine) fetch(`${API_BASE_URL}/api/registro-rota/nao-atendimentos?repositor_id=${repId}&data=${dataVisita}`)
+                .then(r => r.ok ? r.json() : null)
+                .then(resp => {
+                    if (resp?.ok && resp.data) {
+                        // Salvar no cache para próxima vez
+                        try { localStorage.setItem(`nao_atendimentos_${repId}_${dataVisita}`, JSON.stringify(resp.data)); } catch (_) {}
+
+                        resp.data.forEach(na => {
+                            const cliNorm = normalizeClienteId(na.na_cliente_id);
+                            const statusAtual = this.registroRotaState.resumoVisitas.get(cliNorm) || {};
+                            if (!statusAtual.status || statusAtual.status === 'sem_checkin') {
+                                this.registroRotaState.resumoVisitas.set(cliNorm, {
+                                    ...statusAtual,
+                                    status: 'nao_atendido',
+                                    nao_atendimento_motivo: na.na_motivo
+                                });
+                            }
+                        });
+                        this.atualizarStatusVisuaisRoteiro();
+                    }
+                })
+                .catch(() => { /* silencioso */ });
+        }
 
         // PWA com cache válido: já temos os dados locais, pular processamento do backend
         if (cacheValido) {
@@ -11741,6 +11764,14 @@ class App {
                     nao_atendimento_motivo: motivo,
                     rep_id: repId
                 });
+
+                // Atualizar cache de não-atendimentos
+                try {
+                    const cacheKey = `nao_atendimentos_${repId}_${dataVisita}`;
+                    const cachedNA = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+                    cachedNA.push({ na_cliente_id: clienteId, na_motivo: motivo });
+                    localStorage.setItem(cacheKey, JSON.stringify(cachedNA));
+                } catch (_) {}
 
                 this.showNotification('Não atendimento registrado com sucesso.', 'success');
                 modal.fechar();
