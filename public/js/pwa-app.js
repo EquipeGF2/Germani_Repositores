@@ -842,7 +842,15 @@
 
                 ${avisoAtendimento}
 
-                <div class="pwa-section-title">Ações Rápidas</div>
+                <div class="pwa-section-title">Roteiro de Hoje</div>
+                <div id="pwaRoteiroHoje" class="pwa-roteiro-lista">
+                    <div class="pwa-loading-inline">
+                        <div class="pwa-spinner-small"></div>
+                        <span>Carregando roteiro...</span>
+                    </div>
+                </div>
+
+                <div class="pwa-section-title" style="margin-top:16px;">Ações Rápidas</div>
 
                 <button class="pwa-action-btn" onclick="pwaApp.navigate('registro-rota')">
                     <span class="pwa-action-icon">&#128205;</span>
@@ -869,29 +877,32 @@
                 </button>
             </div>
         `;
+
+        // Carregar roteiro do dia na home (async, não bloqueia)
+        loadRoteiroHome();
     }
 
     async function getClientesMap() {
         // Buscar clientes do cache ou IndexedDB para enriquecer roteiro
-        if (cachedData.clientes && cachedData.clientes.length > 0) {
+        const buildMap = (clientes) => {
             const map = {};
-            cachedData.clientes.forEach(c => {
-                const id = String(c.cli_codigo || c.cliente_id || '').trim();
+            clientes.forEach(c => {
+                const id = String(c.cli_codigo || c.cliente_id || '').trim().replace(/\.0$/, '');
                 if (id) map[id] = c;
             });
             return map;
+        };
+
+        if (cachedData.clientes && cachedData.clientes.length > 0) {
+            return buildMap(cachedData.clientes);
         }
         try {
             if (typeof offlineDB !== 'undefined') {
                 await offlineDB.init();
                 const clientes = await offlineDB.getAll('clientes');
                 if (clientes && clientes.length > 0) {
-                    const map = {};
-                    clientes.forEach(c => {
-                        const id = String(c.cli_codigo || c.cliente_id || '').trim();
-                        if (id) map[id] = c;
-                    });
-                    return map;
+                    cachedData.clientes = clientes; // Atualizar cache em memória
+                    return buildMap(clientes);
                 }
             }
         } catch (e) { /* silent */ }
@@ -911,7 +922,7 @@
 
                 let visitados = 0;
                 const items = roteiro.slice(0, 20).map(item => {
-                    const clienteId = String(item.cliente_id || item.cli_codigo || '').trim();
+                    const clienteId = String(item.cliente_id || item.cli_codigo || '').trim().replace(/\.0$/, '');
                     const clienteInfo = clientesMap[clienteId] || {};
                     const nome = item.cli_nome || clienteInfo.cli_nome || clienteInfo.cli_fantasia || item.nome || clienteId || 'Cliente';
                     const cidade = item.cli_cidade || clienteInfo.cli_cidade || item.cidade || '';
