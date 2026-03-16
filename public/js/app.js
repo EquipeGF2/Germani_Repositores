@@ -12019,6 +12019,27 @@ class App {
             this.limparAtendimentoLocal(combinado.rep_id || this.registroRotaState?.clienteAtual?.repId, clienteIdNorm);
         }
 
+        // Persistir resumo de visitas no localStorage para sobreviver a re-login
+        try {
+            const repId = combinado.rep_id || this.registroRotaState?.clienteAtual?.repId || this.registroRotaState?._cacheRepId;
+            const dataVisita = this.registroRotaState?._cacheDataVisita || new Date().toISOString().split('T')[0];
+            if (repId && dataVisita) {
+                const cacheKey = `resumo_visitas_${repId}_${dataVisita}`;
+                const cachedStr = localStorage.getItem(cacheKey);
+                let resumoArray = cachedStr ? JSON.parse(cachedStr) : [];
+                // Atualizar ou adicionar o cliente no array
+                const idx = resumoArray.findIndex(r => String(r.cliente_id).trim().replace(/\.0$/, '') === clienteIdNorm);
+                const entry = { ...combinado };
+                delete entry._timestamp_update; // Não salvar timestamp interno
+                if (idx >= 0) {
+                    resumoArray[idx] = entry;
+                } else {
+                    resumoArray.push(entry);
+                }
+                localStorage.setItem(cacheKey, JSON.stringify(resumoArray));
+            }
+        } catch (_) {}
+
         this.atualizarCardCliente(clienteIdNorm);
     }
 
@@ -16467,6 +16488,49 @@ class App {
         } catch (e) {
             console.error('[SYNC] Erro geral ao sincronizar despesas pendentes:', e);
         }
+
+        // Sincronizar documentos normais salvos offline
+        try {
+            await window.offlineDB.init();
+            const pendingDocs = await window.offlineDB.getSyncMeta('pendingDocumentos') || [];
+            if (pendingDocs.length === 0) return;
+
+            console.log(`[SYNC] Sincronizando ${pendingDocs.length} documento(s) offline...`);
+            const remainingDocs = [];
+
+            for (const doc of pendingDocs) {
+                try {
+                    const formData = new FormData();
+                    formData.append('repositor_id', doc.repositorId);
+                    formData.append('dct_id', doc.tipoId);
+                    if (doc.observacao) formData.append('observacao', doc.observacao);
+
+                    for (const foto of (doc.fotos || [])) {
+                        const res = await fetch(foto.b64);
+                        const blob = await res.blob();
+                        formData.append('arquivos', new File([blob], foto.name || 'foto.jpg', { type: foto.type || 'image/jpeg' }));
+                    }
+
+                    await fetchJson(`${API_BASE_URL}/api/documentos/upload-multiplo`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    console.log('[SYNC] Documento sincronizado:', doc.id);
+                } catch (err) {
+                    console.error('[SYNC] Erro ao sincronizar documento:', doc.id, err);
+                    remainingDocs.push(doc);
+                }
+            }
+
+            await window.offlineDB.setSyncMeta('pendingDocumentos', remainingDocs);
+            const syncedDocs = pendingDocs.length - remainingDocs.length;
+            if (syncedDocs > 0) {
+                console.log(`[SYNC] ${syncedDocs} documento(s) sincronizado(s)`);
+                this.showNotification(`${syncedDocs} documento(s) offline sincronizado(s)!`, 'success');
+            }
+        } catch (e) {
+            console.error('[SYNC] Erro ao sincronizar documentos pendentes:', e);
+        }
     }
 
     async abrirCameraRubrica(rubricaId) {
@@ -17305,7 +17369,52 @@ class App {
                 arquivosParaEnvio = this.documentosState.filaUploads.filter(i => i.status !== 'sucesso');
 
                 if (!repositorId || !tipoId || arquivosParaEnvio.length === 0) {
-                    this.showNotification('Preencha todos os campos obrigatórios e adicione ao menos um anexo', 'warning');
+                    // Verificar qual campo está faltando para mensagem mais clara
+                    if (!repositorId) {
+                        this.showNotification('Selecione o repositor', 'warning');
+                    } else if (!tipoId) {
+                        this.showNotification('Selecione o tipo de documento', 'warning');
+                    } else {
+                        this.showNotification('Adicione ao menos um anexo', 'warning');
+                    }
+                    return;
+                }
+
+                // Se offline, salvar documento na fila local para envio posterior
+                if (!navigator.onLine) {
+                    try {
+                        await window.offlineDB.init();
+                        const pending = await window.offlineDB.getSyncMeta('pendingDocumentos') || [];
+                        const fotosB64 = [];
+                        for (const item of arquivosParaEnvio) {
+                            if (item.file) {
+                                const b64 = await new Promise(resolve => {
+                                    const reader = new FileReader();
+                                    reader.onload = () => resolve(reader.result);
+                                    reader.readAsDataURL(item.file);
+                                });
+                                fotosB64.push({ b64, name: item.file.name, type: item.file.type });
+                            }
+                        }
+                        pending.push({
+                            id: Date.now(),
+                            repositorId,
+                            tipoId,
+                            observacao,
+                            fotos: fotosB64,
+                            createdAt: new Date().toISOString(),
+                            syncStatus: 'pending'
+                        });
+                        await window.offlineDB.setSyncMeta('pendingDocumentos', pending);
+                        this.showNotification('Documento salvo offline! Será enviado ao conectar à internet.', 'success');
+                        // Limpar fila
+                        this.documentosState.filaUploads = [];
+                        this.renderizarFilaUploads();
+                        document.getElementById('uploadObservacao').value = '';
+                    } catch (e) {
+                        console.error('[OFFLINE] Erro ao salvar documento offline:', e);
+                        this.showNotification('Erro ao salvar documento offline', 'error');
+                    }
                     return;
                 }
             }
