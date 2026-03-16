@@ -10381,9 +10381,19 @@ class App {
             const selectRepositor = document.getElementById('registroRepositor');
             const inputData = document.getElementById('registroData');
             if (selectRepositor?.value && inputData?.value) {
-                // Esconder barra de filtro no PWA (repositor já fixo)
-                const filterBar = selectRepositor.closest('.filter-bar');
-                if (filterBar) filterBar.style.display = 'none';
+                // Esconder apenas o select de repositor (manter data visível para troca de dia)
+                const repoGroup = selectRepositor.closest('.filter-group');
+                if (repoGroup) repoGroup.style.display = 'none';
+                // Esconder botão carregar (auto-carrega)
+                const btnCarregar = document.getElementById('btnCarregarRoteiro');
+                if (btnCarregar) btnCarregar.style.display = 'none';
+
+                // Recarregar ao mudar data (permite antecipar visitas)
+                inputData.addEventListener('change', () => {
+                    this.registroRotaState._cacheCarregado = false; // Forçar re-render
+                    this.carregarRoteiroRepositor();
+                });
+
                 // Auto-carregar
                 this.carregarRoteiroRepositor();
             }
