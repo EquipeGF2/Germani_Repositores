@@ -10777,8 +10777,23 @@ class App {
         const selectRepositor = document.getElementById('registroRepositor');
         const inputData = document.getElementById('registroData');
 
-        const repId = selectRepositor?.value ? parseInt(selectRepositor.value) : null;
+        let repId = selectRepositor?.value ? parseInt(selectRepositor.value) : null;
         const dataVisita = inputData?.value;
+
+        // PWA fallback: usar repId do authManager se select vazio (ex: offline sem lista de repositores)
+        if (!repId && window.authManager?.isPWA) {
+            repId = window.authManager.getRepId?.() || window.authManager.usuario?.rep_id;
+            if (repId && selectRepositor) {
+                // Injetar opção no select para uso futuro
+                if (!selectRepositor.querySelector(`option[value="${repId}"]`)) {
+                    const opt = document.createElement('option');
+                    opt.value = repId;
+                    opt.textContent = window.authManager.usuario?.nome || `Repositor ${repId}`;
+                    selectRepositor.appendChild(opt);
+                }
+                selectRepositor.value = String(repId);
+            }
+        }
 
         if (!repId || !dataVisita) {
             this.showNotification('Selecione o repositor e a data', 'warning');
@@ -10813,19 +10828,25 @@ class App {
                 if (typeof window.offlineDB !== 'undefined') {
                     await window.offlineDB.init();
                     todos = await window.offlineDB.getAll('roteiro').catch(() => []);
+                    console.log(`[Offline] IndexedDB roteiro: ${todos.length} itens`);
                 }
 
                 // 2. Fallback para cache em memória (pwa-app.js)
                 if (todos.length === 0 && typeof window.pwaApp?.getRoteiroCache === 'function') {
                     todos = window.pwaApp.getRoteiroCache();
+                    console.log(`[Offline] Cache memória roteiro: ${todos.length} itens`);
                 }
 
-                if (todos.length === 0) return [];
+                if (todos.length === 0) {
+                    console.warn('[Offline] Nenhum dado de roteiro disponível offline');
+                    return [];
+                }
 
                 // 3. Filtrar por dia da semana (fallback: todos se nenhum bater)
                 const filtrado = todos.filter(r =>
                     (r.dia_semana || '').toLowerCase() === diaSemana
                 );
+                console.log(`[Offline] Filtro dia '${diaSemana}': ${filtrado.length}/${todos.length} itens`);
                 const base = filtrado.length > 0 ? filtrado : todos;
 
                 // 4. Construir mapa de clientes para enriquecimento
@@ -10878,7 +10899,7 @@ class App {
             }
         } else if (isPWA) {
             // PWA primeira carga: IndexedDB primeiro (instantâneo), Turso em background
-            // Mostrar loading breve
+            console.log(`[PWA] Carregando roteiro - repId=${repId}, dia=${diaSemana}, online=${navigator.onLine}`);
             container.innerHTML = `
                 <div style="text-align:center;padding:20px;">
                     <div class="pwa-spinner-small" style="margin:0 auto;"></div>
@@ -10887,10 +10908,17 @@ class App {
             `;
             // Sempre tentar IndexedDB primeiro (instantâneo)
             roteiro = await carregarRoteiroOffline();
+            console.log(`[PWA] Roteiro offline: ${roteiro?.length || 0} clientes`);
 
             // Se IndexedDB vazio e online, fallback para Turso
             if ((!roteiro || roteiro.length === 0) && navigator.onLine) {
-                roteiro = await db.carregarRoteiroRepositorDia(repId, diaSemana);
+                try {
+                    roteiro = await db.carregarRoteiroRepositorDia(repId, diaSemana);
+                    console.log(`[PWA] Roteiro Turso: ${roteiro?.length || 0} clientes`);
+                } catch (e) {
+                    console.warn('[PWA] Erro Turso roteiro:', e);
+                    roteiro = [];
+                }
             }
 
             // Se conseguiu do IndexedDB e está online, atualizar do Turso em background
@@ -11178,7 +11206,7 @@ class App {
 
         roteiro.forEach(cliente => {
             const cliId = normalizeClienteId(cliente.cli_codigo || cliente.cliente_id || cliente.cod_cliente);
-            const cliNome = String(cliente.cli_nome || '');
+            const cliNome = String(cliente.cli_nome || cliente.cli_fantasia || (cliId ? `Cliente ${cliId}` : 'Cliente'));
             const badgePendente = cliente.cli_pendente_anterior ? '<div style="margin-top:4px;"><span style="background:#f59e0b;color:white;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;display:inline-block;">PENDENTE DIA ANTERIOR</span></div>' : '';
 
             const cidadeUF = [cliente.cli_cidade, cliente.cli_estado].filter(Boolean).join('/');
