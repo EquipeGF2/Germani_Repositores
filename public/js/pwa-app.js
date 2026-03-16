@@ -42,7 +42,6 @@
     let toastTimer = null;
     let currentCheckContext = null;     // Contexto do checkin em andamento
     let currentAtendimentoContext = null; // Contexto da tela de atendimento aberta
-    let _homeDiaSelecionado = null;      // Dia da semana selecionado na home (null = hoje)
     let cachedData = {
         roteiro: null,
         clientes: null,
@@ -81,8 +80,7 @@
         atendimentoCancelar,
         atualizarEstadoBtnCheckout: _atualizarEstadoBtnCheckout,
         getRoteiroCache: () => cachedData.roteiro || [],
-        getClientesCache: () => cachedData.clientes || [],
-        selecionarDiaRoteiro
+        getClientesCache: () => cachedData.clientes || []
     };
 
     async function init() {
@@ -844,19 +842,9 @@
 
                 ${avisoAtendimento}
 
-                <div class="pwa-section-title" style="display:flex;justify-content:space-between;align-items:center;">
-                    <span id="pwaRoteiroDiaLabel">Roteiro de Hoje</span>
-                </div>
-                <div id="pwaDiaSemanaSelector" class="pwa-dia-semana-selector" style="display:flex;gap:4px;margin-bottom:10px;overflow-x:auto;padding:2px 0;">
-                </div>
-                <div id="pwaRoteiroHoje" class="pwa-roteiro-lista">
-                    <div class="pwa-loading-inline">
-                        <div class="pwa-spinner-small"></div>
-                        <span>Carregando roteiro...</span>
-                    </div>
-                </div>
+                <div id="pwaAvisosHome"></div>
 
-                <div class="pwa-section-title" style="margin-top:16px;">Ações Rápidas</div>
+                <div class="pwa-section-title">Ações Rápidas</div>
 
                 <button class="pwa-action-btn" onclick="pwaApp.navigate('registro-rota')">
                     <span class="pwa-action-icon">&#128205;</span>
@@ -884,45 +872,11 @@
             </div>
         `;
 
-        // Construir seletor de dias da semana
-        buildDiaSemanaSelector();
-
-        // Carregar roteiro do dia na home (async, não bloqueia)
-        loadRoteiroHome();
-    }
-
-    /** Constrói o seletor de dias da semana no home */
-    function buildDiaSemanaSelector() {
-        const container = document.getElementById('pwaDiaSemanaSelector');
-        if (!container) return;
-
-        const diasLabels = [
-            { key: 'seg', label: 'Seg' },
-            { key: 'ter', label: 'Ter' },
-            { key: 'qua', label: 'Qua' },
-            { key: 'qui', label: 'Qui' },
-            { key: 'sex', label: 'Sex' },
-            { key: 'sab', label: 'Sáb' }
-        ];
-
-        const hoje = getDiaSemanaHoje();
-        // Estado atual selecionado (default: hoje)
-        if (!_homeDiaSelecionado) _homeDiaSelecionado = hoje;
-
-        container.innerHTML = diasLabels.map(d => {
-            const isHoje = d.key === hoje;
-            const isSelecionado = d.key === _homeDiaSelecionado;
-            return `<button class="pwa-dia-btn${isSelecionado ? ' pwa-dia-btn-ativo' : ''}${isHoje ? ' pwa-dia-btn-hoje' : ''}"
-                data-dia="${d.key}"
-                onclick="pwaApp.selecionarDiaRoteiro('${d.key}')"
-                style="flex:1;min-width:42px;padding:8px 4px;border-radius:8px;border:1.5px solid ${isSelecionado ? '#2563eb' : '#e5e7eb'};background:${isSelecionado ? '#2563eb' : '#fff'};color:${isSelecionado ? '#fff' : '#374151'};font-size:12px;font-weight:${isSelecionado || isHoje ? '700' : '500'};cursor:pointer;text-align:center;position:relative;">
-                ${d.label}${isHoje ? '<div style="width:5px;height:5px;border-radius:50%;background:' + (isSelecionado ? '#fff' : '#2563eb') + ';margin:2px auto 0;"></div>' : ''}
-            </button>`;
-        }).join('');
+        // Carregar avisos de clientes não atendidos (async)
+        carregarAvisosHome();
     }
 
     async function getClientesMap() {
-        // Buscar clientes do cache ou IndexedDB para enriquecer roteiro
         const buildMap = (clientes) => {
             const map = {};
             clientes.forEach(c => {
@@ -940,7 +894,7 @@
                 await offlineDB.init();
                 const clientes = await offlineDB.getAll('clientes');
                 if (clientes && clientes.length > 0) {
-                    cachedData.clientes = clientes; // Atualizar cache em memória
+                    cachedData.clientes = clientes;
                     return buildMap(clientes);
                 }
             }
@@ -949,150 +903,125 @@
     }
 
     /**
-     * Busca roteiro de um dia específico da semana do IndexedDB/cache.
-     * @param {string} diaSemana - ex: 'seg', 'ter', 'qua', etc.
+     * Carrega avisos na home:
+     * - Clientes não atendidos nos últimos 2 dias
      */
-    async function getRoteiroParaDia(diaSemana) {
-        let todos = [];
-
-        // 1. Tentar IndexedDB
-        try {
-            if (typeof offlineDB !== 'undefined') {
-                await offlineDB.init();
-                todos = await offlineDB.getAll('roteiro');
-            }
-        } catch (e) {
-            console.warn('[PWA] Erro IndexedDB roteiro:', e);
-        }
-
-        // 2. Fallback: cache em memória
-        if ((!todos || todos.length === 0) && cachedData.roteiro && cachedData.roteiro.length > 0) {
-            todos = cachedData.roteiro;
-        }
-
-        // 3. Fallback: API (se online e sem cache)
-        if ((!todos || todos.length === 0) && navigator.onLine) {
-            try {
-                const token = localStorage.getItem('auth_token');
-                if (token) {
-                    const resp = await fetch(`${API_BASE_URL}/api/sync/roteiro`, {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    if (resp.ok) {
-                        const data = await resp.json();
-                        if (data.ok && data.roteiro && data.roteiro.length > 0) {
-                            todos = data.roteiro;
-                            if (typeof offlineDB !== 'undefined') {
-                                try { await offlineDB.salvarRoteiro(data.roteiro); } catch (_) {}
-                            }
-                            cachedData.roteiro = data.roteiro;
-                        }
-                    }
-                }
-            } catch (e) { console.warn('[PWA] Erro API roteiro:', e); }
-        }
-
-        if (!todos || todos.length === 0) return [];
-
-        // Filtrar pelo dia solicitado
-        const filtrado = filtrarRoteiroDia(todos, diaSemana);
-        return filtrado.length > 0 ? filtrado : [];
-    }
-
-    async function loadRoteiroHome() {
-        const container = document.getElementById('pwaRoteiroHoje');
+    async function carregarAvisosHome() {
+        const container = document.getElementById('pwaAvisosHome');
         if (!container) return;
 
-        const diaSelecionado = _homeDiaSelecionado || getDiaSemanaHoje();
-        const hoje = getDiaSemanaHoje();
-        const diasNomes = { seg: 'Segunda', ter: 'Terça', qua: 'Quarta', qui: 'Quinta', sex: 'Sexta', sab: 'Sábado', dom: 'Domingo' };
-
-        // Atualizar label
-        const label = document.getElementById('pwaRoteiroDiaLabel');
-        if (label) {
-            label.textContent = diaSelecionado === hoje
-                ? 'Roteiro de Hoje'
-                : `Roteiro - ${diasNomes[diaSelecionado] || diaSelecionado}`;
-        }
-
         try {
-            const roteiro = await getRoteiroParaDia(diaSelecionado);
+            const repId = getRepId();
+            if (!repId) return;
 
-            if (roteiro && roteiro.length > 0) {
-                // Enriquecer roteiro com dados de clientes
-                const clientesMap = await getClientesMap();
+            // Buscar não atendimentos dos últimos 2 dias do cache localStorage
+            const hoje = new Date();
+            const naoAtendidosTotal = [];
 
-                const items = roteiro.map(item => {
-                    const clienteId = String(item.cliente_id || item.cli_codigo || '').trim().replace(/\.0$/, '');
-                    const clienteInfo = clientesMap[clienteId] || {};
-                    const nome = item.cli_nome || clienteInfo.cli_nome || clienteInfo.cli_fantasia || item.nome || clienteId || 'Cliente';
-                    const cidade = item.cli_cidade || clienteInfo.cli_cidade || item.cidade || '';
-
-                    return `
-                        <div class="pwa-roteiro-item" style="display:flex;align-items:center;padding:10px 12px;background:#fff;border-radius:8px;margin-bottom:6px;box-shadow:0 1px 2px rgba(0,0,0,0.06);">
-                            <div style="width:8px;height:8px;border-radius:50%;background:#94a3b8;margin-right:12px;flex-shrink:0;"></div>
-                            <div style="flex:1;min-width:0;">
-                                <div style="font-size:13px;font-weight:600;color:#1f2937;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(nome)}</div>
-                                ${cidade ? `<div style="font-size:11px;color:#6b7280;margin-top:1px;">${escapeHtml(cidade)}</div>` : ''}
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-
-                container.innerHTML = `
-                    <div style="font-size:12px;color:#6b7280;margin-bottom:8px;padding:0 4px;">
-                        ${roteiro.length} cliente${roteiro.length > 1 ? 's' : ''} no roteiro
-                    </div>
-                    ${items}
-                `;
-            } else {
-                const diaTexto = diaSelecionado === hoje ? 'hoje' : diasNomes[diaSelecionado] || diaSelecionado;
-                container.innerHTML = `
-                    <div class="pwa-empty-state" style="padding:20px;text-align:center;">
-                        <div style="font-size:24px;margin-bottom:6px;">&#128203;</div>
-                        <div style="font-size:13px;color:#6b7280;">Nenhum roteiro para ${diaTexto}</div>
-                        ${navigator.onLine ? '<div style="font-size:11px;color:#9ca3af;margin-top:4px;">Toque para sincronizar</div>' : ''}
-                    </div>
-                `;
-                if (navigator.onLine) {
-                    container.style.cursor = 'pointer';
-                    container.onclick = async () => {
-                        container.onclick = null;
-                        container.style.cursor = '';
-                        container.innerHTML = '<div class="pwa-loading-inline"><div class="pwa-spinner-small"></div><span>Sincronizando...</span></div>';
-                        try {
-                            if (typeof syncService !== 'undefined') {
-                                showSyncIndicator(true);
-                                await syncService.sincronizarDownload();
-                                await loadLocalData();
-                                localStorage.setItem('pwa_ultimo_sync_dia', getHojeBR());
-                                localStorage.setItem('ultimo_sync', new Date().toISOString());
-                                showSyncIndicator(false);
-                            }
-                            await loadRoteiroHome();
-                        } catch (e) {
-                            showSyncIndicator(false);
-                            container.innerHTML = '<div class="pwa-empty-state"><div style="font-size:13px;color:#b91c1c;">Erro ao sincronizar. Tente novamente.</div></div>';
-                        }
-                    };
-                }
+            for (let i = 1; i <= 2; i++) {
+                const dia = new Date(hoje);
+                dia.setDate(dia.getDate() - i);
+                const dataStr = dia.toISOString().split('T')[0];
+                try {
+                    const cached = localStorage.getItem(`nao_atendimentos_${repId}_${dataStr}`);
+                    if (cached) {
+                        const lista = JSON.parse(cached);
+                        lista.forEach(na => {
+                            naoAtendidosTotal.push({ ...na, data: dataStr });
+                        });
+                    }
+                } catch (_) {}
             }
-        } catch (e) {
-            console.error('[PWA] Erro roteiro home:', e);
+
+            // Buscar resumo de visitas dos últimos 2 dias para identificar pendentes
+            const clientesPendentes = [];
+            for (let i = 1; i <= 2; i++) {
+                const dia = new Date(hoje);
+                dia.setDate(dia.getDate() - i);
+                const dataStr = dia.toISOString().split('T')[0];
+                try {
+                    const cached = localStorage.getItem(`resumo_visitas_${repId}_${dataStr}`);
+                    if (cached) {
+                        const resumo = JSON.parse(cached);
+                        resumo.forEach(v => {
+                            if (v.status === 'nao_atendido') {
+                                const cliId = String(v.cliente_id || '').trim().replace(/\.0$/, '');
+                                // Evitar duplicatas com a lista de não atendimentos
+                                if (!naoAtendidosTotal.some(na => String(na.na_cliente_id || '').trim().replace(/\.0$/, '') === cliId)) {
+                                    clientesPendentes.push({ cli_id: cliId, data: dataStr, motivo: v.nao_atendimento_motivo || '' });
+                                }
+                            }
+                        });
+                    }
+                } catch (_) {}
+            }
+
+            // Combinar listas
+            const todosNaoAtendidos = [
+                ...naoAtendidosTotal.map(na => ({
+                    clienteId: String(na.na_cliente_id || '').trim().replace(/\.0$/, ''),
+                    clienteNome: na.na_cliente_nome || na.cliente_nome || '',
+                    motivo: na.na_motivo || '',
+                    data: na.data
+                })),
+                ...clientesPendentes.map(p => ({
+                    clienteId: p.cli_id,
+                    clienteNome: '',
+                    motivo: p.motivo,
+                    data: p.data
+                }))
+            ];
+
+            if (todosNaoAtendidos.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            // Enriquecer com nomes de clientes
+            const clientesMap = await getClientesMap();
+            todosNaoAtendidos.forEach(item => {
+                if (!item.clienteNome && clientesMap[item.clienteId]) {
+                    item.clienteNome = clientesMap[item.clienteId].cli_nome || clientesMap[item.clienteId].cli_fantasia || '';
+                }
+            });
+
+            // Filtrar sem nome (dados incompletos)
+            const comNome = todosNaoAtendidos.filter(i => i.clienteNome || i.clienteId);
+
+            if (comNome.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            const itensHtml = comNome.slice(0, 10).map(item => {
+                const nome = escapeHtml(item.clienteNome || item.clienteId);
+                const dataFmt = (() => {
+                    try {
+                        const [a, m, d] = item.data.split('-');
+                        return `${d}/${m}`;
+                    } catch (_) { return item.data; }
+                })();
+                return `<div style="display:flex;align-items:center;padding:8px 12px;background:#fff;border-radius:6px;margin-bottom:4px;">
+                    <div style="color:#f59e0b;font-size:14px;margin-right:10px;">&#9888;</div>
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-size:12px;font-weight:600;color:#1f2937;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${nome}</div>
+                        <div style="font-size:10px;color:#6b7280;">${dataFmt}${item.motivo ? ' - ' + escapeHtml(item.motivo) : ''}</div>
+                    </div>
+                </div>`;
+            }).join('');
+
             container.innerHTML = `
-                <div class="pwa-empty-state" style="padding:20px;text-align:center;">
-                    <div style="font-size:24px;margin-bottom:6px;">&#128203;</div>
-                    <div style="font-size:13px;color:#6b7280;">Roteiro será carregado ao sincronizar</div>
+                <div style="margin-bottom:12px;">
+                    <div style="font-size:13px;font-weight:600;color:#92400e;margin-bottom:6px;padding:0 4px;">
+                        &#9888; ${comNome.length} cliente${comNome.length > 1 ? 's' : ''} não atendido${comNome.length > 1 ? 's' : ''} nos últimos 2 dias
+                    </div>
+                    ${itensHtml}
                 </div>
             `;
+        } catch (e) {
+            console.error('[PWA] Erro ao carregar avisos home:', e);
+            container.innerHTML = '';
         }
-    }
-
-    /** Troca o dia do roteiro na home */
-    function selecionarDiaRoteiro(dia) {
-        _homeDiaSelecionado = dia;
-        buildDiaSemanaSelector();
-        loadRoteiroHome();
     }
 
     // ==================== PÁGINA: REGISTRO DE ROTA ====================
