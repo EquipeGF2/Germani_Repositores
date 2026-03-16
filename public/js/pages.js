@@ -2070,8 +2070,8 @@ export const pages = {
         const filtrarParaRepositor = isPWA && perfilLogado === 'repositor' && repIdLogado;
 
         // Fallback offline: injetar repositor do usuário logado se lista vazia
-        if (!repositores.length && filtrarParaRepositor) {
-            const nomeLogado = window.authManager?.usuario?.nome || `Repositor ${repIdLogado}`;
+        if (!repositores.length && repIdLogado) {
+            const nomeLogado = window.authManager?.usuario?.nome || window.authManager?.usuario?.nome_completo || `Repositor ${repIdLogado}`;
             repositores = [{ repo_cod: repIdLogado, repo_nome: nomeLogado }];
         }
 

@@ -10377,7 +10377,7 @@ class App {
         this.restaurarContextoRegistroRota();
 
         // PWA: auto-carregar roteiro se repositor fixo
-        if (authManager?.isPWA && authManager?.usuario?.perfil === 'repositor') {
+        if (authManager?.isPWA) {
             const selectRepositor = document.getElementById('registroRepositor');
             const inputData = document.getElementById('registroData');
             if (selectRepositor?.value && inputData?.value) {
@@ -10998,7 +10998,7 @@ class App {
         }
 
         // Buscar clientes com espaços cadastrados (cache-first)
-        const clienteIds = roteiro.map(c => normalizeClienteId(c.cli_codigo));
+        const clienteIds = roteiro.map(c => normalizeClienteId(c.cli_codigo || c.cliente_id));
         if (!cacheValido) {
             this.registroRotaState.clientesComEspaco = new Set();
             // Restaurar do cache local primeiro
@@ -11167,7 +11167,7 @@ class App {
         }
 
         roteiro.forEach(cliente => {
-            const cliId = normalizeClienteId(cliente.cli_codigo);
+            const cliId = normalizeClienteId(cliente.cli_codigo || cliente.cliente_id || cliente.cod_cliente);
             const cliNome = String(cliente.cli_nome || '');
             const badgePendente = cliente.cli_pendente_anterior ? '<div style="margin-top:4px;"><span style="background:#f59e0b;color:white;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;display:inline-block;">PENDENTE DIA ANTERIOR</span></div>' : '';
 
@@ -11467,23 +11467,41 @@ class App {
     }
 
     async buscarResumoVisitas(repId, dataVisita) {
+        const cacheKey = `resumo_visitas_${repId}_${dataVisita}`;
         try {
             const url = `${this.registroRotaState.backendUrl}/api/registro-rota/visitas?rep_id=${repId}&data_inicio=${dataVisita}&data_fim=${dataVisita}&modo=resumo`;
             const result = await fetchJson(url);
-            return result.resumo || result.visitas || [];
+            const resumo = result.resumo || result.visitas || [];
+            // Salvar no cache para uso offline
+            try { localStorage.setItem(cacheKey, JSON.stringify(resumo)); } catch (_) {}
+            return resumo;
         } catch (error) {
             console.warn('Erro ao buscar resumo de visitas:', error);
+            // Fallback offline: restaurar do cache local
+            try {
+                const cached = localStorage.getItem(cacheKey);
+                if (cached) return JSON.parse(cached);
+            } catch (_) {}
             return [];
         }
     }
 
     async buscarAtendimentosAbertos(repId) {
+        const cacheKey = `atendimentos_abertos_${repId}`;
         try {
             const url = `${this.registroRotaState.backendUrl}/api/registro-rota/atendimentos-abertos?repositor_id=${repId}`;
             const data = await fetchJson(url);
-            return data.atendimentos_abertos || [];
+            const abertos = data.atendimentos_abertos || [];
+            // Salvar no cache para uso offline
+            try { localStorage.setItem(cacheKey, JSON.stringify(abertos)); } catch (_) {}
+            return abertos;
         } catch (error) {
             console.warn('Erro ao recuperar atendimentos abertos:', error);
+            // Fallback offline: restaurar do cache local
+            try {
+                const cached = localStorage.getItem(cacheKey);
+                if (cached) return JSON.parse(cached);
+            } catch (_) {}
             return [];
         }
     }
