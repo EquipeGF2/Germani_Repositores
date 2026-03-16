@@ -541,25 +541,22 @@ class OfflineDB {
       if (meta) checkinLocal = 1;
     } catch (_) {}
 
-    // Incluir não-atendimentos pendentes
-    let naPendentes = 0;
-    try {
-      const na = JSON.parse(localStorage.getItem('pwa_na_pendentes') || '[]');
-      naPendentes = na.length;
-    } catch (_) {}
-
-    // Incluir checkouts offline pendentes (salvos no syncMeta do IndexedDB)
+    // Incluir checkouts offline e documentos/despesas pendentes (salvos no syncMeta do IndexedDB)
     let checkoutsPendentes = 0;
+    let despesasPendentes = 0;
+    let documentosPendentes = 0;
     try {
       const allMeta = await this.getAll('syncMeta');
       if (allMeta) {
         for (const item of allMeta) {
           if (item.key && item.key.startsWith('pendingCheckout_')) checkoutsPendentes++;
+          if (item.key === 'pendingDespesas' && Array.isArray(item.value)) despesasPendentes = item.value.length;
+          if (item.key === 'pendingDocumentos' && Array.isArray(item.value)) documentosPendentes = item.value.length;
         }
       }
     } catch (_) {}
 
-    const subtotal = sessoes.length + registros.length + fotos.length + rotas.length + pesquisas.length + espacos.length + checkinLocal + naPendentes + checkoutsPendentes;
+    const subtotal = sessoes.length + registros.length + fotos.length + rotas.length + pesquisas.length + espacos.length + checkinLocal + checkoutsPendentes + despesasPendentes + documentosPendentes;
 
     return {
       sessoes: sessoes.length,
@@ -569,7 +566,6 @@ class OfflineDB {
       pesquisas: pesquisas.length,
       espacos: espacos.length,
       checkinLocal,
-      naPendentes,
       checkoutsPendentes,
       total: subtotal,
       deadLetters

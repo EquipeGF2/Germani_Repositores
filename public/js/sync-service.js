@@ -592,6 +592,11 @@ class SyncService {
       // Limpar itens sincronizados antigos
       await offlineDB.limparSincronizados();
 
+      // Limpar não-atendimentos pendentes do localStorage (já foram enviados via filaRegistros)
+      if (totalEnviados > 0) {
+        try { localStorage.removeItem('pwa_na_pendentes'); } catch (_) {}
+      }
+
       // Registrar sync no servidor
       await this.registrarSyncNoServidor('upload');
 
