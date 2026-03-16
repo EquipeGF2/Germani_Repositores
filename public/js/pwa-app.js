@@ -522,6 +522,61 @@
                 console.warn('[PWA] Erro ao pré-cachear roteiros:', e);
             }
 
+            updateDailySyncStatus('Carregando dados de visitas...');
+
+            // Pré-cachear resumo de visitas, não atendimentos e atendimentos abertos
+            // Necessário para avisos na home e para status offline no Registro de Rota
+            try {
+                const repIdVisitas = typeof authManager !== 'undefined' ? authManager.getRepId?.() : null;
+                if (repIdVisitas) {
+                    const hojeVisitas = new Date();
+
+                    // Cachear resumo visitas e não atendimentos: 2 dias atrás + hoje
+                    for (let i = -2; i <= 0; i++) {
+                        const dataAlvo = new Date(hojeVisitas);
+                        dataAlvo.setDate(hojeVisitas.getDate() + i);
+                        const dataStr = dataAlvo.toISOString().split('T')[0];
+
+                        try {
+                            // Resumo de visitas do dia
+                            const resumoRes = await syncService.fetchWithTimeout(
+                                `${API_BASE_URL}/api/registro-rota/visitas?rep_id=${repIdVisitas}&data_inicio=${dataStr}&data_fim=${dataStr}&modo=resumo`,
+                                { headers }
+                            ).then(r => r.json());
+                            const resumo = resumoRes?.resumo || resumoRes?.visitas || [];
+                            if (resumo.length > 0) {
+                                localStorage.setItem(`resumo_visitas_${repIdVisitas}_${dataStr}`, JSON.stringify(resumo));
+                            }
+
+                            // Não atendimentos do dia
+                            const naRes = await syncService.fetchWithTimeout(
+                                `${API_BASE_URL}/api/registro-rota/nao-atendimentos?repositor_id=${repIdVisitas}&data=${dataStr}`,
+                                { headers }
+                            ).then(r => r.ok ? r.json() : null);
+                            if (naRes?.ok && naRes.data) {
+                                localStorage.setItem(`nao_atendimentos_${repIdVisitas}_${dataStr}`, JSON.stringify(naRes.data));
+                            }
+                        } catch (e) {
+                            console.warn(`[Sync] Erro ao cachear visitas ${dataStr}:`, e);
+                        }
+                    }
+
+                    // Cachear atendimentos abertos (para verificação de sessão no checkin offline)
+                    try {
+                        const abertosRes = await syncService.fetchWithTimeout(
+                            `${API_BASE_URL}/api/registro-rota/atendimentos-abertos?repositor_id=${repIdVisitas}`,
+                            { headers }
+                        ).then(r => r.json());
+                        const abertos = abertosRes?.atendimentos_abertos || [];
+                        localStorage.setItem(`atendimentos_abertos_${repIdVisitas}`, JSON.stringify(abertos));
+                    } catch (_) {}
+
+                    console.log('[Sync] Resumo visitas, não atendimentos e atendimentos abertos cacheados');
+                }
+            } catch (e) {
+                console.warn('[PWA] Erro ao pré-cachear visitas:', e);
+            }
+
             updateDailySyncStatus('Carregando dados para navegação...');
 
             // Recarregar cache em memória com dados recém-sincronizados

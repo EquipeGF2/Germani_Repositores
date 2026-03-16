@@ -661,7 +661,6 @@ class App {
                     <ul class="text-muted" style="display:flex; flex-direction:column; gap:6px; margin-left:18px;">
                         <li>Menu e cabeçalho já estão disponíveis.</li>
                         <li>Dados são carregados em segundo plano.</li>
-                        <li>Se demorar, o servidor pode estar aquecendo.</li>
                     </ul>
                 </div>
             </div>
@@ -681,9 +680,7 @@ class App {
 
         try {
             avisoAquecimento = setTimeout(() => {
-                if (!silencioso) {
-                    this.showNotification('Servidor aquecendo...', 'info');
-                }
+                // Timeout silencioso - sem notificação
             }, 5000);
 
             const resposta = await fetch(`${API_BASE_URL}/api/health`);
@@ -12179,7 +12176,7 @@ class App {
 
         // PWA offline-first: usar estado local em vez de API
         const isPWA = window.authManager?.isPWA;
-        if (isPWA && this.registroRotaState._cacheCarregado && !forceRefresh) {
+        if (isPWA && (this.registroRotaState._cacheCarregado || !navigator.onLine) && !forceRefresh) {
             // Derivar do estado local
             const atendimentos = this.registroRotaState.atendimentosAbertos;
             if (atendimentos instanceof Map && atendimentos.size > 0) {
@@ -12286,7 +12283,7 @@ class App {
 
         // PWA offline-first: usar estado local em vez de API
         const isPWA = window.authManager?.isPWA;
-        if (isPWA && this.registroRotaState._cacheCarregado && !forceRefresh) {
+        if (isPWA && (this.registroRotaState._cacheCarregado || !navigator.onLine) && !forceRefresh) {
             const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
             const atendimentos = this.registroRotaState.atendimentosAbertos;
             if (atendimentos instanceof Map && atendimentos.size > 0) {
@@ -12955,7 +12952,12 @@ class App {
             const coordsCliente = await this.obterCoordenadasPorEndereco(enderecoCliente, clienteId);
 
             if (!coordsCliente) {
-                // Se não conseguiu geocodificar, BLOQUEIA o checkin
+                // Se não conseguiu geocodificar e estamos offline, permitir checkin
+                if (!navigator.onLine) {
+                    console.warn('Offline - validação de distância ignorada (sem coordenadas disponíveis)');
+                    return { valido: true, distancia: null, aviso: null };
+                }
+                // Online mas falhou: bloqueia
                 console.warn('Não foi possível validar distância - endereço não geocodificado');
                 return {
                     valido: false,
