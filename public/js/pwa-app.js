@@ -522,6 +522,144 @@
                 console.warn('[PWA] Erro ao pré-cachear roteiros:', e);
             }
 
+            updateDailySyncStatus('Carregando dados de visitas...');
+
+            // Pré-cachear resumo de visitas, não atendimentos e atendimentos abertos
+            // Necessário para avisos na home e para status offline no Registro de Rota
+            try {
+                const repIdVisitas = typeof authManager !== 'undefined' ? authManager.getRepId?.() : null;
+                if (repIdVisitas) {
+                    const hojeVisitas = new Date();
+
+                    // Cachear resumo visitas e não atendimentos: 2 dias atrás + hoje
+                    for (let i = -2; i <= 0; i++) {
+                        const dataAlvo = new Date(hojeVisitas);
+                        dataAlvo.setDate(hojeVisitas.getDate() + i);
+                        const dataStr = dataAlvo.toISOString().split('T')[0];
+
+                        try {
+                            // Resumo de visitas do dia
+                            const resumoRes = await syncService.fetchWithTimeout(
+                                `${API_BASE_URL}/api/registro-rota/visitas?rep_id=${repIdVisitas}&data_inicio=${dataStr}&data_fim=${dataStr}&modo=resumo`,
+                                { headers }
+                            ).then(r => r.json());
+                            const resumo = resumoRes?.resumo || resumoRes?.visitas || [];
+                            if (resumo.length > 0) {
+                                localStorage.setItem(`resumo_visitas_${repIdVisitas}_${dataStr}`, JSON.stringify(resumo));
+                            }
+
+                            // Não atendimentos do dia
+                            const naRes = await syncService.fetchWithTimeout(
+                                `${API_BASE_URL}/api/registro-rota/nao-atendimentos?repositor_id=${repIdVisitas}&data=${dataStr}`,
+                                { headers }
+                            ).then(r => r.ok ? r.json() : null);
+                            if (naRes?.ok && naRes.data) {
+                                localStorage.setItem(`nao_atendimentos_${repIdVisitas}_${dataStr}`, JSON.stringify(naRes.data));
+                            }
+                        } catch (e) {
+                            console.warn(`[Sync] Erro ao cachear visitas ${dataStr}:`, e);
+                        }
+                    }
+
+                    // Cachear atendimentos abertos (para verificação de sessão no checkin offline)
+                    try {
+                        const abertosRes = await syncService.fetchWithTimeout(
+                            `${API_BASE_URL}/api/registro-rota/atendimentos-abertos?repositor_id=${repIdVisitas}`,
+                            { headers }
+                        ).then(r => r.json());
+                        const abertos = abertosRes?.atendimentos_abertos || [];
+                        localStorage.setItem(`atendimentos_abertos_${repIdVisitas}`, JSON.stringify(abertos));
+                    } catch (_) {}
+
+                    console.log('[Sync] Resumo visitas, não atendimentos e atendimentos abertos cacheados');
+                }
+            } catch (e) {
+                console.warn('[PWA] Erro ao pré-cachear visitas:', e);
+            }
+
+            updateDailySyncStatus('Carregando pesquisas e espaços...');
+
+            // Pré-cachear pesquisas pendentes para hoje (usa Turso via db)
+            try {
+                const repIdPesq = typeof authManager !== 'undefined' ? authManager.getRepId?.() : null;
+                if (repIdPesq && typeof db !== 'undefined') {
+                    const hojePesq = new Date().toISOString().split('T')[0];
+                    const diasMap = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+                    const diaHoje = diasMap[new Date().getDay()];
+                    const cacheKeyRoteiro = `roteiro_completo_${repIdPesq}_${diaHoje}`;
+                    let roteiroHoje = null;
+                    try {
+                        const cached = localStorage.getItem(cacheKeyRoteiro);
+                        if (cached) {
+                            const parsed = JSON.parse(cached);
+                            roteiroHoje = parsed.roteiro || parsed;
+                        }
+                    } catch (_) {}
+                    if (!roteiroHoje) {
+                        try { roteiroHoje = await db.carregarRoteiroRepositorDia(repIdPesq, diaHoje); } catch (_) {}
+                    }
+
+                    if (roteiroHoje && roteiroHoje.length > 0) {
+                        const pesquisasCache = {};
+                        const clienteIdsEspacos = [];
+
+                        for (const cliente of roteiroHoje) {
+                            const cliId = String(cliente.cli_codigo || '').trim().replace(/\.0$/, '');
+                            clienteIdsEspacos.push(cliId);
+                            try {
+                                const [pesquisas, respondidas] = await Promise.all([
+                                    db.getPesquisasPendentesRepositor(repIdPesq, cliId),
+                                    db.getPesquisasRespondidas(repIdPesq, cliId, hojePesq)
+                                ]);
+                                const pendentes = pesquisas.filter(p => {
+                                    if (p.pes_data_inicio && p.pes_data_inicio > hojePesq) return false;
+                                    if (p.pes_data_fim && p.pes_data_fim < hojePesq) return false;
+                                    return !respondidas.has(p.pes_id);
+                                });
+                                if (pendentes.length > 0) {
+                                    pesquisasCache[cliId] = pendentes;
+                                }
+                            } catch (_) {}
+                        }
+
+                        // Salvar pesquisas no cache
+                        const pesqCacheKey = `pesquisas_cache_${repIdPesq}_${hojePesq}`;
+                        localStorage.setItem(pesqCacheKey, JSON.stringify({ timestamp: Date.now(), data: pesquisasCache }));
+                        console.log(`[Sync] Pesquisas cacheadas para ${Object.keys(pesquisasCache).length} clientes`);
+
+                        // Pré-cachear espaços: quais clientes têm espaços cadastrados
+                        if (clienteIdsEspacos.length > 0) {
+                            try {
+                                const espacosRes = await syncService.fetchWithTimeout(
+                                    `${API_BASE_URL}/api/espacos/clientes-com-espaco?clientes=${clienteIdsEspacos.join(',')}`,
+                                    { headers }
+                                ).then(r => r.ok ? r.json() : null);
+                                if (espacosRes?.ok && espacosRes.data) {
+                                    const lista = espacosRes.data.map(c => String(c).trim().replace(/\.0$/, ''));
+                                    localStorage.setItem(`espacos_clientes_${repIdPesq}`, JSON.stringify(lista));
+                                    console.log(`[Sync] Espaços cacheados: ${lista.length} clientes com espaços`);
+
+                                    // Pré-cachear espaços pendentes de cada cliente
+                                    for (const cliId of lista) {
+                                        try {
+                                            const espRes = await syncService.fetchWithTimeout(
+                                                `${API_BASE_URL}/api/espacos/pendentes?repositor_id=${repIdPesq}&cliente_id=${cliId}&data=${hojePesq}`,
+                                                { headers }
+                                            ).then(r => r.ok ? r.json() : null);
+                                            if (espRes?.ok && espRes.data && typeof offlineDB !== 'undefined') {
+                                                await offlineDB.salvarEspacosCliente(cliId, espRes.data);
+                                            }
+                                        } catch (_) {}
+                                    }
+                                }
+                            } catch (_) {}
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('[PWA] Erro ao pré-cachear pesquisas/espaços:', e);
+            }
+
             updateDailySyncStatus('Carregando dados para navegação...');
 
             // Recarregar cache em memória com dados recém-sincronizados
@@ -757,7 +895,7 @@
         try {
             if (typeof offlineDB !== 'undefined' && offlineDB.contarPendentes) {
                 const pendentes = await offlineDB.contarPendentes();
-                const total = Object.values(pendentes).reduce((a, b) => a + b, 0);
+                const total = pendentes.total || 0;
                 if (total > 0) {
                     countEl.textContent = total > 99 ? '99+' : total;
                     countEl.classList.remove('hidden');
@@ -2292,7 +2430,7 @@
         try {
             if (typeof offlineDB !== 'undefined' && offlineDB.contarPendentes) {
                 const pendentes = await offlineDB.contarPendentes();
-                const total = Object.values(pendentes).reduce((a, b) => a + b, 0);
+                const total = pendentes.total || 0;
                 el.textContent = total > 0 ? `${total} itens` : 'Nenhum';
             } else {
                 el.textContent = '0';

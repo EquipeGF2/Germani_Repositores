@@ -534,6 +534,33 @@ class OfflineDB {
     const espacos = await this.getParaEnvio('filaEspacos');
     const deadLetters = await this.contarDeadLetters();
 
+    // Incluir checkin local pendente (armazenado no localStorage, não no IndexedDB)
+    let checkinLocal = 0;
+    try {
+      const meta = localStorage.getItem('PWA_CHECKIN_LOCAL_META');
+      if (meta) checkinLocal = 1;
+    } catch (_) {}
+
+    // Incluir não-atendimentos pendentes
+    let naPendentes = 0;
+    try {
+      const na = JSON.parse(localStorage.getItem('pwa_na_pendentes') || '[]');
+      naPendentes = na.length;
+    } catch (_) {}
+
+    // Incluir checkouts offline pendentes (salvos no syncMeta do IndexedDB)
+    let checkoutsPendentes = 0;
+    try {
+      const allMeta = await this.getAll('syncMeta');
+      if (allMeta) {
+        for (const item of allMeta) {
+          if (item.key && item.key.startsWith('pendingCheckout_')) checkoutsPendentes++;
+        }
+      }
+    } catch (_) {}
+
+    const subtotal = sessoes.length + registros.length + fotos.length + rotas.length + pesquisas.length + espacos.length + checkinLocal + naPendentes + checkoutsPendentes;
+
     return {
       sessoes: sessoes.length,
       registros: registros.length,
@@ -541,7 +568,10 @@ class OfflineDB {
       rotas: rotas.length,
       pesquisas: pesquisas.length,
       espacos: espacos.length,
-      total: sessoes.length + registros.length + fotos.length + rotas.length + pesquisas.length + espacos.length,
+      checkinLocal,
+      naPendentes,
+      checkoutsPendentes,
+      total: subtotal,
       deadLetters
     };
   }

@@ -661,7 +661,6 @@ class App {
                     <ul class="text-muted" style="display:flex; flex-direction:column; gap:6px; margin-left:18px;">
                         <li>Menu e cabeçalho já estão disponíveis.</li>
                         <li>Dados são carregados em segundo plano.</li>
-                        <li>Se demorar, o servidor pode estar aquecendo.</li>
                     </ul>
                 </div>
             </div>
@@ -681,9 +680,7 @@ class App {
 
         try {
             avisoAquecimento = setTimeout(() => {
-                if (!silencioso) {
-                    this.showNotification('Servidor aquecendo...', 'info');
-                }
+                // Timeout silencioso - sem notificação
             }, 5000);
 
             const resposta = await fetch(`${API_BASE_URL}/api/health`);
@@ -10455,7 +10452,16 @@ class App {
 
     async verificarRepositorTrabalhaSabado(repId) {
         try {
-            // Verifica se o repositor tem roteiro cadastrado para sábado
+            // Cache-first: verificar localStorage antes de Turso (funciona offline)
+            try {
+                const cached = localStorage.getItem(`roteiro_completo_${repId}_sab`);
+                if (cached) {
+                    const parsed = JSON.parse(cached);
+                    const roteiro = parsed.roteiro || parsed;
+                    return roteiro && roteiro.length > 0;
+                }
+            } catch (_) {}
+            // Fallback: buscar do Turso
             const roteiroSabado = await db.carregarRoteiroRepositorDia(repId, 'sab');
             return roteiroSabado && roteiroSabado.length > 0;
         } catch (error) {
@@ -10551,22 +10557,52 @@ class App {
             const diasMap = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
             const diaSemana = diasMap[diaNumero];
 
-            // Buscar roteiro do último dia útil
-            const roteiroAnterior = await db.carregarRoteiroRepositorDia(repId, diaSemana);
+            // Buscar roteiro do último dia útil (cache-first para funcionar offline)
+            let roteiroAnterior = null;
+            const roteiroCacheKeyAnterior = `roteiro_completo_${repId}_${diaSemana}`;
+            try {
+                const cached = localStorage.getItem(roteiroCacheKeyAnterior);
+                if (cached) {
+                    const parsed = JSON.parse(cached);
+                    roteiroAnterior = parsed.roteiro || parsed;
+                }
+            } catch (_) {}
+            if (!roteiroAnterior || roteiroAnterior.length === 0) {
+                try {
+                    roteiroAnterior = await db.carregarRoteiroRepositorDia(repId, diaSemana);
+                } catch (_) {
+                    roteiroAnterior = [];
+                }
+            }
 
             if (!roteiroAnterior || roteiroAnterior.length === 0) {
                 this.limparAvisoClientesPendentes();
                 return;
             }
 
-            // Buscar resumo de visitas do último dia útil
+            // Buscar resumo de visitas do último dia útil (cache-first)
             const resumoAnterior = await this.buscarResumoVisitas(repId, ultimoDiaUtil);
             const mapaResumo = new Map(resumoAnterior.map(r => [String(r.cliente_id).trim(), r]));
 
-            // Buscar roteiro de hoje para não sugerir clientes que já estão na rota
+            // Buscar roteiro de hoje para não sugerir clientes que já estão na rota (cache-first)
             const dataHoje = new Date(dataAtual + 'T12:00:00');
             const diaHojeSemana = diasMap[dataHoje.getDay()];
-            const roteiroHoje = await db.carregarRoteiroRepositorDia(repId, diaHojeSemana);
+            let roteiroHoje = null;
+            const roteiroCacheKeyHoje = `roteiro_completo_${repId}_${diaHojeSemana}`;
+            try {
+                const cached = localStorage.getItem(roteiroCacheKeyHoje);
+                if (cached) {
+                    const parsed = JSON.parse(cached);
+                    roteiroHoje = parsed.roteiro || parsed;
+                }
+            } catch (_) {}
+            if (!roteiroHoje) {
+                try {
+                    roteiroHoje = await db.carregarRoteiroRepositorDia(repId, diaHojeSemana);
+                } catch (_) {
+                    roteiroHoje = [];
+                }
+            }
 
             // Incluir também clientes já adicionados manualmente hoje
             const adicionadosKeyHoje = `clientes_adicionados_${repId}_${dataAtual}`;
@@ -11014,8 +11050,17 @@ class App {
                 // Pré-cachear próximos 7 dias em background
                 preCachearProximosDias();
             }
+            // Restaurar resumo e atendimentos do cache localStorage (instantâneo)
             resumo = [];
             atendimentosAbertos = [];
+            try {
+                const cachedResumo = localStorage.getItem(`resumo_visitas_${repId}_${dataVisita}`);
+                if (cachedResumo) resumo = JSON.parse(cachedResumo);
+            } catch (_) {}
+            try {
+                const cachedAbertos = localStorage.getItem(`atendimentos_abertos_${repId}`);
+                if (cachedAbertos) atendimentosAbertos = JSON.parse(cachedAbertos);
+            } catch (_) {}
 
             if (isPWA) {
                 this.registroRotaState._cacheCarregado = true;
@@ -12179,7 +12224,7 @@ class App {
 
         // PWA offline-first: usar estado local em vez de API
         const isPWA = window.authManager?.isPWA;
-        if (isPWA && this.registroRotaState._cacheCarregado && !forceRefresh) {
+        if (isPWA && (this.registroRotaState._cacheCarregado || !navigator.onLine) && !forceRefresh) {
             // Derivar do estado local
             const atendimentos = this.registroRotaState.atendimentosAbertos;
             if (atendimentos instanceof Map && atendimentos.size > 0) {
@@ -12286,7 +12331,7 @@ class App {
 
         // PWA offline-first: usar estado local em vez de API
         const isPWA = window.authManager?.isPWA;
-        if (isPWA && this.registroRotaState._cacheCarregado && !forceRefresh) {
+        if (isPWA && (this.registroRotaState._cacheCarregado || !navigator.onLine) && !forceRefresh) {
             const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
             const atendimentos = this.registroRotaState.atendimentosAbertos;
             if (atendimentos instanceof Map && atendimentos.size > 0) {
@@ -12955,7 +13000,12 @@ class App {
             const coordsCliente = await this.obterCoordenadasPorEndereco(enderecoCliente, clienteId);
 
             if (!coordsCliente) {
-                // Se não conseguiu geocodificar, BLOQUEIA o checkin
+                // Se não conseguiu geocodificar e estamos offline, permitir checkin
+                if (!navigator.onLine) {
+                    console.warn('Offline - validação de distância ignorada (sem coordenadas disponíveis)');
+                    return { valido: true, distancia: null, aviso: null };
+                }
+                // Online mas falhou: bloqueia
                 console.warn('Não foi possível validar distância - endereço não geocodificado');
                 return {
                     valido: false,
@@ -13141,8 +13191,9 @@ class App {
                 const cached = localStorage.getItem(cacheKey);
                 if (cached) {
                     const parsed = JSON.parse(cached);
-                    // Cache válido por 4 horas
-                    if (parsed.timestamp && (Date.now() - parsed.timestamp) < 4 * 60 * 60 * 1000) {
+                    // Cache válido por 4 horas online, ilimitado offline
+                    const cacheValido = !navigator.onLine || (parsed.timestamp && (Date.now() - parsed.timestamp) < 4 * 60 * 60 * 1000);
+                    if (parsed.data && cacheValido) {
                         Object.entries(parsed.data).forEach(([cliId, pesquisas]) => {
                             this.registroRotaState.pesquisasPendentesMap.set(cliId, pesquisas);
                         });
@@ -13160,6 +13211,12 @@ class App {
         // Se offline e já tem cache, não fazer mais nada
         if (!navigator.onLine && this.registroRotaState.pesquisasPendentesMap.size > 0) {
             console.log('📋 Offline - usando pesquisas do cache');
+            return;
+        }
+
+        // Se offline e sem cache, ocultar botões de pesquisa (nada a fazer)
+        if (!navigator.onLine) {
+            console.log('📋 Offline sem cache de pesquisas');
             return;
         }
 
@@ -20840,8 +20897,26 @@ class App {
         const mapaCached = this.registroRotaState?.pesquisasPendentesMap;
         let todasPesquisas = mapaCached?.has(cliNorm) ? (mapaCached.get(cliNorm) || []) : null;
 
-        // Se não há dados em cache, buscar do banco
+        // Se não há dados no mapa em memória, tentar localStorage
         if (!todasPesquisas || todasPesquisas.length === 0) {
+            try {
+                const cacheKey = `pesquisas_cache_${repId}_${dataVisita}`;
+                const cached = localStorage.getItem(cacheKey);
+                if (cached) {
+                    const parsed = JSON.parse(cached);
+                    if (parsed.data && parsed.data[cliNorm]) {
+                        todasPesquisas = parsed.data[cliNorm];
+                    }
+                }
+            } catch (_) {}
+        }
+
+        // Se ainda não há dados e estamos online, buscar do banco
+        if (!todasPesquisas || todasPesquisas.length === 0) {
+            if (!navigator.onLine) {
+                this.showNotification('Sem dados de pesquisa disponíveis offline para este cliente.', 'info');
+                return;
+            }
             try {
                 this.showNotification('Carregando pesquisas...', 'info');
                 todasPesquisas = await this.buscarPesquisasPendentes(repId, clienteId, dataVisita, false);
