@@ -489,6 +489,39 @@
                 console.warn('[PWA] Erro ao cachear visitas:', e);
             }
 
+            updateDailySyncStatus('Pré-carregando roteiros...');
+
+            // Pré-cachear roteiros completos (com nomes/endereços) no localStorage
+            // Isso garante acesso instantâneo no Registro de Rota (online e offline)
+            try {
+                const repIdSync = typeof authManager !== 'undefined' ? authManager.getRepId?.() : null;
+                if (repIdSync && typeof db !== 'undefined') {
+                    const diasMap = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+                    const hojeDate = new Date();
+                    // Cachear hoje + 7 dias à frente
+                    for (let i = 0; i <= 7; i++) {
+                        const dataAlvo = new Date(hojeDate);
+                        dataAlvo.setDate(hojeDate.getDate() + i);
+                        const diaAlvo = diasMap[dataAlvo.getDay()];
+                        const cacheKey = `roteiro_completo_${repIdSync}_${diaAlvo}`;
+                        try {
+                            const roteiroCompleto = await db.carregarRoteiroRepositorDia(repIdSync, diaAlvo);
+                            if (roteiroCompleto && roteiroCompleto.length > 0) {
+                                localStorage.setItem(cacheKey, JSON.stringify({
+                                    roteiro: roteiroCompleto,
+                                    timestamp: Date.now()
+                                }));
+                                console.log(`[Sync] Cache roteiro ${diaAlvo}: ${roteiroCompleto.length} clientes`);
+                            }
+                        } catch (e) {
+                            console.warn(`[Sync] Erro ao cachear roteiro ${diaAlvo}:`, e);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('[PWA] Erro ao pré-cachear roteiros:', e);
+            }
+
             updateDailySyncStatus('Carregando dados para navegação...');
 
             // Recarregar cache em memória com dados recém-sincronizados

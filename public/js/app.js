@@ -10820,21 +10820,50 @@ class App {
 
         let roteiro, resumo, atendimentosAbertos;
 
-        // Helper: carregar roteiro offline do IndexedDB + cache em memória (com enriquecimento de dados do cliente)
-        const carregarRoteiroOffline = async () => {
+        // Chave para cache de roteiro completo (com dados do cliente) por repId + dia
+        const roteiroCacheKey = `roteiro_completo_${repId}_${diaSemana}`;
+
+        // Helper: salvar roteiro completo no localStorage para uso offline
+        const salvarRoteiroCache = (dados) => {
             try {
-                // 1. Tentar IndexedDB
+                localStorage.setItem(roteiroCacheKey, JSON.stringify({
+                    roteiro: dados,
+                    timestamp: Date.now()
+                }));
+            } catch (_) { /* localStorage cheio - ignora */ }
+        };
+
+        // Helper: carregar roteiro do cache localStorage (dados completos com nomes/endereços)
+        const carregarRoteiroDoCache = () => {
+            try {
+                const cached = localStorage.getItem(roteiroCacheKey);
+                if (cached) {
+                    const parsed = JSON.parse(cached);
+                    // Cache válido por 7 dias
+                    if (parsed.roteiro && parsed.timestamp && (Date.now() - parsed.timestamp) < 7 * 24 * 60 * 60 * 1000) {
+                        console.log(`[Offline] Cache localStorage: ${parsed.roteiro.length} clientes (${diaSemana})`);
+                        return parsed.roteiro;
+                    }
+                }
+            } catch (_) {}
+            return null;
+        };
+
+        // Helper: carregar roteiro offline - tenta cache completo, depois IndexedDB com enriquecimento
+        const carregarRoteiroOffline = async () => {
+            // 1. Tentar cache completo do localStorage (dados já enriquecidos)
+            const doCache = carregarRoteiroDoCache();
+            if (doCache && doCache.length > 0) return doCache;
+
+            // 2. Fallback: IndexedDB (dados mínimos do sync) + enriquecimento com clientes
+            try {
                 let todos = [];
                 if (typeof window.offlineDB !== 'undefined') {
                     await window.offlineDB.init();
                     todos = await window.offlineDB.getAll('roteiro').catch(() => []);
-                    console.log(`[Offline] IndexedDB roteiro: ${todos.length} itens`);
                 }
-
-                // 2. Fallback para cache em memória (pwa-app.js)
                 if (todos.length === 0 && typeof window.pwaApp?.getRoteiroCache === 'function') {
                     todos = window.pwaApp.getRoteiroCache();
-                    console.log(`[Offline] Cache memória roteiro: ${todos.length} itens`);
                 }
 
                 if (todos.length === 0) {
@@ -10842,14 +10871,14 @@ class App {
                     return [];
                 }
 
-                // 3. Filtrar por dia da semana (fallback: todos se nenhum bater)
+                // Filtrar por dia da semana
                 const filtrado = todos.filter(r =>
                     (r.dia_semana || '').toLowerCase() === diaSemana
                 );
-                console.log(`[Offline] Filtro dia '${diaSemana}': ${filtrado.length}/${todos.length} itens`);
+                console.log(`[Offline] IndexedDB filtro '${diaSemana}': ${filtrado.length}/${todos.length}`);
                 const base = filtrado.length > 0 ? filtrado : todos;
 
-                // 4. Construir mapa de clientes para enriquecimento
+                // Construir mapa de clientes para enriquecimento
                 let clientesMap = {};
                 try {
                     let clientes = [];
@@ -10863,9 +10892,8 @@ class App {
                         const id = String(c.cli_codigo || c.cliente_id || '').trim().replace(/\.0$/, '');
                         if (id) clientesMap[id] = c;
                     });
-                } catch (_) { /* sem enriquecimento de clientes */ }
+                } catch (_) {}
 
-                // 5. Normalizar e enriquecer cada item com dados do cliente
                 return base.map(r => {
                     const cliId = String(r.cli_codigo || r.cliente_id || '').trim().replace(/\.0$/, '');
                     const cli = clientesMap[cliId] || {};
@@ -10883,6 +10911,43 @@ class App {
             } catch (_) { return []; }
         };
 
+        // Helper: pré-cachear roteiros dos próximos 7 dias em background
+        const preCachearProximosDias = () => {
+            const diasMap = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+            const hoje = new Date();
+            for (let i = 1; i <= 7; i++) {
+                const futuro = new Date(hoje);
+                futuro.setDate(hoje.getDate() + i);
+                const diaFuturo = diasMap[futuro.getDay()];
+                const cacheKeyFuturo = `roteiro_completo_${repId}_${diaFuturo}`;
+                // Só baixar se não tiver cache recente
+                try {
+                    const existing = localStorage.getItem(cacheKeyFuturo);
+                    if (existing) {
+                        const parsed = JSON.parse(existing);
+                        if (parsed.timestamp && (Date.now() - parsed.timestamp) < 24 * 60 * 60 * 1000) {
+                            continue; // Cache recente, pular
+                        }
+                    }
+                } catch (_) {}
+
+                // Baixar em background com delay para não sobrecarregar
+                setTimeout(() => {
+                    db.carregarRoteiroRepositorDia(repId, diaFuturo).then(r => {
+                        if (r && r.length > 0) {
+                            try {
+                                localStorage.setItem(cacheKeyFuturo, JSON.stringify({
+                                    roteiro: r,
+                                    timestamp: Date.now()
+                                }));
+                                console.log(`[Cache] Roteiro ${diaFuturo}: ${r.length} clientes`);
+                            } catch (_) {}
+                        }
+                    }).catch(() => {});
+                }, i * 500); // Espaçar 500ms entre cada dia
+            }
+        };
+
         if (cacheValido) {
             // PWA: reutilizar dados em memória - navegação instantânea (zero queries)
             roteiro = this.registroRotaState.roteiroAtual || await carregarRoteiroOffline();
@@ -10894,40 +10959,60 @@ class App {
                 db.carregarRoteiroRepositorDia(repId, diaSemana).then(roteiroFresco => {
                     if (roteiroFresco && roteiroFresco.length > 0) {
                         this.registroRotaState.roteiroAtual = roteiroFresco;
+                        salvarRoteiroCache(roteiroFresco);
                     }
                 }).catch(() => {});
             }
         } else if (isPWA) {
-            // PWA primeira carga: IndexedDB primeiro (instantâneo), Turso em background
+            // PWA: cache-first (localStorage) - instantâneo online e offline
             console.log(`[PWA] Carregando roteiro - repId=${repId}, dia=${diaSemana}, online=${navigator.onLine}`);
-            container.innerHTML = `
-                <div style="text-align:center;padding:20px;">
-                    <div class="pwa-spinner-small" style="margin:0 auto;"></div>
-                    <p style="margin-top:8px;color:#666;font-size:13px;">Carregando...</p>
-                </div>
-            `;
-            // Sempre tentar IndexedDB primeiro (instantâneo)
-            roteiro = await carregarRoteiroOffline();
-            console.log(`[PWA] Roteiro offline: ${roteiro?.length || 0} clientes`);
 
-            // Se IndexedDB vazio e online, fallback para Turso
-            if ((!roteiro || roteiro.length === 0) && navigator.onLine) {
-                try {
-                    roteiro = await db.carregarRoteiroRepositorDia(repId, diaSemana);
-                    console.log(`[PWA] Roteiro Turso: ${roteiro?.length || 0} clientes`);
-                } catch (e) {
-                    console.warn('[PWA] Erro Turso roteiro:', e);
-                    roteiro = [];
+            // 1. Tentar cache localStorage primeiro (instantâneo, funciona online e offline)
+            roteiro = carregarRoteiroDoCache();
+
+            if (roteiro && roteiro.length > 0) {
+                console.log(`[PWA] Roteiro do cache: ${roteiro.length} clientes (instantâneo)`);
+            } else {
+                // 2. Sem cache: mostrar loading
+                container.innerHTML = `
+                    <div style="text-align:center;padding:20px;">
+                        <div class="pwa-spinner-small" style="margin:0 auto;"></div>
+                        <p style="margin-top:8px;color:#666;font-size:13px;">Carregando...</p>
+                    </div>
+                `;
+
+                // 3. Tentar IndexedDB (dados do sync enriquecidos)
+                roteiro = await carregarRoteiroOffline();
+                console.log(`[PWA] Roteiro offline/IndexedDB: ${roteiro?.length || 0} clientes`);
+
+                // 4. Se ainda vazio e online, buscar do Turso diretamente
+                if ((!roteiro || roteiro.length === 0) && navigator.onLine) {
+                    try {
+                        roteiro = await db.carregarRoteiroRepositorDia(repId, diaSemana);
+                        console.log(`[PWA] Roteiro Turso: ${roteiro?.length || 0} clientes`);
+                        // Salvar no cache para próximos acessos
+                        if (roteiro && roteiro.length > 0) {
+                            salvarRoteiroCache(roteiro);
+                        }
+                    } catch (e) {
+                        console.warn('[PWA] Erro Turso roteiro:', e);
+                        roteiro = [];
+                    }
                 }
             }
 
-            // Se conseguiu do IndexedDB e está online, atualizar do Turso em background
-            if (roteiro && roteiro.length > 0 && navigator.onLine) {
+            // Background: atualizar cache do Turso silenciosamente (mantém dados frescos)
+            if (navigator.onLine) {
                 db.carregarRoteiroRepositorDia(repId, diaSemana).then(roteiroFresco => {
                     if (roteiroFresco && roteiroFresco.length > 0) {
                         this.registroRotaState.roteiroAtual = roteiroFresco;
+                        salvarRoteiroCache(roteiroFresco);
+                        console.log(`[PWA] Cache atualizado em background: ${roteiroFresco.length} clientes`);
                     }
                 }).catch(() => {});
+
+                // Pré-cachear próximos 7 dias em background
+                preCachearProximosDias();
             }
             resumo = [];
             atendimentosAbertos = [];
@@ -11011,6 +11096,11 @@ class App {
             roteiro = _roteiro;
             resumo = _resumo;
             atendimentosAbertos = _atendimentosAbertos;
+
+            // Salvar no cache para uso offline futuro
+            if (roteiro && roteiro.length > 0) {
+                salvarRoteiroCache(roteiro);
+            }
         }
 
         // Adicionar clientes extras inseridos hoje (pendentes de dias anteriores)
