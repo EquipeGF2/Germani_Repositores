@@ -2056,23 +2056,23 @@ export const pages = {
     },
 
     'registro-rota': async () => {
+        // Cache-first: usar dados do authManager imediatamente (instantâneo, sem rede)
         let repositores = [];
-        try {
-            repositores = await db.getAllRepositors();
-        } catch (_) {
-            // Offline: repositores serão injetados pelo fallback abaixo
-        }
-
-        // PWA com repositor logado: mostrar apenas o repositor logado
         const isPWA = window.authManager?.isPWA;
         const repIdLogado = window.authManager?.getRepId?.();
         const perfilLogado = window.authManager?.usuario?.perfil;
         const filtrarParaRepositor = isPWA && perfilLogado === 'repositor' && repIdLogado;
 
-        // Fallback offline: injetar repositor do usuário logado se lista vazia
-        if (!repositores.length && repIdLogado) {
+        if (repIdLogado) {
             const nomeLogado = window.authManager?.usuario?.nome || window.authManager?.usuario?.nome_completo || `Repositor ${repIdLogado}`;
             repositores = [{ repo_cod: repIdLogado, repo_nome: nomeLogado }];
+        }
+
+        // Fallback: se não tem cache, buscar do servidor
+        if (!repositores.length) {
+            try {
+                repositores = await db.getAllRepositors();
+            } catch (_) {}
         }
 
         const repositoresFiltrados = filtrarParaRepositor
@@ -4265,13 +4265,23 @@ export const pages = {
     },
 
     'documentos': async () => {
-        const repositores = await db.getAllRepositors();
-
-        // PWA com repositor logado: mostrar apenas o repositor logado
+        // Cache-first: usar dados do authManager imediatamente (instantâneo, sem rede)
+        let repositores = [];
         const isPWA = window.authManager?.isPWA;
         const repIdLogado = window.authManager?.getRepId?.();
         const perfilLogado = window.authManager?.usuario?.perfil;
         const filtrarParaRepositor = isPWA && perfilLogado === 'repositor' && repIdLogado;
+
+        if (repIdLogado) {
+            const nomeLogado = window.authManager?.usuario?.nome || window.authManager?.usuario?.nome_completo || `Repositor ${repIdLogado}`;
+            repositores = [{ repo_cod: repIdLogado, repo_nome: nomeLogado }];
+        }
+
+        if (!repositores.length) {
+            try {
+                repositores = await db.getAllRepositors();
+            } catch (_) {}
+        }
 
         const repositoresFiltrados = filtrarParaRepositor
             ? repositores.filter(repo => String(repo.repo_cod) === String(repIdLogado))

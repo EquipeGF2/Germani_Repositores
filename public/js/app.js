@@ -10373,27 +10373,28 @@ class App {
 
         this.restaurarContextoRegistroRota();
 
-        // PWA: auto-carregar roteiro se repositor fixo
+        // PWA: auto-carregar roteiro (SEMPRE - fallback de repId está dentro de carregarRoteiroRepositor)
         if (authManager?.isPWA) {
             const selectRepositor = document.getElementById('registroRepositor');
             const inputData = document.getElementById('registroData');
-            if (selectRepositor?.value && inputData?.value) {
-                // Esconder apenas o select de repositor (manter data visível para troca de dia)
-                const repoGroup = selectRepositor.closest('.filter-group');
-                if (repoGroup) repoGroup.style.display = 'none';
-                // Esconder botão carregar (auto-carrega)
-                const btnCarregar = document.getElementById('btnCarregarRoteiro');
-                if (btnCarregar) btnCarregar.style.display = 'none';
 
-                // Recarregar ao mudar data (permite antecipar visitas)
+            // Esconder select de repositor (PWA tem repositor fixo)
+            const repoGroup = selectRepositor?.closest('.filter-group');
+            if (repoGroup) repoGroup.style.display = 'none';
+            // Esconder botão carregar (auto-carrega)
+            const btnCarregar = document.getElementById('btnCarregarRoteiro');
+            if (btnCarregar) btnCarregar.style.display = 'none';
+
+            // Recarregar ao mudar data (permite antecipar visitas)
+            if (inputData) {
                 inputData.addEventListener('change', () => {
                     this.registroRotaState._cacheCarregado = false; // Forçar re-render
                     this.carregarRoteiroRepositor();
                 });
-
-                // Auto-carregar
-                this.carregarRoteiroRepositor();
             }
+
+            // SEMPRE auto-carregar no PWA (sem depender do select ter valor)
+            this.carregarRoteiroRepositor();
         }
     }
 
@@ -10416,7 +10417,8 @@ class App {
             selectRepositor.value = String(contexto.repId);
         }
 
-        if (selectRepositor.value && inputData.value) {
+        // Carregar roteiro automaticamente (PWA já faz isso em inicializarRegistroRota, evitar duplicata)
+        if (selectRepositor.value && inputData.value && !authManager?.isPWA) {
             this.carregarRoteiroRepositor();
         }
     }
