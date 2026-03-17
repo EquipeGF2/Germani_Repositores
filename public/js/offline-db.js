@@ -6,7 +6,7 @@
 class OfflineDB {
   constructor() {
     this.dbName = 'GermaniPWA';
-    this.dbVersion = 4;
+    this.dbVersion = 5;
     this.db = null;
     this.MAX_RETRY_ATTEMPTS = 5;  // Limite de tentativas antes de marcar como dead_letter
   }
@@ -146,6 +146,15 @@ class OfflineDB {
         // Cache de visitas não realizadas
         if (!db.objectStoreNames.contains('visitasNaoRealizadas')) {
           db.createObjectStore('visitasNaoRealizadas', { keyPath: 'id' });
+        }
+
+        // ========== CACHE DE SESSÕES RECENTES (v5) ==========
+
+        // Cache de sessões de visita (últimos 15 dias)
+        if (!db.objectStoreNames.contains('sessoesRecentes')) {
+          const sessoesRecentes = db.createObjectStore('sessoesRecentes', { keyPath: 'sessao_id' });
+          sessoesRecentes.createIndex('data', 'checkin_data_hora', { unique: false });
+          sessoesRecentes.createIndex('cliente', 'cliente_id', { unique: false });
         }
 
         // ========== METADADOS DE SINCRONIZAÇÃO ==========
@@ -418,6 +427,19 @@ class OfflineDB {
 
   async getVisitasNaoRealizadas() {
     return await this.getAll('visitasNaoRealizadas');
+  }
+
+  // ==================== SESSÕES RECENTES (CONSULTA VISITAS) ====================
+
+  async salvarSessoesRecentes(sessoes) {
+    await this.clear('sessoesRecentes');
+    for (const item of sessoes) {
+      await this.put('sessoesRecentes', item);
+    }
+  }
+
+  async getSessoesRecentes() {
+    return await this.getAll('sessoesRecentes');
   }
 
   // ==================== FILA DE ENVIO ====================
