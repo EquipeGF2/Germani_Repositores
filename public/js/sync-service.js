@@ -309,83 +309,109 @@ class SyncService {
         this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/sessoes-recentes`, { headers }).then(r => r.json()).catch(e => { console.warn('[SyncService] Erro sessoes-recentes:', e.message); return { ok: false }; })
       ]);
 
-      // Salvar dados base no IndexedDB
-      if (roteiroRes.ok) {
-        await offlineDB.salvarRoteiro(roteiroRes.roteiro || []);
-        console.log(`[SyncService] Roteiro: ${roteiroRes.roteiro?.length || 0} itens`);
-      }
+      // Salvar dados base no IndexedDB (cada bloco isolado para não quebrar os demais)
+      try {
+        if (roteiroRes.ok) {
+          await offlineDB.salvarRoteiro(roteiroRes.roteiro || []);
+          console.log(`[SyncService] Roteiro: ${roteiroRes.roteiro?.length || 0} itens`);
+        }
+      } catch (e) { console.error('[SyncService] Erro ao salvar roteiro:', e.message); }
 
-      if (clientesRes.ok) {
-        await offlineDB.salvarClientes(clientesRes.clientes || []);
-        console.log(`[SyncService] Clientes: ${clientesRes.clientes?.length || 0} itens`);
-      }
+      try {
+        if (clientesRes.ok) {
+          await offlineDB.salvarClientes(clientesRes.clientes || []);
+          console.log(`[SyncService] Clientes: ${clientesRes.clientes?.length || 0} itens`);
+        }
+      } catch (e) { console.error('[SyncService] Erro ao salvar clientes:', e.message); }
 
-      if (coordenadasRes.ok) {
-        await offlineDB.salvarCoordenadas(coordenadasRes.coordenadas || []);
-        console.log(`[SyncService] Coordenadas: ${coordenadasRes.coordenadas?.length || 0} itens`);
-      }
+      try {
+        if (coordenadasRes.ok) {
+          await offlineDB.salvarCoordenadas(coordenadasRes.coordenadas || []);
+          console.log(`[SyncService] Coordenadas: ${coordenadasRes.coordenadas?.length || 0} itens`);
+        }
+      } catch (e) { console.error('[SyncService] Erro ao salvar coordenadas:', e.message); }
 
-      if (tiposDocRes.ok) {
-        await offlineDB.salvarTiposDocumento(tiposDocRes.tipos || []);
-      }
+      try {
+        if (tiposDocRes.ok) {
+          await offlineDB.salvarTiposDocumento(tiposDocRes.tipos || []);
+          console.log(`[SyncService] Tipos documento: ${tiposDocRes.tipos?.length || 0} itens`);
+        }
+      } catch (e) { console.error('[SyncService] Erro ao salvar tipos documento:', e.message); }
 
-      if (tiposGastoRes.ok) {
-        await offlineDB.salvarTiposGasto(tiposGastoRes.tipos || []);
-      }
+      try {
+        if (tiposGastoRes.ok) {
+          await offlineDB.salvarTiposGasto(tiposGastoRes.tipos || []);
+          console.log(`[SyncService] Tipos gasto: ${tiposGastoRes.tipos?.length || 0} itens`);
+        }
+      } catch (e) { console.error('[SyncService] Erro ao salvar tipos gasto:', e.message); }
 
       // Salvar dados de consulta no IndexedDB
-      if (campanhasRes.ok) {
-        await offlineDB.salvarCampanhas(campanhasRes.campanhas || []);
-        console.log(`[SyncService] Campanhas: ${campanhasRes.campanhas?.length || 0} itens`);
-      }
-
-      if (documentosRes.ok) {
-        await offlineDB.salvarDocumentosCache(documentosRes.documentos || []);
-        console.log(`[SyncService] Documentos: ${documentosRes.documentos?.length || 0} itens`);
-      }
-
-      if (despesasRes.ok) {
-        await offlineDB.salvarDespesas(despesasRes.despesas || []);
-        console.log(`[SyncService] Despesas: ${despesasRes.despesas?.length || 0} itens`);
-      }
-
-      if (roteirosConsultaRes.ok) {
-        await offlineDB.salvarRoteirosConsulta(roteirosConsultaRes.roteiros || []);
-        console.log(`[SyncService] Roteiros consulta: ${roteirosConsultaRes.roteiros?.length || 0} itens`);
-      }
-
-      if (pesquisasClientesRes.ok && pesquisasClientesRes.clientesPesquisa) {
-        await offlineDB.salvarPesquisasClientes(pesquisasClientesRes.clientesPesquisa);
-        console.log(`[SyncService] Pesquisas clientes: ${Object.keys(pesquisasClientesRes.clientesPesquisa).length} clientes`);
-      }
-
-      if (espacosClientesRes.ok) {
-        // Salvar lista de clientes com espaço no localStorage (para verificação rápida)
-        const clientesComEspaco = espacosClientesRes.clientesComEspaco || [];
-        try {
-          const repId = JSON.parse(localStorage.getItem('auth_usuario') || '{}').rep_id;
-          if (repId) {
-            localStorage.setItem(`espacos_clientes_${repId}`, JSON.stringify(clientesComEspaco));
-          }
-        } catch (_) {}
-
-        // Salvar detalhes de espaços por cliente no IndexedDB
-        const espacosPorCliente = espacosClientesRes.espacosPorCliente || {};
-        for (const [clienteId, espacos] of Object.entries(espacosPorCliente)) {
-          await offlineDB.salvarEspacosCliente(clienteId, { temEspacos: true, espacos });
+      try {
+        if (campanhasRes.ok) {
+          await offlineDB.salvarCampanhas(campanhasRes.campanhas || []);
+          console.log(`[SyncService] Campanhas: ${campanhasRes.campanhas?.length || 0} itens`);
         }
-        console.log(`[SyncService] Espaços: ${clientesComEspaco.length} clientes com espaço`);
-      }
+      } catch (e) { console.error('[SyncService] Erro ao salvar campanhas:', e.message); }
 
-      if (visitasNRRes.ok) {
-        await offlineDB.salvarVisitasNaoRealizadas(visitasNRRes.naoRealizadas || []);
-        console.log(`[SyncService] Visitas não realizadas: ${visitasNRRes.naoRealizadas?.length || 0} itens`);
-      }
+      try {
+        if (documentosRes.ok) {
+          await offlineDB.salvarDocumentosCache(documentosRes.documentos || []);
+          console.log(`[SyncService] Documentos: ${documentosRes.documentos?.length || 0} itens`);
+        }
+      } catch (e) { console.error('[SyncService] Erro ao salvar documentos:', e.message); }
 
-      if (sessoesRecentesRes.ok) {
-        await offlineDB.salvarSessoesRecentes(sessoesRecentesRes.sessoes || []);
-        console.log(`[SyncService] Sessões recentes: ${sessoesRecentesRes.sessoes?.length || 0} itens`);
-      }
+      try {
+        if (despesasRes.ok) {
+          await offlineDB.salvarDespesas(despesasRes.despesas || []);
+          console.log(`[SyncService] Despesas: ${despesasRes.despesas?.length || 0} itens`);
+        }
+      } catch (e) { console.error('[SyncService] Erro ao salvar despesas:', e.message); }
+
+      try {
+        if (roteirosConsultaRes.ok) {
+          await offlineDB.salvarRoteirosConsulta(roteirosConsultaRes.roteiros || []);
+          console.log(`[SyncService] Roteiros consulta: ${roteirosConsultaRes.roteiros?.length || 0} itens`);
+        }
+      } catch (e) { console.error('[SyncService] Erro ao salvar roteiros consulta:', e.message); }
+
+      try {
+        if (pesquisasClientesRes.ok && pesquisasClientesRes.clientesPesquisa) {
+          await offlineDB.salvarPesquisasClientes(pesquisasClientesRes.clientesPesquisa);
+          console.log(`[SyncService] Pesquisas clientes: ${Object.keys(pesquisasClientesRes.clientesPesquisa).length} clientes`);
+        }
+      } catch (e) { console.error('[SyncService] Erro ao salvar pesquisas:', e.message); }
+
+      try {
+        if (espacosClientesRes.ok) {
+          const clientesComEspaco = espacosClientesRes.clientesComEspaco || [];
+          try {
+            const repId = JSON.parse(localStorage.getItem('auth_usuario') || '{}').rep_id;
+            if (repId) {
+              localStorage.setItem(`espacos_clientes_${repId}`, JSON.stringify(clientesComEspaco));
+            }
+          } catch (_) {}
+
+          const espacosPorCliente = espacosClientesRes.espacosPorCliente || {};
+          for (const [clienteId, espacos] of Object.entries(espacosPorCliente)) {
+            await offlineDB.salvarEspacosCliente(clienteId, { temEspacos: true, espacos });
+          }
+          console.log(`[SyncService] Espaços: ${clientesComEspaco.length} clientes com espaço`);
+        }
+      } catch (e) { console.error('[SyncService] Erro ao salvar espaços:', e.message); }
+
+      try {
+        if (visitasNRRes.ok) {
+          await offlineDB.salvarVisitasNaoRealizadas(visitasNRRes.naoRealizadas || []);
+          console.log(`[SyncService] Visitas não realizadas: ${visitasNRRes.naoRealizadas?.length || 0} itens`);
+        }
+      } catch (e) { console.error('[SyncService] Erro ao salvar visitas NR:', e.message); }
+
+      try {
+        if (sessoesRecentesRes.ok) {
+          await offlineDB.salvarSessoesRecentes(sessoesRecentesRes.sessoes || []);
+          console.log(`[SyncService] Sessões recentes: ${sessoesRecentesRes.sessoes?.length || 0} itens`);
+        }
+      } catch (e) { console.error('[SyncService] Erro ao salvar sessões recentes:', e.message); }
 
       // Atualizar metadados
       await offlineDB.setUltimaSync();

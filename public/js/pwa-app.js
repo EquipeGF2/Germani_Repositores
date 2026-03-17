@@ -80,7 +80,8 @@
         atendimentoCancelar,
         atualizarEstadoBtnCheckout: _atualizarEstadoBtnCheckout,
         getRoteiroCache: () => cachedData.roteiro || [],
-        getClientesCache: () => cachedData.clientes || []
+        getClientesCache: () => cachedData.clientes || [],
+        getRubricasCache: () => cachedData.tiposGasto || []
     };
 
     async function init() {
