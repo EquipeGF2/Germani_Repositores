@@ -639,9 +639,9 @@
             let step1Ok = false;
             try {
                 const [roteiroRes, clientesRes, coordenadasRes] = await Promise.all([
-                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/roteiro`, { headers }).then(r => r.json()),
-                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/clientes`, { headers }).then(r => r.json()),
-                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/coordenadas`, { headers }).then(r => r.json())
+                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/roteiro`, { headers }).then(r => r.json()).catch(e => { console.warn('[PWA] Erro sync roteiro:', e.message); return { ok: false }; }),
+                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/clientes`, { headers }).then(r => r.json()).catch(e => { console.warn('[PWA] Erro sync clientes:', e.message); return { ok: false }; }),
+                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/coordenadas`, { headers }).then(r => r.json()).catch(e => { console.warn('[PWA] Erro sync coordenadas:', e.message); return { ok: false }; })
                 ]);
 
                 if (roteiroRes.ok) await offlineDB.salvarRoteiro(roteiroRes.roteiro || []);
@@ -659,11 +659,17 @@
 
             try {
                 const [tiposDocRes, tiposGastoRes] = await Promise.all([
-                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/tipos-documento`, { headers }).then(r => r.json()),
-                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/tipos-gasto`, { headers }).then(r => r.json())
+                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/tipos-documento`, { headers }).then(r => r.json()).catch(e => { console.warn('[PWA] Erro sync tipos-doc:', e.message); return { ok: false }; }),
+                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/tipos-gasto`, { headers }).then(r => r.json()).catch(e => { console.warn('[PWA] Erro sync tipos-gasto:', e.message); return { ok: false }; })
                 ]);
-                if (tiposDocRes.ok) await offlineDB.salvarTiposDocumento(tiposDocRes.tipos || []);
-                if (tiposGastoRes.ok) await offlineDB.salvarTiposGasto(tiposGastoRes.tipos || []);
+                if (tiposDocRes.ok) {
+                    await offlineDB.salvarTiposDocumento(tiposDocRes.tipos || []);
+                    console.log(`[PWA Sync] Tipos documento: ${tiposDocRes.tipos?.length || 0} itens`);
+                }
+                if (tiposGastoRes.ok) {
+                    await offlineDB.salvarTiposGasto(tiposGastoRes.tipos || []);
+                    console.log(`[PWA Sync] Tipos gasto (rubricas): ${tiposGastoRes.tipos?.length || 0} itens`);
+                }
             } catch (e) {
                 console.warn('[PWA] Erro parcial no passo 2:', e);
             }
