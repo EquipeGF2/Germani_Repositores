@@ -567,6 +567,8 @@ class OfflineDB {
       espacos: espacos.length,
       checkinLocal,
       checkoutsPendentes,
+      despesasPendentes,
+      documentosPendentes,
       total: subtotal,
       deadLetters
     };

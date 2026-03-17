@@ -15622,21 +15622,22 @@ class App {
             return this.documentosState.tipos;
         }
 
-        // No PWA: tentar IndexedDB primeiro (offline-first)
-        if (authManager?.isPWA && typeof offlineDB !== 'undefined') {
+        // Cache-first: sempre tentar IndexedDB primeiro (instantâneo)
+        if (typeof offlineDB !== 'undefined') {
             try {
                 await offlineDB.init();
                 const tiposLocal = await offlineDB.getTiposDocumento();
                 if (tiposLocal && tiposLocal.length > 0) {
-                    console.log('[PWA] Tipos de documentos carregados do IndexedDB:', tiposLocal.length);
+                    console.log('[Cache] Tipos de documentos carregados do IndexedDB:', tiposLocal.length);
                     this.documentosState.tipos = tiposLocal;
                     return tiposLocal;
                 }
             } catch (e) {
-                console.warn('[PWA] Erro ao buscar tipos doc do IndexedDB:', e);
+                console.warn('[Cache] Erro ao buscar tipos doc do IndexedDB:', e);
             }
         }
 
+        // Fallback: buscar do servidor se cache vazio
         try {
             const data = await fetchJson(`${API_BASE_URL}/api/documentos/tipos`);
             this.documentosState.tipos = data.tipos || [];
@@ -16344,8 +16345,8 @@ class App {
 
         try {
             let rubricas = [];
-            if (!navigator.onLine && typeof window.offlineDB !== 'undefined') {
-                // Offline: usar cache do IndexedDB
+            // Cache-first: sempre tentar IndexedDB primeiro (instantâneo online e offline)
+            if (typeof window.offlineDB !== 'undefined') {
                 try {
                     await window.offlineDB.init();
                     const cached = await window.offlineDB.getAll('tiposGasto').catch(() => []);
@@ -16358,8 +16359,18 @@ class App {
                 } catch (_) {
                     rubricas = [];
                 }
-            } else {
-                rubricas = await db.listarTiposGasto(true); // Apenas ativos
+            }
+            // Fallback: se cache vazio e online, buscar do servidor
+            if (rubricas.length === 0 && navigator.onLine) {
+                try {
+                    rubricas = await db.listarTiposGasto(true); // Apenas ativos
+                    // Salvar no cache para próximos acessos
+                    if (rubricas.length > 0 && typeof window.offlineDB !== 'undefined') {
+                        window.offlineDB.salvarTiposGasto(rubricas).catch(() => {});
+                    }
+                } catch (_) {
+                    rubricas = [];
+                }
             }
 
             if (rubricas.length === 0) {
@@ -17262,8 +17273,9 @@ class App {
                 return;
             }
 
-            const repositorId = document.getElementById('uploadRepositor').value;
-            const tipoId = document.getElementById('uploadTipo').value;
+            // Sempre usar repositor logado (PWA: online e offline)
+            let repositorId = window.authManager?.getRepId?.() || window.authManager?.usuario?.rep_id || document.getElementById('uploadRepositor')?.value;
+            const tipoId = document.getElementById('uploadTipo')?.value;
             let observacao = document.getElementById('uploadObservacao').value;
             btnUpload = document.getElementById('btnUploadDocumento');
 

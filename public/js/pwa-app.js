@@ -914,6 +914,8 @@
                 }
                 showSyncIndicator(false);
                 showToast('Sincronizado com sucesso');
+                // Atualizar contagem de pendentes após sync
+                updatePendingCount();
             } else {
                 showToast('Serviço de sincronização não disponível', 'error');
             }
@@ -1019,6 +1021,7 @@
                     await loadLocalData();
                     showSyncIndicator(false);
                     showToast('Sincronizado com sucesso');
+                    updatePendingCount();
                     if (currentTab === 'pwa-home') renderHome();
                 } catch (e) {
                     showSyncIndicator(false);
@@ -2524,6 +2527,8 @@
                     </div>
                 </div>
 
+                <div id="pwaListaPendentes"></div>
+
                 <div class="pwa-section-title">Conta</div>
                 <div class="pwa-menu-group">
                     <div class="pwa-menu-item danger" id="pwaMenuSair">
@@ -2592,14 +2597,47 @@
 
     async function loadPendingCountMais() {
         const el = document.getElementById('pwaMenuPendentesCount');
+        const listaEl = document.getElementById('pwaListaPendentes');
         if (!el) return;
         try {
             if (typeof offlineDB !== 'undefined' && offlineDB.contarPendentes) {
                 const pendentes = await offlineDB.contarPendentes();
                 const total = pendentes.total || 0;
                 el.textContent = total > 0 ? `${total} itens` : 'Nenhum';
+
+                // Mostrar lista detalhada de pendentes
+                if (listaEl && total > 0) {
+                    const itens = [];
+                    if (pendentes.sessoes > 0) itens.push({ icon: '&#128247;', label: 'Sessões de visita', count: pendentes.sessoes });
+                    if (pendentes.registros > 0) itens.push({ icon: '&#128221;', label: 'Registros', count: pendentes.registros });
+                    if (pendentes.fotos > 0) itens.push({ icon: '&#128248;', label: 'Fotos', count: pendentes.fotos });
+                    if (pendentes.rotas > 0) itens.push({ icon: '&#128205;', label: 'Rotas', count: pendentes.rotas });
+                    if (pendentes.pesquisas > 0) itens.push({ icon: '&#128203;', label: 'Pesquisas', count: pendentes.pesquisas });
+                    if (pendentes.espacos > 0) itens.push({ icon: '&#127981;', label: 'Espaços', count: pendentes.espacos });
+                    if (pendentes.checkinLocal > 0) itens.push({ icon: '&#9989;', label: 'Check-in local', count: pendentes.checkinLocal });
+                    if (pendentes.checkoutsPendentes > 0) itens.push({ icon: '&#128682;', label: 'Checkouts', count: pendentes.checkoutsPendentes });
+                    if (pendentes.despesasPendentes > 0) itens.push({ icon: '&#128176;', label: 'Despesas de viagem', count: pendentes.despesasPendentes });
+                    if (pendentes.documentosPendentes > 0) itens.push({ icon: '&#128196;', label: 'Documentos', count: pendentes.documentosPendentes });
+                    if (pendentes.deadLetters > 0) itens.push({ icon: '&#9888;', label: 'Itens com erro (retry)', count: pendentes.deadLetters });
+
+                    listaEl.innerHTML = `
+                        <div class="pwa-section-title">Detalhes pendentes</div>
+                        <div class="pwa-menu-group">
+                            ${itens.map(item => `
+                                <div class="pwa-menu-item" style="cursor:default;">
+                                    <span class="pwa-menu-icon">${item.icon}</span>
+                                    <span class="pwa-menu-label">${escapeHtml(item.label)}</span>
+                                    <span class="pwa-menu-value" style="color:#f59e0b; font-weight:600;">${item.count}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                } else if (listaEl) {
+                    listaEl.innerHTML = '';
+                }
             } else {
                 el.textContent = '0';
+                if (listaEl) listaEl.innerHTML = '';
             }
         } catch (e) {
             el.textContent = 'Erro';
