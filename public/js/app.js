@@ -10896,16 +10896,19 @@ class App {
             // 2. Fallback: IndexedDB (dados mínimos do sync) + enriquecimento com clientes
             try {
                 let todos = [];
+                console.log(`[Offline] offlineDB disponível: ${typeof window.offlineDB !== 'undefined'}, pwaApp disponível: ${typeof window.pwaApp !== 'undefined'}`);
                 if (typeof window.offlineDB !== 'undefined') {
                     await window.offlineDB.init();
-                    todos = await window.offlineDB.getAll('roteiro').catch(() => []);
+                    todos = await window.offlineDB.getAll('roteiro').catch((e) => { console.warn('[Offline] Erro getAll roteiro:', e.message); return []; });
                 }
+                console.log(`[Offline] IndexedDB roteiro: ${todos.length} itens total`);
                 if (todos.length === 0 && typeof window.pwaApp?.getRoteiroCache === 'function') {
                     todos = window.pwaApp.getRoteiroCache();
+                    console.log(`[Offline] pwaApp cache roteiro: ${todos.length} itens`);
                 }
 
                 if (todos.length === 0) {
-                    console.warn('[Offline] Nenhum dado de roteiro disponível offline');
+                    console.warn('[Offline] Nenhum dado de roteiro disponível offline (IndexedDB vazio, pwaApp cache vazio)');
                     return [];
                 }
 
@@ -10913,7 +10916,7 @@ class App {
                 const filtrado = todos.filter(r =>
                     (r.dia_semana || '').toLowerCase() === diaSemana
                 );
-                console.log(`[Offline] IndexedDB filtro '${diaSemana}': ${filtrado.length}/${todos.length}`);
+                console.log(`[Offline] Filtro dia '${diaSemana}': ${filtrado.length}/${todos.length} (dias encontrados: ${[...new Set(todos.map(r => r.dia_semana))].join(',')})`);
                 const base = filtrado.length > 0 ? filtrado : todos;
 
                 // Construir mapa de clientes para enriquecimento
@@ -10926,11 +10929,12 @@ class App {
                     if (clientes.length === 0 && typeof window.pwaApp?.getClientesCache === 'function') {
                         clientes = window.pwaApp.getClientesCache();
                     }
+                    console.log(`[Offline] Clientes para enriquecimento: ${clientes.length}`);
                     clientes.forEach(c => {
                         const id = String(c.cli_codigo || c.cliente_id || '').trim().replace(/\.0$/, '');
                         if (id) clientesMap[id] = c;
                     });
-                } catch (_) {}
+                } catch (e) { console.warn('[Offline] Erro ao carregar clientes:', e.message); }
 
                 return base.map(r => {
                     const cliId = String(r.cli_codigo || r.cliente_id || '').trim().replace(/\.0$/, '');
