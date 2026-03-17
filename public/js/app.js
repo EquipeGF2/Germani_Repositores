@@ -15653,11 +15653,11 @@ class App {
             }
             return this.documentosState.tipos;
         } catch (error) {
-            console.warn('Erro ao carregar tipos de documentos:', error);
+            console.warn('[Documentos] Erro ao carregar tipos de documentos:', error);
             if (!silencioso) {
-                this.showNotification('Não foi possível carregar tipos de documentos agora.', 'warning');
+                this.showNotification('Tipos de documentos indisponíveis. Sincronize os dados.', 'warning');
             }
-            throw error;
+            return []; // Graceful degradation: módulo continua funcional
         }
     }
 
@@ -16349,48 +16349,75 @@ class App {
         const container = document.getElementById('listaRubricas');
         if (!container) return;
 
+        const mapRubrica = (r) => ({
+            gst_id: r.gst_id || r.id,
+            gst_codigo: r.gst_codigo || r.codigo,
+            gst_nome: r.gst_nome || r.nome,
+            gst_ativo: r.gst_ativo !== false
+        });
+
         try {
             let rubricas = [];
-            // Cache-first: sempre tentar IndexedDB primeiro (instantâneo online e offline)
+            // Tier 1: Cache-first - IndexedDB (instantâneo online e offline)
             if (typeof window.offlineDB !== 'undefined') {
                 try {
                     await window.offlineDB.init();
                     const cached = await window.offlineDB.getAll('tiposGasto').catch(() => []);
-                    rubricas = cached.map(r => ({
-                        gst_id: r.gst_id || r.id,
-                        gst_codigo: r.gst_codigo || r.codigo,
-                        gst_nome: r.gst_nome || r.nome,
-                        gst_ativo: r.gst_ativo !== false
-                    })).filter(r => r.gst_ativo !== false);
-                } catch (_) {
+                    console.log(`[Rubricas] IndexedDB tiposGasto: ${cached.length} itens`);
+                    rubricas = cached.map(mapRubrica).filter(r => r.gst_ativo !== false);
+                } catch (e) {
+                    console.warn('[Rubricas] Erro IndexedDB:', e.message);
                     rubricas = [];
                 }
             }
-            // Fallback: se cache vazio e online, buscar do servidor
+            // Tier 2: Turso direto (WebSocket do browser)
             if (rubricas.length === 0 && navigator.onLine) {
                 try {
-                    rubricas = await db.listarTiposGasto(true); // Apenas ativos
-                    // Salvar no cache para próximos acessos
+                    rubricas = await db.listarTiposGasto(true);
+                    console.log(`[Rubricas] Turso direto: ${rubricas.length} itens`);
                     if (rubricas.length > 0 && typeof window.offlineDB !== 'undefined') {
                         window.offlineDB.salvarTiposGasto(rubricas).catch(() => {});
                     }
-                } catch (_) {
+                } catch (e) {
+                    console.warn('[Rubricas] Erro Turso:', e.message);
                     rubricas = [];
                 }
             }
 
-            // Fallback: usar cache precarregado pelo PWA (cachedData.tiposGasto)
+            // Tier 3: API sync backend (alternativa ao Turso WebSocket)
+            if (rubricas.length === 0 && navigator.onLine) {
+                try {
+                    const token = localStorage.getItem('auth_token');
+                    if (token) {
+                        const resp = await fetch(`${API_BASE_URL}/api/sync/tipos-gasto`, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        if (resp.ok) {
+                            const data = await resp.json();
+                            if (data.ok && data.tipos?.length > 0) {
+                                console.log(`[Rubricas] API sync: ${data.tipos.length} itens`);
+                                rubricas = data.tipos.map(mapRubrica).filter(r => r.gst_ativo !== false);
+                                if (typeof window.offlineDB !== 'undefined') {
+                                    window.offlineDB.salvarTiposGasto(data.tipos).catch(() => {});
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[Rubricas] Erro API sync:', e.message);
+                }
+            }
+
+            // Tier 4: Cache em memória do PWA (cachedData.tiposGasto)
             if (rubricas.length === 0 && window.pwaApp?.getRubricasCache) {
                 try {
                     const pwaCache = window.pwaApp.getRubricasCache();
-                    rubricas = (pwaCache || []).map(r => ({
-                        gst_id: r.gst_id || r.id,
-                        gst_codigo: r.gst_codigo || r.codigo,
-                        gst_nome: r.gst_nome || r.nome,
-                        gst_ativo: r.gst_ativo !== false
-                    })).filter(r => r.gst_ativo !== false);
+                    console.log(`[Rubricas] PWA cache: ${pwaCache?.length || 0} itens`);
+                    rubricas = (pwaCache || []).map(mapRubrica).filter(r => r.gst_ativo !== false);
                 } catch (_) {}
             }
+
+            console.log(`[Rubricas] Final: ${rubricas.length} rubricas ativas carregadas`);
 
             if (rubricas.length === 0) {
                 container.innerHTML = '<p style="color: #6b7280; text-align: center; padding: 20px;">Nenhuma rubrica cadastrada. Sincronize os dados primeiro.</p>';
