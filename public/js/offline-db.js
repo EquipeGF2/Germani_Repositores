@@ -336,7 +336,9 @@ class OfflineDB {
   async salvarTiposDocumento(tipos) {
     await this.clear('tiposDocumento');
     for (const tipo of tipos) {
-      await this.put('tiposDocumento', tipo);
+      // Normalizar keyPath: store usa 'id' mas API retorna 'dct_id'
+      const item = { ...tipo, id: tipo.id || tipo.dct_id };
+      await this.put('tiposDocumento', item);
     }
   }
 
@@ -347,7 +349,9 @@ class OfflineDB {
   async salvarTiposGasto(tipos) {
     await this.clear('tiposGasto');
     for (const tipo of tipos) {
-      await this.put('tiposGasto', tipo);
+      // Normalizar keyPath: store usa 'id' mas API retorna 'gst_id'
+      const item = { ...tipo, id: tipo.id || tipo.gst_id };
+      await this.put('tiposGasto', item);
     }
   }
 

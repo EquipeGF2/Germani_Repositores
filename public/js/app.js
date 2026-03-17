@@ -16373,8 +16373,21 @@ class App {
                 }
             }
 
+            // Fallback: usar cache precarregado pelo PWA (cachedData.tiposGasto)
+            if (rubricas.length === 0 && window.pwaApp?.getRubricasCache) {
+                try {
+                    const pwaCache = window.pwaApp.getRubricasCache();
+                    rubricas = (pwaCache || []).map(r => ({
+                        gst_id: r.gst_id || r.id,
+                        gst_codigo: r.gst_codigo || r.codigo,
+                        gst_nome: r.gst_nome || r.nome,
+                        gst_ativo: r.gst_ativo !== false
+                    })).filter(r => r.gst_ativo !== false);
+                } catch (_) {}
+            }
+
             if (rubricas.length === 0) {
-                container.innerHTML = '<p style="color: #6b7280; text-align: center; padding: 20px;">Nenhuma rubrica cadastrada. Cadastre em Configurações do Sistema.</p>';
+                container.innerHTML = '<p style="color: #6b7280; text-align: center; padding: 20px;">Nenhuma rubrica cadastrada. Sincronize os dados primeiro.</p>';
                 return;
             }
 
