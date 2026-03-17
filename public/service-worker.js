@@ -1,8 +1,8 @@
 // Service Worker para PWA - Sistema de Repositores Germani
 // Permite operação offline completa da aplicação
 
-const CACHE_NAME = 'germani-repositores-v10';
-const RUNTIME_CACHE = 'germani-runtime-v10';
+const CACHE_NAME = 'germani-repositores-v11';
+const RUNTIME_CACHE = 'germani-runtime-v11';
 
 // Arquivos essenciais para funcionar offline
 // Usar caminhos relativos para funcionar com GitHub Pages (subdiretório)
@@ -23,7 +23,10 @@ const ESSENTIAL_FILES = [
   './js/sync-service.js',
   './js/pwa-app.js',
   './icon-512.png',
-  './manifest.json'
+  './manifest.json',
+  'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.7.1/jspdf.plugin.autotable.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
 ];
 
 // URLs da API que devem funcionar offline (Network First)

@@ -299,14 +299,14 @@ class SyncService {
         this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/coordenadas`, { headers }).then(r => r.json()),
         this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/tipos-documento`, { headers }).then(r => r.json()),
         this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/tipos-gasto`, { headers }).then(r => r.json()),
-        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/campanhas`, { headers }).then(r => r.json()).catch(() => ({ ok: false })),
-        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/documentos-cache`, { headers }).then(r => r.json()).catch(() => ({ ok: false })),
-        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/despesas`, { headers }).then(r => r.json()).catch(() => ({ ok: false })),
-        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/roteiros-consulta`, { headers }).then(r => r.json()).catch(() => ({ ok: false })),
-        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/pesquisas-clientes`, { headers }).then(r => r.json()).catch(() => ({ ok: false })),
-        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/espacos-clientes`, { headers }).then(r => r.json()).catch(() => ({ ok: false })),
-        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/visitas-nao-realizadas`, { headers }).then(r => r.json()).catch(() => ({ ok: false })),
-        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/sessoes-recentes`, { headers }).then(r => r.json()).catch(() => ({ ok: false }))
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/campanhas`, { headers }).then(r => r.json()).catch(e => { console.warn('[SyncService] Erro campanhas:', e.message); return { ok: false }; }),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/documentos-cache`, { headers }).then(r => r.json()).catch(e => { console.warn('[SyncService] Erro documentos:', e.message); return { ok: false }; }),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/despesas`, { headers }).then(r => r.json()).catch(e => { console.warn('[SyncService] Erro despesas:', e.message); return { ok: false }; }),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/roteiros-consulta`, { headers }).then(r => r.json()).catch(e => { console.warn('[SyncService] Erro roteiros-consulta:', e.message); return { ok: false }; }),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/pesquisas-clientes`, { headers }).then(r => r.json()).catch(e => { console.warn('[SyncService] Erro pesquisas-clientes:', e.message); return { ok: false }; }),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/espacos-clientes`, { headers }).then(r => r.json()).catch(e => { console.warn('[SyncService] Erro espacos-clientes:', e.message); return { ok: false }; }),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/visitas-nao-realizadas`, { headers }).then(r => r.json()).catch(e => { console.warn('[SyncService] Erro visitas-nao-realizadas:', e.message); return { ok: false }; }),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/sessoes-recentes`, { headers }).then(r => r.json()).catch(e => { console.warn('[SyncService] Erro sessoes-recentes:', e.message); return { ok: false }; })
       ]);
 
       // Salvar dados base no IndexedDB
@@ -659,7 +659,8 @@ class SyncService {
         }
       }
 
-      // Limpar itens sincronizados antigos
+      // Limpar itens sincronizados imediatamente + antigos
+      await offlineDB.limparSincronizadosImediatamente();
       await offlineDB.limparSincronizados();
 
       // Limpar não-atendimentos pendentes do localStorage (já foram enviados via filaRegistros)
