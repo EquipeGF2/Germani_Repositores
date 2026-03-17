@@ -1430,6 +1430,13 @@
                     window.app.documentosState.tipos = tipos;
                 }
             }
+            // Precarregar rubricas (tipos de gasto) para despesa de viagem
+            if (typeof offlineDB !== 'undefined') {
+                const tiposGasto = await offlineDB.getTiposGasto();
+                if (tiposGasto && tiposGasto.length > 0) {
+                    cachedData.tiposGasto = tiposGasto;
+                }
+            }
         } catch (e) { /* silent */ }
     }
 
@@ -1491,26 +1498,75 @@
         try {
             let dados = [];
             switch (consultaId) {
-                case 'consulta-visitas':
+                case 'consulta-visitas': {
                     dados = await offlineDB.getSessoesRecentes();
+                    // Merge pending sessions
+                    const pendingSessions = await offlineDB.getPendingSessions();
+                    const pendingMapped = pendingSessions.map(s => ({
+                        sessao_id: s.localId || `pending_${s.createdAt}`,
+                        cliente_id: s.cliente_id || s.clienteId || '',
+                        cliente_nome: s.cliente_nome || s.clienteNome || 'N/D',
+                        checkin_data_hora: s.checkin_data_hora || s.checkinDataHora || s.createdAt,
+                        checkout_data_hora: s.checkout_data_hora || s.checkoutDataHora || null,
+                        status: s.checkout_data_hora ? 'finalizado' : 'em_atendimento',
+                        endereco_cliente: s.endereco_cliente || s.enderecoCliente || '',
+                        _pendente: true
+                    }));
+                    dados = [...dados, ...pendingMapped];
+                    // Store for filtering
+                    cachedData._visitas = dados;
                     renderVisitasInline(dados, container);
                     break;
+                }
                 case 'consulta-campanha':
                     dados = await offlineDB.getCampanhas();
                     renderCampanhasInline(dados, container);
                     break;
                 case 'consulta-roteiro':
                     dados = await offlineDB.getRoteirosConsulta();
-                    renderRoteirosInline(dados, container);
+                    await renderRoteirosInline(dados, container);
                     break;
-                case 'consulta-documentos':
+                case 'consulta-documentos': {
                     dados = await offlineDB.getDocumentosCache();
+                    // Merge pending documents
+                    const pendingDocs = await offlineDB.getPendingDocumentos();
+                    const pendingDocsMapped = pendingDocs.map(d => ({
+                        doc_id: d.id || `pending_${d.createdAt}`,
+                        tipo_nome: d.tipoNome || d.tipo_nome || 'Documento',
+                        doc_status: 'PENDENTE',
+                        doc_data_ref: d.dataRef || (d.createdAt ? d.createdAt.split('T')[0] : ''),
+                        doc_hora_ref: d.horaRef || '',
+                        doc_nome_original: d.nomeOriginal || '',
+                        doc_observacao: d.observacao || '',
+                        _pendente: true
+                    }));
+                    dados = [...dados, ...pendingDocsMapped];
                     renderDocumentosInline(dados, container);
                     break;
-                case 'consulta-despesas':
+                }
+                case 'consulta-despesas': {
                     dados = await offlineDB.getDespesas();
+                    // Merge pending expenses
+                    const pendingDesp = await offlineDB.getPendingDespesas();
+                    for (const desp of pendingDesp) {
+                        if (desp.rubricas && Array.isArray(desp.rubricas)) {
+                            for (const rub of desp.rubricas) {
+                                if (Number(rub.valor) > 0) {
+                                    dados.push({
+                                        id: `pending_${desp.id}_${rub.id}`,
+                                        dv_data_ref: desp.dataRef || (desp.createdAt ? desp.createdAt.split('T')[0] : ''),
+                                        dv_valor: rub.valor,
+                                        rubrica_nome: rub.nome || rub.codigo || '-',
+                                        dv_gst_codigo: rub.codigo || '',
+                                        _pendente: true
+                                    });
+                                }
+                            }
+                        }
+                    }
                     renderDespesasInline(dados, container);
                     break;
+                }
                 default:
                     container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Consulta não disponível no cache</div></div>';
                     break;
@@ -1531,8 +1587,54 @@
     }
 
     function renderVisitasInline(dados, container) {
+        // Build client options from data
+        const clientesUnicos = {};
+        (dados || []).forEach(s => {
+            const id = String(s.cliente_id || '');
+            if (id && !clientesUnicos[id]) {
+                clientesUnicos[id] = s.cliente_nome || id;
+            }
+        });
+        const clienteOptions = Object.entries(clientesUnicos)
+            .sort((a, b) => a[1].localeCompare(b[1]))
+            .map(([id, nome]) => `<option value="${id}">${escapeHtml(id)} - ${escapeHtml(nome)}</option>`)
+            .join('');
+
+        // Render filters
+        let html = `
+            <div style="background:#f9fafb;padding:10px;border-radius:8px;margin-bottom:12px;">
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+                    <input type="date" id="pwaFiltroVisitaDataIni" style="flex:1;min-width:120px;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" />
+                    <input type="date" id="pwaFiltroVisitaDataFim" style="flex:1;min-width:120px;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" />
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+                    <select id="pwaFiltroVisitaCliente" style="flex:2;min-width:140px;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
+                        <option value="">Todos os clientes</option>
+                        ${clienteOptions}
+                    </select>
+                    <select id="pwaFiltroVisitaStatus" style="flex:1;min-width:100px;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
+                        <option value="">Todos</option>
+                        <option value="finalizado">Finalizado</option>
+                        <option value="em_atendimento">Em atendimento</option>
+                    </select>
+                </div>
+                <div style="display:flex;gap:6px;">
+                    <button onclick="pwaApp.filtrarVisitas()" style="flex:1;padding:8px;background:#ef4444;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">Buscar</button>
+                    <button onclick="pwaApp.limparFiltrosVisitas()" style="flex:1;padding:8px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-size:13px;cursor:pointer;">Limpar</button>
+                </div>
+            </div>
+            <div id="pwaVisitasResultados"></div>`;
+
+        container.innerHTML = html;
+        renderVisitasResultados(dados);
+    }
+
+    function renderVisitasResultados(dados) {
+        const container = document.getElementById('pwaVisitasResultados');
+        if (!container) return;
+
         if (!dados || dados.length === 0) {
-            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhuma visita nos últimos 15 dias</div></div>';
+            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhuma visita encontrada</div></div>';
             return;
         }
 
@@ -1548,7 +1650,7 @@
         const datasOrdenadas = Object.keys(porData).sort().reverse();
         let html = `<div class="pwa-consulta-list">
             <div style="background: #eff6ff; padding: 10px; border-radius: 8px; margin-bottom: 12px; text-align: center;">
-                <div style="font-size: 13px; color: #1e40af;">Total: ${dados.length} visitas nos últimos 15 dias</div>
+                <div style="font-size: 13px; color: #1e40af;">Total: ${dados.length} visitas</div>
             </div>`;
 
         for (const data of datasOrdenadas) {
@@ -1559,11 +1661,12 @@
                 const statusLabel = s.status === 'finalizado' ? 'Finalizado' : s.status === 'em_atendimento' ? 'Em atendimento' : 'Sem check-in';
                 const checkinHora = s.checkin_data_hora ? new Date(s.checkin_data_hora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-';
                 const checkoutHora = s.checkout_data_hora ? new Date(s.checkout_data_hora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-';
+                const pendenteBadge = s._pendente ? '<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:#fef3c7;color:#92400e;margin-left:6px;">Pendente de envio</span>' : '';
 
                 html += `
-                    <div class="pwa-card" style="margin-bottom: 6px; padding: 10px;">
+                    <div class="pwa-card" style="margin-bottom: 6px; padding: 10px;${s._pendente ? 'border-left:3px solid #f59e0b;' : ''}">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <div style="font-weight: 600; font-size: 13px; color: #1f2937;">${escapeHtml(String(s.cliente_id || ''))} - ${escapeHtml(s.cliente_nome || 'N/D')}</div>
+                            <div style="font-weight: 600; font-size: 13px; color: #1f2937;">${escapeHtml(String(s.cliente_id || ''))} - ${escapeHtml(s.cliente_nome || 'N/D')}${pendenteBadge}</div>
                             <span style="font-size: 11px; padding: 2px 8px; border-radius: 12px; background: ${statusColor}20; color: ${statusColor};">${statusLabel}</span>
                         </div>
                         <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
@@ -1577,9 +1680,49 @@
         container.innerHTML = html;
     }
 
-    function renderCampanhasInline(dados, container) {
+    // Filtrar visitas em memória
+    window.pwaApp = window.pwaApp || {};
+    pwaApp.filtrarVisitas = function() {
+        const dataIni = document.getElementById('pwaFiltroVisitaDataIni')?.value || '';
+        const dataFim = document.getElementById('pwaFiltroVisitaDataFim')?.value || '';
+        const clienteId = document.getElementById('pwaFiltroVisitaCliente')?.value || '';
+        const status = document.getElementById('pwaFiltroVisitaStatus')?.value || '';
+
+        let filtrados = cachedData._visitas || [];
+        if (dataIni) {
+            filtrados = filtrados.filter(s => {
+                const d = (s.checkin_data_hora || s.data_planejada || '').split('T')[0];
+                return d >= dataIni;
+            });
+        }
+        if (dataFim) {
+            filtrados = filtrados.filter(s => {
+                const d = (s.checkin_data_hora || s.data_planejada || '').split('T')[0];
+                return d <= dataFim;
+            });
+        }
+        if (clienteId) {
+            filtrados = filtrados.filter(s => String(s.cliente_id) === clienteId);
+        }
+        if (status) {
+            filtrados = filtrados.filter(s => s.status === status);
+        }
+        renderVisitasResultados(filtrados);
+    };
+
+    pwaApp.limparFiltrosVisitas = function() {
+        const el1 = document.getElementById('pwaFiltroVisitaDataIni'); if (el1) el1.value = '';
+        const el2 = document.getElementById('pwaFiltroVisitaDataFim'); if (el2) el2.value = '';
+        const el3 = document.getElementById('pwaFiltroVisitaCliente'); if (el3) el3.value = '';
+        const el4 = document.getElementById('pwaFiltroVisitaStatus'); if (el4) el4.value = '';
+        renderVisitasResultados(cachedData._visitas || []);
+    };
+
+    async function renderCampanhasInline(dados, container) {
         if (!dados || dados.length === 0) {
-            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhuma campanha nos \u00faltimos 15 dias</div></div>';
+            const ultimaSync = typeof offlineDB !== 'undefined' ? await offlineDB.getUltimaSync() : null;
+            const syncInfo = ultimaSync ? `Última sincronização: ${new Date(ultimaSync).toLocaleString('pt-BR')}` : 'Nenhuma sincronização realizada';
+            container.innerHTML = `<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhuma campanha nos últimos 15 dias</div><div style="font-size:12px;color:#9ca3af;margin-top:4px">${syncInfo}</div></div>`;
             return;
         }
         let html = '<div class="pwa-consulta-list">';
@@ -1596,48 +1739,214 @@
         container.innerHTML = html;
     }
 
-    function renderRoteirosInline(dados, container) {
+    async function renderRoteirosInline(dados, container) {
         if (!dados || dados.length === 0) {
-            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhum roteiro vigente</div></div>';
+            const ultimaSync = typeof offlineDB !== 'undefined' ? await offlineDB.getUltimaSync() : null;
+            const syncInfo = ultimaSync ? `Última sincronização: ${new Date(ultimaSync).toLocaleString('pt-BR')}` : 'Nenhuma sincronização realizada';
+            container.innerHTML = `<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhum roteiro vigente</div><div style="font-size:12px;color:#9ca3af;margin-top:4px">${syncInfo}</div></div>`;
             return;
         }
-        // Agrupar por dia da semana
-        const porDia = {};
-        const diasLabel = { dom: 'Domingo', seg: 'Segunda', ter: 'Ter\u00e7a', qua: 'Quarta', qui: 'Quinta', sex: 'Sexta', sab: 'S\u00e1bado' };
+
+        // JOIN com clientes do cache para obter nome, fantasia, endereço
+        let clienteMap = {};
+        try {
+            const clientes = await offlineDB.getAll('clientes');
+            clientes.forEach(c => { clienteMap[String(c.cli_codigo)] = c; });
+        } catch (_) {}
+
+        const repId = getRepId();
+        const usuario = getUsuario();
+        const repoNome = usuario.nome_completo || usuario.username || `Repositor ${repId}`;
+
+        // Enrich data
+        dados.forEach(r => {
+            const cli = clienteMap[String(r.cliente_id)] || {};
+            r.cli_nome = cli.cli_nome || '';
+            r.cli_fantasia = cli.cli_fantasia || '';
+            r.cli_endereco = cli.cli_endereco || '';
+            r.cli_bairro = cli.cli_bairro || '';
+            r.cli_cidade = cli.cli_cidade || r.cidade || '';
+        });
+
+        // Store for filtering/export
+        cachedData._roteiros = dados;
+        cachedData._roteiroRepoInfo = { repo_cod: repId, repo_nome: repoNome };
+
+        const diasLabel = { dom: 'Domingo', seg: 'Segunda', ter: 'Terça', qua: 'Quarta', qui: 'Quinta', sex: 'Sexta', sab: 'Sábado' };
+        const diasOrdem = ['seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom'];
+        const diasOptions = diasOrdem.map(d => `<option value="${d}">${diasLabel[d]}</option>`).join('');
+
+        // Filters + export buttons
+        let html = `
+            <div style="background:#f9fafb;padding:10px;border-radius:8px;margin-bottom:12px;">
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+                    <select id="pwaFiltroRoteiroDia" style="flex:1;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
+                        <option value="">Todos os dias</option>
+                        ${diasOptions}
+                    </select>
+                    <button onclick="pwaApp.filtrarRoteiros()" style="padding:8px 16px;background:#ef4444;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">Filtrar</button>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                    <button onclick="pwaApp.exportarRoteiroPDF('detalhado')" style="flex:1;padding:6px;background:#1e40af;color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer;">PDF Detalhado</button>
+                    <button onclick="pwaApp.exportarRoteiroPDF('semanal')" style="flex:1;padding:6px;background:#1e40af;color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer;">PDF Semanal</button>
+                    <button onclick="pwaApp.exportarRoteiroXLS()" style="flex:1;padding:6px;background:#047857;color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer;">Excel</button>
+                    <button onclick="pwaApp.enviarRoteiroWhatsApp()" style="flex:1;padding:6px;background:#25d366;color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer;">WhatsApp</button>
+                </div>
+            </div>
+            <div id="pwaRoteirosResultados"></div>`;
+
+        container.innerHTML = html;
+        renderRoteirosResultados(dados);
+    }
+
+    function renderRoteirosResultados(dados) {
+        const container = document.getElementById('pwaRoteirosResultados');
+        if (!container) return;
+
+        if (!dados || dados.length === 0) {
+            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhum roteiro encontrado</div></div>';
+            return;
+        }
+
+        const diasLabel = { dom: 'Domingo', seg: 'Segunda', ter: 'Terça', qua: 'Quarta', qui: 'Quinta', sex: 'Sexta', sab: 'Sábado' };
+        const diasOrdem = ['seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom'];
+
+        // Agrupar por dia + cidade (estilo web mobile)
+        const grupos = {};
         for (const item of dados) {
             const dia = item.dia_semana || 'outro';
-            if (!porDia[dia]) porDia[dia] = [];
-            porDia[dia].push(item);
+            const cidade = item.cli_cidade || item.cidade || 'Sem cidade';
+            const key = `${dia}|${cidade}`;
+            if (!grupos[key]) grupos[key] = { dia, cidade, items: [] };
+            grupos[key].items.push(item);
         }
-        let html = '<div class="pwa-consulta-list">';
-        for (const [dia, clientes] of Object.entries(porDia)) {
-            html += `<div style="font-weight: 700; color: #ef4444; margin: 12px 0 8px; font-size: 15px;">${diasLabel[dia] || dia} (${clientes.length} clientes)</div>`;
-            for (const c of clientes) {
+
+        // Ordenar por dia da semana
+        const gruposOrdenados = Object.values(grupos).sort((a, b) => {
+            const ia = diasOrdem.indexOf(a.dia);
+            const ib = diasOrdem.indexOf(b.dia);
+            return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+        });
+
+        let html = `<div style="font-size:13px;color:#6b7280;margin-bottom:8px;">Total: ${dados.length} clientes</div>`;
+        html += '<div style="display:flex;flex-direction:column;gap:12px;">';
+
+        for (const grupo of gruposOrdenados) {
+            html += `
+                <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+                    <div style="background:linear-gradient(135deg,#dc2626,#ef4444);color:white;padding:10px 12px;">
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                            <span style="font-weight:700;font-size:0.95rem;">${diasLabel[grupo.dia] || grupo.dia}</span>
+                            <span style="font-size:0.85rem;opacity:0.9;">${escapeHtml(grupo.cidade)}</span>
+                        </div>
+                    </div>
+                    <div style="padding:8px 0;">`;
+
+            for (const item of grupo.items) {
                 html += `
-                    <div class="pwa-card" style="margin-bottom: 6px; padding: 10px;">
-                        <div style="font-weight: 600; font-size: 13px;">${escapeHtml(String(c.cliente_id || ''))} - ${escapeHtml(c.cidade || '')}</div>
-                        <div style="font-size: 12px; color: #6b7280;">Ordem: ${c.ordem_visita || '-'}</div>
-                    </div>`;
+                        <div style="display:flex;align-items:baseline;gap:8px;padding:6px 12px;border-bottom:1px solid #f3f4f6;font-size:0.85rem;">
+                            <span style="font-weight:700;color:#dc2626;min-width:28px;">#${item.ordem_visita || '-'}</span>
+                            <span style="color:#374151;flex:1;">${escapeHtml(String(item.cliente_id || ''))} - ${escapeHtml(item.cli_nome || '-')}</span>
+                            ${item.cli_fantasia ? `<span style="color:#6b7280;font-size:0.8rem;">(${escapeHtml(item.cli_fantasia)})</span>` : ''}
+                        </div>`;
             }
+
+            html += '</div></div>';
         }
+
         html += '</div>';
         container.innerHTML = html;
     }
 
-    function renderDocumentosInline(dados, container) {
+    // Roteiro filter + export functions
+    pwaApp.filtrarRoteiros = function() {
+        const dia = document.getElementById('pwaFiltroRoteiroDia')?.value || '';
+        let filtrados = cachedData._roteiros || [];
+        if (dia) filtrados = filtrados.filter(r => r.dia_semana === dia);
+        renderRoteirosResultados(filtrados);
+    };
+
+    function mapRoteirosParaExport(dados) {
+        const repId = getRepId();
+        const usuario = getUsuario();
+        const repoNome = usuario.nome_completo || usuario.username || `Repositor ${repId}`;
+        return (dados || []).map(r => ({
+            rot_repositor_id: r.repo_cod || repId,
+            rot_dia_semana: r.dia_semana,
+            rot_cidade: r.cli_cidade || r.cidade || '',
+            rot_ordem_cidade: r.rot_ordem_cidade || 0,
+            rot_cliente_codigo: r.cliente_id,
+            rot_ordem_visita: r.ordem_visita,
+            repo_cod: r.repo_cod || repId,
+            repo_nome: r.repo_nome || repoNome,
+            rot_venda_centralizada: r.venda_centralizada,
+            cliente_dados: {
+                nome: r.cli_nome || '',
+                fantasia: r.cli_fantasia || '',
+                endereco: r.cli_endereco || '',
+                bairro: r.cli_bairro || '',
+                grupo_desc: ''
+            }
+        }));
+    }
+
+    pwaApp.exportarRoteiroPDF = function(formato) {
+        if (typeof window.app === 'undefined') { showToast('Módulo de exportação não disponível', 'error'); return; }
+        const registros = mapRoteirosParaExport(cachedData._roteiros);
+        const repoInfo = cachedData._roteiroRepoInfo || {};
+        const dataGeracao = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+        const dataNome = window.app.formatarDataParaNomeArquivo ? window.app.formatarDataParaNomeArquivo(new Date()) : new Date().toISOString().split('T')[0];
+        const ctx = { dataGeracao, dataAtualizacao: dataGeracao };
+        try {
+            if (formato === 'semanal' && window.app.gerarPDFRoteiroSemanal) {
+                window.app.gerarPDFRoteiroSemanal(registros, repoInfo, ctx, dataNome);
+            } else if (window.app.gerarPDFRoteiroDetalhado) {
+                window.app.gerarPDFRoteiroDetalhado(registros, repoInfo, ctx, dataNome);
+            }
+            showToast('PDF gerado com sucesso');
+        } catch (e) { showToast('Erro ao gerar PDF: ' + e.message, 'error'); }
+    };
+
+    pwaApp.exportarRoteiroXLS = function() {
+        if (typeof window.app === 'undefined' || !window.app.gerarExcelRoteiroDetalhado) { showToast('Módulo de exportação não disponível', 'error'); return; }
+        const registros = mapRoteirosParaExport(cachedData._roteiros);
+        const repoInfo = cachedData._roteiroRepoInfo || {};
+        const dataNome = new Date().toISOString().split('T')[0].replace(/-/g, '');
+        try {
+            window.app.gerarExcelRoteiroDetalhado(registros, repoInfo, dataNome);
+            showToast('Excel gerado com sucesso');
+        } catch (e) { showToast('Erro ao gerar Excel: ' + e.message, 'error'); }
+    };
+
+    pwaApp.enviarRoteiroWhatsApp = function() {
+        if (typeof window.app === 'undefined' || !window.app.gerarMensagemWhatsAppRoteiro) { showToast('Módulo não disponível', 'error'); return; }
+        const registros = mapRoteirosParaExport(cachedData._roteiros);
+        const repoInfo = cachedData._roteiroRepoInfo || {};
+        const dataAtual = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+        try {
+            window.app.gerarMensagemWhatsAppRoteiro(registros, repoInfo, dataAtual);
+        } catch (e) { showToast('Erro ao gerar mensagem: ' + e.message, 'error'); }
+    };
+
+    async function renderDocumentosInline(dados, container) {
         if (!dados || dados.length === 0) {
-            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhum documento nos \u00faltimos 15 dias</div></div>';
+            const ultimaSync = typeof offlineDB !== 'undefined' ? await offlineDB.getUltimaSync() : null;
+            const syncInfo = ultimaSync ? `Última sincronização: ${new Date(ultimaSync).toLocaleString('pt-BR')}` : 'Nenhuma sincronização realizada';
+            container.innerHTML = `<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhum documento nos últimos 15 dias</div><div style="font-size:12px;color:#9ca3af;margin-top:4px">${syncInfo}</div></div>`;
             return;
         }
         let html = '<div class="pwa-consulta-list">';
         for (const doc of dados) {
             const data = formatarData(doc.doc_data_ref);
-            const statusColor = doc.doc_status === 'ENVIADO' ? '#10b981' : '#f59e0b';
+            const isPendente = doc._pendente;
+            const statusColor = isPendente ? '#f59e0b' : (doc.doc_status === 'ENVIADO' ? '#10b981' : '#f59e0b');
+            const statusText = isPendente ? 'PENDENTE' : (doc.doc_status || '-');
+            const pendenteBadge = isPendente ? '<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:#fef3c7;color:#92400e;margin-left:6px;">Pendente de envio</span>' : '';
             html += `
-                <div class="pwa-card" style="margin-bottom: 8px; padding: 12px;">
+                <div class="pwa-card" style="margin-bottom: 8px; padding: 12px;${isPendente ? 'border-left:3px solid #f59e0b;' : ''}">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <div style="font-weight: 600; font-size: 14px; color: #1f2937;">${escapeHtml(doc.tipo_nome || 'Documento')}</div>
-                        <span style="font-size: 11px; padding: 2px 8px; border-radius: 12px; background: ${statusColor}20; color: ${statusColor};">${doc.doc_status || '-'}</span>
+                        <div style="font-weight: 600; font-size: 14px; color: #1f2937;">${escapeHtml(doc.tipo_nome || 'Documento')}${pendenteBadge}</div>
+                        <span style="font-size: 11px; padding: 2px 8px; border-radius: 12px; background: ${statusColor}20; color: ${statusColor};">${statusText}</span>
                     </div>
                     <div style="font-size: 13px; color: #6b7280; margin-top: 4px;">Data: ${data} ${doc.doc_hora_ref || ''}</div>
                     <div style="font-size: 12px; color: #9ca3af; margin-top: 2px;">${escapeHtml(doc.doc_nome_original || '')}</div>
@@ -1648,9 +1957,16 @@
         container.innerHTML = html;
     }
 
-    function renderDespesasInline(dados, container) {
+    async function renderDespesasInline(dados, container) {
         if (!dados || dados.length === 0) {
-            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhuma despesa no m\u00eas corrente</div></div>';
+            let syncInfo = 'Nenhuma sincroniza\u00e7\u00e3o realizada';
+            try {
+                if (typeof offlineDB !== 'undefined') {
+                    const ultimaSync = await offlineDB.getUltimaSync();
+                    if (ultimaSync) syncInfo = '\u00daltima sincroniza\u00e7\u00e3o: ' + new Date(ultimaSync).toLocaleString('pt-BR');
+                }
+            } catch (_) {}
+            container.innerHTML = `<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhuma despesa no m\u00eas corrente</div><div style="font-size:12px;color:#9ca3af;margin-top:4px">${syncInfo}</div></div>`;
             return;
         }
         // Agrupar por data
@@ -1673,9 +1989,14 @@
             const totalDia = itens.reduce((s, i) => s + (Number(i.dv_valor) || 0), 0);
             html += `<div style="font-weight: 600; color: #374151; margin: 12px 0 6px; font-size: 14px;">${formatarData(data)} - R$ ${totalDia.toFixed(2).replace('.', ',')}</div>`;
             for (const item of itens) {
+                const isPendente = item._pendente === true;
+                const borderStyle = isPendente ? 'border-left: 3px solid #f59e0b;' : '';
                 html += `
-                    <div class="pwa-card" style="margin-bottom: 6px; padding: 10px; display: flex; justify-content: space-between; align-items: center;">
-                        <div style="font-size: 13px; color: #1f2937;">${escapeHtml(item.rubrica_nome || item.dv_gst_codigo || '-')}</div>
+                    <div class="pwa-card" style="margin-bottom: 6px; padding: 10px; display: flex; justify-content: space-between; align-items: center; ${borderStyle}">
+                        <div>
+                            <div style="font-size: 13px; color: #1f2937;">${escapeHtml(item.rubrica_nome || item.dv_gst_codigo || '-')}</div>
+                            ${isPendente ? '<div style="font-size:11px;color:#f59e0b;font-weight:600;margin-top:2px;">Pendente de envio</div>' : ''}
+                        </div>
                         <div style="font-weight: 600; color: #1f2937;">R$ ${(Number(item.dv_valor) || 0).toFixed(2).replace('.', ',')}</div>
                     </div>`;
             }
@@ -2648,7 +2969,15 @@
                     showSyncIndicator(true);
 
                     await syncService.sincronizarAgora();
+
+                    // Enviar despesas/documentos pendentes via app.js
+                    if (typeof window.app !== 'undefined') {
+                        if (typeof window.app.syncDespesasPendentes === 'function') await window.app.syncDespesasPendentes().catch(() => {});
+                        if (typeof window.app.syncDocumentosPendentes === 'function') await window.app.syncDocumentosPendentes().catch(() => {});
+                    }
+
                     await loadLocalData();
+                    loadPendingCountMais();
 
                     showSyncIndicator(false);
 
@@ -2658,7 +2987,6 @@
                     if (syncTimeEl) syncTimeEl.textContent = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
                     showToast('Sincronizado com sucesso');
-                    loadPendingCountMais();
                 } catch (e) {
                     showSyncIndicator(false);
                     if (syncLabel) syncLabel.textContent = 'Sincronizar agora';

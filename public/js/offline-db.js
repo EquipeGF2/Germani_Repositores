@@ -429,6 +429,59 @@ class OfflineDB {
     return await this.getAll('visitasNaoRealizadas');
   }
 
+  // ==================== PENDENTES PARA CONSULTA ====================
+
+  async getPendingSessions() {
+    try {
+      const all = await this.getAll('filaSessoes');
+      return all.filter(s => s.syncStatus === 'pending' || s.syncStatus === 'error');
+    } catch (_) { return []; }
+  }
+
+  async getPendingDespesas() {
+    try {
+      const meta = await this.getSyncMeta('pendingDespesas');
+      return Array.isArray(meta) ? meta : [];
+    } catch (_) { return []; }
+  }
+
+  async getPendingDocumentos() {
+    try {
+      const meta = await this.getSyncMeta('pendingDocumentos');
+      return Array.isArray(meta) ? meta : [];
+    } catch (_) { return []; }
+  }
+
+  // ==================== LIMPEZA IMEDIATA ====================
+
+  async limparSincronizadosImediatamente() {
+    let removidos = 0;
+    for (const storeName of ['filaSessoes', 'filaRegistros', 'filaFotos', 'filaRota', 'filaPesquisas', 'filaEspacos']) {
+      const todos = await this.getAll(storeName);
+      for (const item of todos) {
+        if (item.syncStatus === 'synced') {
+          await this.delete(storeName, item.localId);
+          removidos++;
+        }
+      }
+    }
+    // Limpar pendingDespesas e pendingDocumentos se vazios
+    try {
+      const despesas = await this.getSyncMeta('pendingDespesas');
+      if (Array.isArray(despesas) && despesas.length === 0) {
+        await this.delete('syncMeta', 'pendingDespesas');
+      }
+      const docs = await this.getSyncMeta('pendingDocumentos');
+      if (Array.isArray(docs) && docs.length === 0) {
+        await this.delete('syncMeta', 'pendingDocumentos');
+      }
+    } catch (_) {}
+    if (removidos > 0) {
+      console.log(`[OfflineDB] Limpeza imediata: ${removidos} itens synced removidos`);
+    }
+    return removidos;
+  }
+
   // ==================== SESSÕES RECENTES (CONSULTA VISITAS) ====================
 
   async salvarSessoesRecentes(sessoes) {
