@@ -669,21 +669,6 @@
             }
             setDailySyncStep(2, 'done');
 
-            // Passo 2b: Cache de dados para consultas offline (documentos, despesas, roteiros)
-            updateDailySyncStatus('Baixando dados para consultas...');
-            try {
-                const [docsRes, despesasRes, rotConsultaRes] = await Promise.all([
-                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/documentos-cache`, { headers }).then(r => r.json()).catch(e => { console.warn('[PWA] Erro sync docs-cache:', e.message); return { ok: false }; }),
-                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/despesas`, { headers }).then(r => r.json()).catch(e => { console.warn('[PWA] Erro sync despesas:', e.message); return { ok: false }; }),
-                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/roteiros-consulta`, { headers }).then(r => r.json()).catch(e => { console.warn('[PWA] Erro sync roteiros-consulta:', e.message); return { ok: false }; })
-                ]);
-                try { if (docsRes.ok) { await offlineDB.salvarDocumentosCache(docsRes.documentos || []); console.log(`[PWA Sync] Docs cache: ${docsRes.documentos?.length || 0} itens`); } } catch (e) { console.error('[PWA] Erro save docs-cache:', e.message); }
-                try { if (despesasRes.ok) { await offlineDB.salvarDespesas(despesasRes.despesas || []); console.log(`[PWA Sync] Despesas cache: ${despesasRes.despesas?.length || 0} itens`); } } catch (e) { console.error('[PWA] Erro save despesas:', e.message); }
-                try { if (rotConsultaRes.ok) { await offlineDB.salvarRoteirosConsulta(rotConsultaRes.roteiros || []); console.log(`[PWA Sync] Roteiros consulta: ${rotConsultaRes.roteiros?.length || 0} itens`); } } catch (e) { console.error('[PWA] Erro save roteiros-consulta:', e.message); }
-            } catch (e) {
-                console.warn('[PWA] Erro ao baixar dados consultas:', e);
-            }
-
             // Passo 3: Visitas recentes para consulta offline
             setDailySyncStep(3, 'active');
             updateDailySyncStatus('Baixando visitas recentes...');
@@ -850,6 +835,23 @@
             if (typeof app !== 'undefined' && typeof app.syncDespesasPendentes === 'function') {
                 app.syncDespesasPendentes().catch(e => console.warn('[PWA] Erro sync despesas offline:', e));
             }
+            // Cache de dados para consultas offline (background, não bloqueia o sync principal)
+            (async () => {
+                try {
+                    const [docsRes, despesasRes, rotConsultaRes] = await Promise.all([
+                        syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/documentos-cache`, { headers }, 15000)
+                            .then(r => r.json()).catch(() => ({ ok: false })),
+                        syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/despesas`, { headers }, 15000)
+                            .then(r => r.json()).catch(() => ({ ok: false })),
+                        syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/roteiros-consulta`, { headers }, 15000)
+                            .then(r => r.json()).catch(() => ({ ok: false }))
+                    ]);
+                    if (docsRes.ok) { await offlineDB.salvarDocumentosCache(docsRes.documentos || []); console.log(`[PWA Sync] Docs cache: ${docsRes.documentos?.length || 0} itens`); }
+                    if (despesasRes.ok) { await offlineDB.salvarDespesas(despesasRes.despesas || []); console.log(`[PWA Sync] Despesas cache: ${despesasRes.despesas?.length || 0} itens`); }
+                    if (rotConsultaRes.ok) { await offlineDB.salvarRoteirosConsulta(rotConsultaRes.roteiros || []); console.log(`[PWA Sync] Roteiros consulta: ${rotConsultaRes.roteiros?.length || 0} itens`); }
+                    console.log('[PWA] Cache consultas atualizado em background');
+                } catch (e) { console.warn('[PWA] Erro cache consultas:', e.message); }
+            })();
 
             setDailySyncStep(3, 'done');
             updateDailySyncStatus('Pronto!');
