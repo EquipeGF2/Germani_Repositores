@@ -294,11 +294,11 @@ class SyncService {
         visitasNRRes,
         sessoesRecentesRes
       ] = await Promise.all([
-        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/roteiro`, { headers }).then(r => r.json()),
-        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/clientes`, { headers }).then(r => r.json()),
-        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/coordenadas`, { headers }).then(r => r.json()),
-        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/tipos-documento`, { headers }).then(r => r.json()),
-        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/tipos-gasto`, { headers }).then(r => r.json()),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/roteiro`, { headers }).then(r => r.json()).catch(e => { console.warn('[SyncService] Erro roteiro:', e.message); return { ok: false }; }),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/clientes`, { headers }).then(r => r.json()).catch(e => { console.warn('[SyncService] Erro clientes:', e.message); return { ok: false }; }),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/coordenadas`, { headers }).then(r => r.json()).catch(e => { console.warn('[SyncService] Erro coordenadas:', e.message); return { ok: false }; }),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/tipos-documento`, { headers }).then(r => r.json()).catch(e => { console.warn('[SyncService] Erro tipos-documento:', e.message); return { ok: false }; }),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/tipos-gasto`, { headers }).then(r => r.json()).catch(e => { console.warn('[SyncService] Erro tipos-gasto:', e.message); return { ok: false }; }),
         this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/campanhas`, { headers }).then(r => r.json()).catch(e => { console.warn('[SyncService] Erro campanhas:', e.message); return { ok: false }; }),
         this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/documentos-cache`, { headers }).then(r => r.json()).catch(e => { console.warn('[SyncService] Erro documentos:', e.message); return { ok: false }; }),
         this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/despesas`, { headers }).then(r => r.json()).catch(e => { console.warn('[SyncService] Erro despesas:', e.message); return { ok: false }; }),
