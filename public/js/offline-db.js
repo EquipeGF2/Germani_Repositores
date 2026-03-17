@@ -6,7 +6,7 @@
 class OfflineDB {
   constructor() {
     this.dbName = 'GermaniPWA';
-    this.dbVersion = 3;
+    this.dbVersion = 4;
     this.db = null;
     this.MAX_RETRY_ATTEMPTS = 5;  // Limite de tentativas antes de marcar como dead_letter
   }
@@ -114,6 +114,38 @@ class OfflineDB {
         if (!db.objectStoreNames.contains('espacosClientes')) {
           const espacosClientes = db.createObjectStore('espacosClientes', { keyPath: 'clienteId' });
           espacosClientes.createIndex('updatedAt', 'updatedAt', { unique: false });
+        }
+
+        // ========== CACHES DE CONSULTA (v4) ==========
+
+        // Cache de campanhas (últimos 15 dias)
+        if (!db.objectStoreNames.contains('campanhasCache')) {
+          db.createObjectStore('campanhasCache', { keyPath: 'id' });
+        }
+
+        // Cache de documentos (últimos 15 dias)
+        if (!db.objectStoreNames.contains('documentosCache')) {
+          db.createObjectStore('documentosCache', { keyPath: 'doc_id' });
+        }
+
+        // Cache de despesas (mês corrente)
+        if (!db.objectStoreNames.contains('despesasCache')) {
+          db.createObjectStore('despesasCache', { keyPath: 'id' });
+        }
+
+        // Cache de roteiros vigentes para consulta
+        if (!db.objectStoreNames.contains('roteirosConsulta')) {
+          db.createObjectStore('roteirosConsulta', { keyPath: 'rot_cli_id' });
+        }
+
+        // Cache de pesquisas por cliente { clienteId: string, pesquisas: [] }
+        if (!db.objectStoreNames.contains('pesquisasClientes')) {
+          db.createObjectStore('pesquisasClientes', { keyPath: 'clienteId' });
+        }
+
+        // Cache de visitas não realizadas
+        if (!db.objectStoreNames.contains('visitasNaoRealizadas')) {
+          db.createObjectStore('visitasNaoRealizadas', { keyPath: 'id' });
         }
 
         // ========== METADADOS DE SINCRONIZAÇÃO ==========
@@ -312,6 +344,80 @@ class OfflineDB {
 
   async getTiposGasto() {
     return await this.getAll('tiposGasto');
+  }
+
+  // ==================== CACHES DE CONSULTA ====================
+
+  async salvarCampanhas(campanhas) {
+    await this.clear('campanhasCache');
+    for (const item of campanhas) {
+      await this.put('campanhasCache', item);
+    }
+  }
+
+  async getCampanhas() {
+    return await this.getAll('campanhasCache');
+  }
+
+  async salvarDocumentosCache(documentos) {
+    await this.clear('documentosCache');
+    for (const item of documentos) {
+      await this.put('documentosCache', item);
+    }
+  }
+
+  async getDocumentosCache() {
+    return await this.getAll('documentosCache');
+  }
+
+  async salvarDespesas(despesas) {
+    await this.clear('despesasCache');
+    for (const item of despesas) {
+      await this.put('despesasCache', item);
+    }
+  }
+
+  async getDespesas() {
+    return await this.getAll('despesasCache');
+  }
+
+  async salvarRoteirosConsulta(roteiros) {
+    await this.clear('roteirosConsulta');
+    for (const item of roteiros) {
+      await this.put('roteirosConsulta', item);
+    }
+  }
+
+  async getRoteirosConsulta() {
+    return await this.getAll('roteirosConsulta');
+  }
+
+  async salvarPesquisasClientes(clientesPesquisa) {
+    await this.clear('pesquisasClientes');
+    for (const [clienteId, pesquisas] of Object.entries(clientesPesquisa)) {
+      await this.put('pesquisasClientes', { clienteId, pesquisas });
+    }
+  }
+
+  async getPesquisasCliente(clienteId) {
+    const id = String(clienteId).trim().replace(/\.0$/, '');
+    const cached = await this.get('pesquisasClientes', id);
+    return cached?.pesquisas || null;
+  }
+
+  async getAllPesquisasClientes() {
+    return await this.getAll('pesquisasClientes');
+  }
+
+  async salvarVisitasNaoRealizadas(visitas) {
+    await this.clear('visitasNaoRealizadas');
+    for (const item of visitas) {
+      await this.put('visitasNaoRealizadas', item);
+    }
+  }
+
+  async getVisitasNaoRealizadas() {
+    return await this.getAll('visitasNaoRealizadas');
   }
 
   // ==================== FILA DE ENVIO ====================

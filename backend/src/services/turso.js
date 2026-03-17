@@ -4393,6 +4393,361 @@ class TursoService {
     }
   }
 
+  // ==================== NOVOS MÉTODOS SYNC PWA (campanhas, documentos, despesas, roteiros, pesquisas, espaços, visitas não realizadas) ====================
+
+  /**
+   * Buscar campanhas dos últimos N dias para o repositor (sync PWA)
+   */
+  async buscarCampanhasRepositor(repId, dias = 15) {
+    try {
+      const dataLimite = new Date();
+      dataLimite.setDate(dataLimite.getDate() - dias);
+      const dataLimiteStr = dataLimite.toISOString().split('T')[0];
+
+      const sql = `
+        SELECT
+          rv.rv_id as id,
+          rv.rep_id,
+          rv.cliente_id,
+          rv.rv_tipo as tipo,
+          rv.descricao,
+          rv.data_hora,
+          rv.rv_data_planejada as data_planejada,
+          rv.rv_cliente_nome as cliente_nome,
+          rv.rv_endereco_cliente as endereco_cliente,
+          s.checkin_at,
+          s.checkout_at
+        FROM cc_registro_visita rv
+        LEFT JOIN cc_visita_sessao s ON s.sessao_id = COALESCE(rv.rv_sessao_id, rv.sessao_id)
+        WHERE rv.rep_id = ?
+          AND lower(rv.rv_tipo) = 'campanha'
+          AND date(COALESCE(rv.rv_data_planejada, rv.data_hora)) >= date(?)
+        ORDER BY rv.data_hora DESC
+      `;
+      const result = await this.execute(sql, [repId, dataLimiteStr]);
+      return result?.rows || [];
+    } catch (error) {
+      console.error('[TursoService] Erro ao buscar campanhas:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Buscar documentos dos últimos N dias para o repositor (sync PWA)
+   */
+  async buscarDocumentosRepositor(repId, dias = 15) {
+    try {
+      const dataLimite = new Date();
+      dataLimite.setDate(dataLimite.getDate() - dias);
+      const dataLimiteStr = dataLimite.toISOString().split('T')[0];
+
+      const sql = `
+        SELECT
+          d.doc_id,
+          d.doc_repositor_id,
+          d.doc_dct_id,
+          d.doc_nome_original,
+          d.doc_data_ref,
+          d.doc_hora_ref,
+          d.doc_status,
+          d.doc_observacao,
+          d.doc_criado_em,
+          t.dct_nome as tipo_nome
+        FROM cc_documentos d
+        LEFT JOIN cc_documento_tipos t ON d.doc_dct_id = t.dct_id
+        WHERE d.doc_repositor_id = ?
+          AND d.doc_data_ref >= ?
+        ORDER BY d.doc_data_ref DESC, d.doc_hora_ref DESC
+      `;
+      const result = await this.execute(sql, [repId, dataLimiteStr]);
+      return result?.rows || [];
+    } catch (error) {
+      console.error('[TursoService] Erro ao buscar documentos:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Buscar despesas do mês corrente para o repositor (sync PWA)
+   */
+  async buscarDespesasRepositor(repId) {
+    try {
+      const hoje = new Date();
+      const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().split('T')[0];
+
+      const sql = `
+        SELECT
+          dv.dv_id as id,
+          dv.dv_doc_id,
+          dv.dv_repositor_id,
+          dv.dv_gst_id,
+          dv.dv_gst_codigo,
+          dv.dv_valor,
+          dv.dv_data_ref,
+          dv.dv_criado_em,
+          g.gst_nome as rubrica_nome
+        FROM cc_despesa_valores dv
+        LEFT JOIN cc_gasto_tipos g ON dv.dv_gst_id = g.gst_id
+        WHERE dv.dv_repositor_id = ?
+          AND dv.dv_data_ref >= ?
+        ORDER BY dv.dv_data_ref DESC
+      `;
+      const result = await this.execute(sql, [repId, primeiroDiaMes]);
+      return result?.rows || [];
+    } catch (error) {
+      console.error('[TursoService] Erro ao buscar despesas:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Buscar todos os roteiros vigentes do repositor para consulta (sync PWA)
+   */
+  async buscarRoteirosConsultaRepositor(repId) {
+    try {
+      const sql = `
+        SELECT
+          r.rot_id,
+          r.repo_cod,
+          r.rot_nome,
+          r.rot_ativo,
+          rcid.rot_cid_id,
+          rcid.dia_semana,
+          rcid.cidade,
+          rc.rot_cli_id,
+          rc.cli_codigo as cliente_id,
+          rc.ordem_visita,
+          rc.rateio,
+          rc.venda_centralizada
+        FROM cc_roteiro r
+        JOIN cc_roteiro_cidade rcid ON rcid.rot_id = r.rot_id
+        JOIN cc_roteiro_cliente rc ON rc.rot_cid_id = rcid.rot_cid_id
+        WHERE r.repo_cod = ?
+          AND r.rot_ativo = 1
+        ORDER BY rcid.dia_semana, rc.ordem_visita
+      `;
+      const result = await this.execute(sql, [repId]);
+      return result?.rows || [];
+    } catch (error) {
+      console.error('[TursoService] Erro ao buscar roteiros consulta:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Buscar pesquisas ativas vinculadas aos clientes do repositor (sync PWA)
+   * Retorna mapa { clienteId: [pesquisas] }
+   */
+  async buscarPesquisasClientesRepositor(repId) {
+    try {
+      const hoje = new Date().toISOString().split('T')[0];
+
+      // Buscar pesquisas vigentes vinculadas ao repositor
+      const sql = `
+        SELECT DISTINCT
+          p.pes_id,
+          p.pes_titulo,
+          p.pes_data_inicio,
+          p.pes_data_fim,
+          p.pes_tipo,
+          p.pes_ativa
+        FROM cc_pesquisas p
+        JOIN cc_pesquisa_repositores pr ON pr.per_pes_id = p.pes_id
+        WHERE pr.per_rep_id = ?
+          AND p.pes_ativa = 1
+          AND (p.pes_data_inicio IS NULL OR p.pes_data_inicio <= ?)
+          AND (p.pes_data_fim IS NULL OR p.pes_data_fim >= ?)
+      `;
+      const pesquisasResult = await this.execute(sql, [repId, hoje, hoje]);
+      const pesquisas = pesquisasResult?.rows || [];
+
+      if (pesquisas.length === 0) return { pesquisas: [], clientesPesquisa: {} };
+
+      // Para cada pesquisa, buscar os clientes vinculados
+      const clientesPesquisa = {};
+      for (const pesquisa of pesquisas) {
+        const clientesResult = await this.execute(
+          `SELECT pecl_cliente_codigo FROM cc_pesquisa_clientes WHERE pecl_pes_id = ?`,
+          [pesquisa.pes_id]
+        );
+        const clientesCodigos = (clientesResult?.rows || []).map(c => c.pecl_cliente_codigo);
+
+        for (const cliCod of clientesCodigos) {
+          const cliNorm = String(cliCod).trim().replace(/\.0$/, '');
+          if (!clientesPesquisa[cliNorm]) clientesPesquisa[cliNorm] = [];
+          clientesPesquisa[cliNorm].push({
+            pes_id: pesquisa.pes_id,
+            pes_titulo: pesquisa.pes_titulo,
+            pes_data_inicio: pesquisa.pes_data_inicio,
+            pes_data_fim: pesquisa.pes_data_fim
+          });
+        }
+
+        // Se a pesquisa não tem clientes específicos, aplicar a todos do roteiro
+        if (clientesCodigos.length === 0) {
+          const roteiro = await this.buscarRoteiroRepositor(repId);
+          for (const r of roteiro) {
+            const cliNorm = String(r.cliente_id).trim().replace(/\.0$/, '');
+            if (!clientesPesquisa[cliNorm]) clientesPesquisa[cliNorm] = [];
+            // Evitar duplicatas
+            if (!clientesPesquisa[cliNorm].some(p => p.pes_id === pesquisa.pes_id)) {
+              clientesPesquisa[cliNorm].push({
+                pes_id: pesquisa.pes_id,
+                pes_titulo: pesquisa.pes_titulo,
+                pes_data_inicio: pesquisa.pes_data_inicio,
+                pes_data_fim: pesquisa.pes_data_fim
+              });
+            }
+          }
+        }
+      }
+
+      // Buscar respostas já dadas hoje
+      const respondidas = await this.execute(
+        `SELECT DISTINCT res_pes_id, res_cliente_codigo FROM cc_pesquisa_respostas WHERE res_rep_id = ? AND res_data = ?`,
+        [repId, hoje]
+      );
+      const respondidasSet = new Set(
+        (respondidas?.rows || []).map(r => `${r.res_pes_id}_${String(r.res_cliente_codigo).trim().replace(/\.0$/, '')}`)
+      );
+
+      // Filtrar pesquisas já respondidas
+      for (const cliId of Object.keys(clientesPesquisa)) {
+        clientesPesquisa[cliId] = clientesPesquisa[cliId].filter(
+          p => !respondidasSet.has(`${p.pes_id}_${cliId}`)
+        );
+        if (clientesPesquisa[cliId].length === 0) delete clientesPesquisa[cliId];
+      }
+
+      return { pesquisas, clientesPesquisa };
+    } catch (error) {
+      console.error('[TursoService] Erro ao buscar pesquisas clientes:', error);
+      return { pesquisas: [], clientesPesquisa: {} };
+    }
+  }
+
+  /**
+   * Buscar clientes do repositor que possuem espaços cadastrados (sync PWA)
+   */
+  async buscarEspacosClientesRepositor(repId) {
+    try {
+      // Buscar clientes do roteiro
+      const roteiro = await this.buscarRoteiroRepositor(repId);
+      const clienteIds = [...new Set(roteiro.map(r => String(r.cliente_id).trim().replace(/\.0$/, '')))];
+
+      if (clienteIds.length === 0) return { clientesComEspaco: [], espacosPorCliente: {} };
+
+      const placeholders = clienteIds.map(() => '?').join(',');
+
+      // Quais clientes têm espaço ativo
+      const result = await this.execute(
+        `SELECT DISTINCT ces_cliente_id FROM cc_clientes_espacos WHERE ces_ativo = 1 AND ces_cliente_id IN (${placeholders})`,
+        clienteIds
+      );
+      const clientesComEspaco = (result?.rows || []).map(r => String(r.ces_cliente_id).trim().replace(/\.0$/, ''));
+
+      // Detalhes dos espaços por cliente
+      const espacosPorCliente = {};
+      if (clientesComEspaco.length > 0) {
+        const ph2 = clientesComEspaco.map(() => '?').join(',');
+        const detalhes = await this.execute(
+          `SELECT ces.ces_id, ces.ces_cliente_id, ces.ces_tipo_espaco_id, ces.ces_quantidade, ces.ces_cidade,
+                  esp.esp_nome as tipo_nome
+           FROM cc_clientes_espacos ces
+           LEFT JOIN cc_tipos_espaco esp ON ces.ces_tipo_espaco_id = esp.esp_id
+           WHERE ces.ces_ativo = 1 AND ces.ces_cliente_id IN (${ph2})`,
+          clientesComEspaco
+        );
+        for (const row of (detalhes?.rows || [])) {
+          const cliId = String(row.ces_cliente_id).trim().replace(/\.0$/, '');
+          if (!espacosPorCliente[cliId]) espacosPorCliente[cliId] = [];
+          espacosPorCliente[cliId].push(row);
+        }
+      }
+
+      return { clientesComEspaco, espacosPorCliente };
+    } catch (error) {
+      console.error('[TursoService] Erro ao buscar espaços clientes:', error);
+      return { clientesComEspaco: [], espacosPorCliente: {} };
+    }
+  }
+
+  /**
+   * Buscar visitas não realizadas nos últimos N dias (sync PWA)
+   */
+  async buscarVisitasNaoRealizadas(repId, dias = 2) {
+    try {
+      const hoje = new Date();
+      const dataLimite = new Date();
+      dataLimite.setDate(hoje.getDate() - dias);
+      const dataLimiteStr = dataLimite.toISOString().split('T')[0];
+      const hojeStr = hoje.toISOString().split('T')[0];
+
+      // Buscar roteiro do repositor
+      const roteiro = await this.buscarRoteiroRepositor(repId);
+      if (roteiro.length === 0) return [];
+
+      // Mapear dia da semana para clientes
+      const diasMap = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+      const clientesPorDia = {};
+      for (const r of roteiro) {
+        const dia = r.dia_semana;
+        if (!clientesPorDia[dia]) clientesPorDia[dia] = [];
+        clientesPorDia[dia].push(r);
+      }
+
+      // Para cada dia nos últimos N dias (exceto hoje), verificar clientes não visitados
+      const naoRealizadas = [];
+      for (let i = dias; i >= 1; i--) {
+        const dataAlvo = new Date(hoje);
+        dataAlvo.setDate(hoje.getDate() - i);
+        const dataStr = dataAlvo.toISOString().split('T')[0];
+        const diaSemana = diasMap[dataAlvo.getDay()];
+
+        const clientesDoDia = clientesPorDia[diaSemana] || [];
+        if (clientesDoDia.length === 0) continue;
+
+        const clienteIds = clientesDoDia.map(c => String(c.cliente_id).trim().replace(/\.0$/, ''));
+        const placeholders = clienteIds.map(() => '?').join(',');
+
+        // Buscar sessões existentes para esses clientes nesse dia
+        const sessoes = await this.execute(
+          `SELECT DISTINCT cliente_id FROM cc_visita_sessao
+           WHERE rep_id = ? AND date(COALESCE(data_planejada, checkin_at)) = ?
+             AND cliente_id IN (${placeholders})`,
+          [repId, dataStr, ...clienteIds]
+        );
+        const visitados = new Set((sessoes?.rows || []).map(s => String(s.cliente_id).trim().replace(/\.0$/, '')));
+
+        // Buscar não-atendimentos registrados
+        const naResult = await this.execute(
+          `SELECT na_cliente_id FROM cc_nao_atendimento WHERE na_repositor_id = ? AND na_data_visita = ?`,
+          [repId, dataStr]
+        );
+        const naoAtendidos = new Set((naResult?.rows || []).map(n => String(n.na_cliente_id).trim().replace(/\.0$/, '')));
+
+        for (const cliente of clientesDoDia) {
+          const cliId = String(cliente.cliente_id).trim().replace(/\.0$/, '');
+          if (!visitados.has(cliId) && !naoAtendidos.has(cliId)) {
+            naoRealizadas.push({
+              id: `${dataStr}_${cliId}`,
+              data_visita: dataStr,
+              dia_semana: diaSemana,
+              cliente_id: cliId,
+              cidade: cliente.cidade || '',
+              ordem_visita: cliente.ordem_visita
+            });
+          }
+        }
+      }
+
+      return naoRealizadas;
+    } catch (error) {
+      console.error('[TursoService] Erro ao buscar visitas não realizadas:', error);
+      return [];
+    }
+  }
+
   /**
    * Criar registro de visita (para sync PWA offline)
    */

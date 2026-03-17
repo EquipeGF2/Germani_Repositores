@@ -171,6 +171,130 @@ router.get('/tipos-gasto', async (req, res) => {
   }
 });
 
+// ==================== NOVOS DOWNLOADS SYNC PWA ====================
+
+/**
+ * GET /api/sync/campanhas - Campanhas dos últimos 15 dias
+ */
+router.get('/campanhas', async (req, res) => {
+  try {
+    const repId = req.user.rep_id;
+    if (!repId) return res.status(400).json({ ok: false, message: 'Usuário não vinculado a um repositor' });
+
+    const dias = parseInt(req.query.dias) || 15;
+    const campanhas = await tursoService.buscarCampanhasRepositor(repId, dias);
+
+    return res.json({ ok: true, campanhas: campanhas || [] });
+  } catch (error) {
+    console.error('[Sync] Erro ao buscar campanhas:', error);
+    return res.status(500).json({ ok: false, message: 'Erro ao buscar campanhas' });
+  }
+});
+
+/**
+ * GET /api/sync/documentos-cache - Documentos dos últimos 15 dias
+ */
+router.get('/documentos-cache', async (req, res) => {
+  try {
+    const repId = req.user.rep_id;
+    if (!repId) return res.status(400).json({ ok: false, message: 'Usuário não vinculado a um repositor' });
+
+    const dias = parseInt(req.query.dias) || 15;
+    const documentos = await tursoService.buscarDocumentosRepositor(repId, dias);
+
+    return res.json({ ok: true, documentos: documentos || [] });
+  } catch (error) {
+    console.error('[Sync] Erro ao buscar documentos:', error);
+    return res.status(500).json({ ok: false, message: 'Erro ao buscar documentos' });
+  }
+});
+
+/**
+ * GET /api/sync/despesas - Despesas do mês corrente
+ */
+router.get('/despesas', async (req, res) => {
+  try {
+    const repId = req.user.rep_id;
+    if (!repId) return res.status(400).json({ ok: false, message: 'Usuário não vinculado a um repositor' });
+
+    const despesas = await tursoService.buscarDespesasRepositor(repId);
+
+    return res.json({ ok: true, despesas: despesas || [] });
+  } catch (error) {
+    console.error('[Sync] Erro ao buscar despesas:', error);
+    return res.status(500).json({ ok: false, message: 'Erro ao buscar despesas' });
+  }
+});
+
+/**
+ * GET /api/sync/roteiros-consulta - Todos os roteiros vigentes
+ */
+router.get('/roteiros-consulta', async (req, res) => {
+  try {
+    const repId = req.user.rep_id;
+    if (!repId) return res.status(400).json({ ok: false, message: 'Usuário não vinculado a um repositor' });
+
+    const roteiros = await tursoService.buscarRoteirosConsultaRepositor(repId);
+
+    return res.json({ ok: true, roteiros: roteiros || [] });
+  } catch (error) {
+    console.error('[Sync] Erro ao buscar roteiros consulta:', error);
+    return res.status(500).json({ ok: false, message: 'Erro ao buscar roteiros' });
+  }
+});
+
+/**
+ * GET /api/sync/pesquisas-clientes - Pesquisas ativas por cliente
+ */
+router.get('/pesquisas-clientes', async (req, res) => {
+  try {
+    const repId = req.user.rep_id;
+    if (!repId) return res.status(400).json({ ok: false, message: 'Usuário não vinculado a um repositor' });
+
+    const resultado = await tursoService.buscarPesquisasClientesRepositor(repId);
+
+    return res.json({ ok: true, ...resultado });
+  } catch (error) {
+    console.error('[Sync] Erro ao buscar pesquisas clientes:', error);
+    return res.status(500).json({ ok: false, message: 'Erro ao buscar pesquisas' });
+  }
+});
+
+/**
+ * GET /api/sync/espacos-clientes - Clientes com espaços cadastrados
+ */
+router.get('/espacos-clientes', async (req, res) => {
+  try {
+    const repId = req.user.rep_id;
+    if (!repId) return res.status(400).json({ ok: false, message: 'Usuário não vinculado a um repositor' });
+
+    const resultado = await tursoService.buscarEspacosClientesRepositor(repId);
+
+    return res.json({ ok: true, ...resultado });
+  } catch (error) {
+    console.error('[Sync] Erro ao buscar espaços clientes:', error);
+    return res.status(500).json({ ok: false, message: 'Erro ao buscar espaços' });
+  }
+});
+
+/**
+ * GET /api/sync/visitas-nao-realizadas - Visitas não realizadas nos últimos 2 dias
+ */
+router.get('/visitas-nao-realizadas', async (req, res) => {
+  try {
+    const repId = req.user.rep_id;
+    if (!repId) return res.status(400).json({ ok: false, message: 'Usuário não vinculado a um repositor' });
+
+    const dias = parseInt(req.query.dias) || 2;
+    const naoRealizadas = await tursoService.buscarVisitasNaoRealizadas(repId, dias);
+
+    return res.json({ ok: true, naoRealizadas: naoRealizadas || [] });
+  } catch (error) {
+    console.error('[Sync] Erro ao buscar visitas não realizadas:', error);
+    return res.status(500).json({ ok: false, message: 'Erro ao buscar visitas não realizadas' });
+  }
+});
+
 // ==================== UPLOAD DE DADOS ====================
 
 /**
