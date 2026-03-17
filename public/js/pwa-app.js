@@ -448,7 +448,7 @@
     let middaySyncDone = false;
 
     function setupMiddaySilentSync() {
-        // Verificar a cada minuto se estamos na janela 11:30-13:30
+        // Verificar a cada minuto se estamos na janela 12:00-13:30
         middaySyncInterval = setInterval(checkMiddaySync, 60 * 1000);
         // Verificar imediatamente também
         checkMiddaySync();
@@ -456,7 +456,6 @@
 
     async function checkMiddaySync() {
         if (middaySyncDone) return;
-        if (!navigator.onLine) return;
 
         const agora = new Date();
         // Usar horário de São Paulo
@@ -464,17 +463,54 @@
             timeZone: 'America/Sao_Paulo',
             hour: '2-digit', minute: '2-digit', hour12: false
         });
+        const dayFormatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/Sao_Paulo',
+            weekday: 'short'
+        });
         const parts = formatter.formatToParts(agora);
         const hora = parseInt(parts.find(p => p.type === 'hour').value);
         const minuto = parseInt(parts.find(p => p.type === 'minute').value);
         const totalMinutos = hora * 60 + minuto;
 
-        // Janela: 11:30 (690min) até 13:30 (810min)
-        if (totalMinutos < 690 || totalMinutos > 810) return;
+        // Janela: 12:00 (720min) até 13:30 (810min)
+        if (totalMinutos < 720 || totalMinutos > 810) return;
 
-        // Verificar se já se passaram 15 minutos desde a última tentativa
+        // Verificar se é dia útil (seg-sex)
+        const diaSemana = dayFormatter.format(agora);
+        const diasUteis = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+        if (!diasUteis.includes(diaSemana)) return;
+
+        // Verificar se o repositor possui agenda de visita hoje
+        try {
+            const diasMap = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+            const spFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', weekday: 'long' });
+            const dayIndex = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+                .indexOf(spFormatter.format(agora));
+            const diaHoje = diasMap[dayIndex >= 0 ? dayIndex : agora.getDay()];
+
+            const repIdSync = typeof authManager !== 'undefined' ? authManager.getRepId?.() : null;
+            if (repIdSync) {
+                const cacheKeyRoteiro = `roteiro_completo_${repIdSync}_${diaHoje}`;
+                const cachedRoteiro = localStorage.getItem(cacheKeyRoteiro);
+                if (!cachedRoteiro) {
+                    // Sem roteiro hoje - não precisa sync
+                    return;
+                }
+                const parsed = JSON.parse(cachedRoteiro);
+                const roteiro = parsed.roteiro || parsed;
+                if (!roteiro || roteiro.length === 0) return;
+            }
+        } catch (_) {}
+
+        // Verificar conexão (a cada 15 minutos)
         const ultimaTentativa = parseInt(localStorage.getItem('pwa_midday_sync_last') || '0');
         if (Date.now() - ultimaTentativa < 15 * 60 * 1000) return;
+
+        // Sem conexão? Registrar tentativa e sair
+        if (!navigator.onLine) {
+            localStorage.setItem('pwa_midday_sync_last', String(Date.now()));
+            return;
+        }
 
         // Verificar se já fez sync de meio-dia hoje
         const hojeBR = getHojeBR();
@@ -496,10 +532,14 @@
             const repId = typeof authManager !== 'undefined' ? authManager.getRepId?.() : null;
             if (!repId) return;
 
-            // Sync silencioso: atualizar dados essenciais sem bloquear UI
             const hojePesq = new Date().toISOString().split('T')[0];
 
-            // 1. Atualizar resumo de visitas de hoje (reflete visitas já feitas)
+            // 1. Sync completo em background via syncService (baixa todos os dados)
+            if (typeof syncService !== 'undefined') {
+                await syncService.sincronizarDownload().catch(e => console.warn('[PWA] Erro sync download meio-dia:', e));
+            }
+
+            // 2. Atualizar resumo de visitas de hoje
             try {
                 const resumoRes = await syncService.fetchWithTimeout(
                     `${API_BASE_URL}/api/registro-rota/visitas?rep_id=${repId}&data_inicio=${hojePesq}&data_fim=${hojePesq}&modo=resumo`,
@@ -511,7 +551,7 @@
                 }
             } catch (_) {}
 
-            // 2. Atualizar atendimentos abertos
+            // 3. Atualizar atendimentos abertos
             try {
                 const abertosRes = await syncService.fetchWithTimeout(
                     `${API_BASE_URL}/api/registro-rota/atendimentos-abertos?repositor_id=${repId}`,
@@ -521,7 +561,7 @@
                 localStorage.setItem(`atendimentos_abertos_${repId}`, JSON.stringify(abertos));
             } catch (_) {}
 
-            // 3. Enviar pendentes
+            // 4. Enviar pendentes
             if (typeof syncService !== 'undefined') {
                 await syncService.enviarPendentes().catch(() => {});
             }
@@ -745,85 +785,30 @@
 
             updateDailySyncStatus('Carregando pesquisas e espaços...');
 
-            // Pré-cachear pesquisas pendentes para hoje (usa Turso via db)
+            // Pesquisas e espaços agora são baixados automaticamente pelo syncService.sincronizarDownload()
+            // que já salva em IndexedDB (pesquisasClientes, espacosClientes)
+            // Manter compatibilidade com localStorage para código legado
             try {
                 const repIdPesq = typeof authManager !== 'undefined' ? authManager.getRepId?.() : null;
-                if (repIdPesq && typeof db !== 'undefined') {
+                if (repIdPesq && typeof offlineDB !== 'undefined') {
                     const hojePesq = new Date().toISOString().split('T')[0];
-                    const diasMap = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
-                    const diaHoje = diasMap[new Date().getDay()];
-                    const cacheKeyRoteiro = `roteiro_completo_${repIdPesq}_${diaHoje}`;
-                    let roteiroHoje = null;
-                    try {
-                        const cached = localStorage.getItem(cacheKeyRoteiro);
-                        if (cached) {
-                            const parsed = JSON.parse(cached);
-                            roteiroHoje = parsed.roteiro || parsed;
-                        }
-                    } catch (_) {}
-                    if (!roteiroHoje) {
-                        try { roteiroHoje = await db.carregarRoteiroRepositorDia(repIdPesq, diaHoje); } catch (_) {}
-                    }
-
-                    if (roteiroHoje && roteiroHoje.length > 0) {
+                    // Ler pesquisas do IndexedDB (já foram salvas pelo syncService)
+                    const pesquisasClientes = await offlineDB.getAllPesquisasClientes();
+                    if (pesquisasClientes && pesquisasClientes.length > 0) {
                         const pesquisasCache = {};
-                        const clienteIdsEspacos = [];
-
-                        for (const cliente of roteiroHoje) {
-                            const cliId = String(cliente.cli_codigo || '').trim().replace(/\.0$/, '');
-                            clienteIdsEspacos.push(cliId);
-                            try {
-                                const [pesquisas, respondidas] = await Promise.all([
-                                    db.getPesquisasPendentesRepositor(repIdPesq, cliId),
-                                    db.getPesquisasRespondidas(repIdPesq, cliId, hojePesq)
-                                ]);
-                                const pendentes = pesquisas.filter(p => {
-                                    if (p.pes_data_inicio && p.pes_data_inicio > hojePesq) return false;
-                                    if (p.pes_data_fim && p.pes_data_fim < hojePesq) return false;
-                                    return !respondidas.has(p.pes_id);
-                                });
-                                if (pendentes.length > 0) {
-                                    pesquisasCache[cliId] = pendentes;
-                                }
-                            } catch (_) {}
+                        for (const item of pesquisasClientes) {
+                            if (item.pesquisas && item.pesquisas.length > 0) {
+                                pesquisasCache[item.clienteId] = item.pesquisas;
+                            }
                         }
-
-                        // Salvar pesquisas no cache
+                        // Salvar também no localStorage para compatibilidade com código legado
                         const pesqCacheKey = `pesquisas_cache_${repIdPesq}_${hojePesq}`;
                         localStorage.setItem(pesqCacheKey, JSON.stringify({ timestamp: Date.now(), data: pesquisasCache }));
-                        console.log(`[Sync] Pesquisas cacheadas para ${Object.keys(pesquisasCache).length} clientes`);
-
-                        // Pré-cachear espaços: quais clientes têm espaços cadastrados
-                        if (clienteIdsEspacos.length > 0) {
-                            try {
-                                const espacosRes = await syncService.fetchWithTimeout(
-                                    `${API_BASE_URL}/api/espacos/clientes-com-espaco?clientes=${clienteIdsEspacos.join(',')}`,
-                                    { headers }
-                                ).then(r => r.ok ? r.json() : null);
-                                if (espacosRes?.ok && espacosRes.data) {
-                                    const lista = espacosRes.data.map(c => String(c).trim().replace(/\.0$/, ''));
-                                    localStorage.setItem(`espacos_clientes_${repIdPesq}`, JSON.stringify(lista));
-                                    console.log(`[Sync] Espaços cacheados: ${lista.length} clientes com espaços`);
-
-                                    // Pré-cachear espaços pendentes de cada cliente
-                                    for (const cliId of lista) {
-                                        try {
-                                            const espRes = await syncService.fetchWithTimeout(
-                                                `${API_BASE_URL}/api/espacos/pendentes?repositor_id=${repIdPesq}&cliente_id=${cliId}&data=${hojePesq}`,
-                                                { headers }
-                                            ).then(r => r.ok ? r.json() : null);
-                                            if (espRes?.ok && espRes.data && typeof offlineDB !== 'undefined') {
-                                                await offlineDB.salvarEspacosCliente(cliId, espRes.data);
-                                            }
-                                        } catch (_) {}
-                                    }
-                                }
-                            } catch (_) {}
-                        }
+                        console.log(`[Sync] Pesquisas: ${Object.keys(pesquisasCache).length} clientes com pesquisas pendentes`);
                     }
                 }
             } catch (e) {
-                console.warn('[PWA] Erro ao pré-cachear pesquisas/espaços:', e);
+                console.warn('[PWA] Erro ao processar pesquisas/espaços do cache:', e);
             }
 
             updateDailySyncStatus('Carregando dados para navegação...');
@@ -1490,11 +1475,19 @@
         `;
 
         const container = document.getElementById('pwaConsultaContent');
+
+        // Tentar renderizar do cache primeiro (instantâneo)
+        const cacheableConsultas = ['consulta-campanha', 'consulta-roteiro', 'consulta-documentos', 'consulta-despesas'];
+        if (cacheableConsultas.includes(consultaId) && typeof offlineDB !== 'undefined') {
+            renderConsultaFromCache(consultaId, container);
+            return;
+        }
+
+        // Para consulta-visitas e outras, usar lógica original
         if (typeof window.app !== 'undefined' && window.app.navigateTo) {
             window.app.navigateTo(consultaId, {}, { replaceHistory: true, pwaMode: true, pwaContainer: container });
 
             setTimeout(() => {
-                // Auto-preencher repId nos selects de consulta em modo PWA
                 const repId = typeof authManager !== 'undefined' ? String(authManager.getRepId?.() || '') : '';
                 if (repId) {
                     container.querySelectorAll('select[id*="Repositor"], select[id*="repositor"]').forEach(sel => {
@@ -1513,6 +1506,213 @@
         } else {
             container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Carregando...</div></div>';
         }
+    }
+
+    // ==================== CONSULTAS DO CACHE (offline-first) ====================
+
+    // Limites de cache por tipo de consulta (em dias)
+    const CACHE_LIMITS = {
+        'consulta-campanha': 15,
+        'consulta-documentos': 15,
+        'consulta-despesas': 'mes_corrente',
+        'consulta-roteiro': null // Sem limite - todos os vigentes
+    };
+
+    async function renderConsultaFromCache(consultaId, container) {
+        try {
+            let dados = [];
+            switch (consultaId) {
+                case 'consulta-campanha':
+                    dados = await offlineDB.getCampanhas();
+                    renderCampanhasInline(dados, container);
+                    break;
+                case 'consulta-roteiro':
+                    dados = await offlineDB.getRoteirosConsulta();
+                    renderRoteirosInline(dados, container);
+                    break;
+                case 'consulta-documentos':
+                    dados = await offlineDB.getDocumentosCache();
+                    renderDocumentosInline(dados, container);
+                    break;
+                case 'consulta-despesas':
+                    dados = await offlineDB.getDespesas();
+                    renderDespesasInline(dados, container);
+                    break;
+            }
+        } catch (e) {
+            console.error('[PWA] Erro ao renderizar consulta do cache:', e);
+            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Erro ao carregar dados</div></div>';
+        }
+    }
+
+    /**
+     * Verifica se o período solicitado excede o cache e busca da API se online
+     */
+    async function buscarDadosConsultaComFallback(tipo, dataInicio, dataFim) {
+        const limite = CACHE_LIMITS[tipo];
+        let limiteCacheDate;
+
+        if (limite === 'mes_corrente') {
+            const hoje = new Date();
+            limiteCacheDate = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().split('T')[0];
+        } else if (limite === null) {
+            return null; // Sempre do cache
+        } else {
+            const d = new Date();
+            d.setDate(d.getDate() - limite);
+            limiteCacheDate = d.toISOString().split('T')[0];
+        }
+
+        // Se período dentro do cache, retornar null (usar cache)
+        if (!dataInicio || dataInicio >= limiteCacheDate) return null;
+
+        // Período excede cache - buscar da API se online
+        if (!navigator.onLine) {
+            return { fromCache: true, aviso: 'Dados limitados ao cache offline. Conecte-se para consultar per\u00edodos mais antigos.' };
+        }
+
+        // Buscar da API
+        const token = localStorage.getItem('auth_token');
+        const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+        const repId = typeof authManager !== 'undefined' ? authManager.getRepId?.() : null;
+
+        try {
+            let url;
+            switch (tipo) {
+                case 'consulta-campanha':
+                    url = `${API_BASE_URL}/api/sync/campanhas?dias=${Math.ceil((new Date() - new Date(dataInicio)) / 86400000)}`;
+                    break;
+                case 'consulta-documentos':
+                    url = `${API_BASE_URL}/api/sync/documentos-cache?dias=${Math.ceil((new Date() - new Date(dataInicio)) / 86400000)}`;
+                    break;
+                case 'consulta-despesas':
+                    url = `${API_BASE_URL}/api/sync/despesas`;
+                    break;
+            }
+            if (url) {
+                const res = await syncService.fetchWithTimeout(url, { headers }).then(r => r.json());
+                if (res.ok) return { fromAPI: true, dados: res };
+            }
+        } catch (e) {
+            console.warn('[PWA] Erro no fallback API consulta:', e);
+        }
+        return null;
+    }
+
+    function formatarData(dataStr) {
+        if (!dataStr) return '-';
+        try {
+            const parts = dataStr.split('-');
+            if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        } catch (_) {}
+        return dataStr;
+    }
+
+    function renderCampanhasInline(dados, container) {
+        if (!dados || dados.length === 0) {
+            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhuma campanha nos \u00faltimos 15 dias</div></div>';
+            return;
+        }
+        let html = '<div class="pwa-consulta-list">';
+        for (const item of dados) {
+            const data = formatarData(item.data_planejada || (item.data_hora ? item.data_hora.split('T')[0] : ''));
+            html += `
+                <div class="pwa-card" style="margin-bottom: 8px; padding: 12px;">
+                    <div style="font-weight: 600; color: #1f2937; font-size: 14px;">${escapeHtml(item.cliente_nome || item.cliente_id || '-')}</div>
+                    <div style="font-size: 13px; color: #6b7280; margin-top: 4px;">Data: ${data}</div>
+                    ${item.descricao ? `<div style="font-size: 13px; color: #374151; margin-top: 4px;">${escapeHtml(item.descricao)}</div>` : ''}
+                </div>`;
+        }
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    function renderRoteirosInline(dados, container) {
+        if (!dados || dados.length === 0) {
+            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhum roteiro vigente</div></div>';
+            return;
+        }
+        // Agrupar por dia da semana
+        const porDia = {};
+        const diasLabel = { dom: 'Domingo', seg: 'Segunda', ter: 'Ter\u00e7a', qua: 'Quarta', qui: 'Quinta', sex: 'Sexta', sab: 'S\u00e1bado' };
+        for (const item of dados) {
+            const dia = item.dia_semana || 'outro';
+            if (!porDia[dia]) porDia[dia] = [];
+            porDia[dia].push(item);
+        }
+        let html = '<div class="pwa-consulta-list">';
+        for (const [dia, clientes] of Object.entries(porDia)) {
+            html += `<div style="font-weight: 700; color: #ef4444; margin: 12px 0 8px; font-size: 15px;">${diasLabel[dia] || dia} (${clientes.length} clientes)</div>`;
+            for (const c of clientes) {
+                html += `
+                    <div class="pwa-card" style="margin-bottom: 6px; padding: 10px;">
+                        <div style="font-weight: 600; font-size: 13px;">${escapeHtml(String(c.cliente_id || ''))} - ${escapeHtml(c.cidade || '')}</div>
+                        <div style="font-size: 12px; color: #6b7280;">Ordem: ${c.ordem_visita || '-'}</div>
+                    </div>`;
+            }
+        }
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    function renderDocumentosInline(dados, container) {
+        if (!dados || dados.length === 0) {
+            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhum documento nos \u00faltimos 15 dias</div></div>';
+            return;
+        }
+        let html = '<div class="pwa-consulta-list">';
+        for (const doc of dados) {
+            const data = formatarData(doc.doc_data_ref);
+            const statusColor = doc.doc_status === 'ENVIADO' ? '#10b981' : '#f59e0b';
+            html += `
+                <div class="pwa-card" style="margin-bottom: 8px; padding: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div style="font-weight: 600; font-size: 14px; color: #1f2937;">${escapeHtml(doc.tipo_nome || 'Documento')}</div>
+                        <span style="font-size: 11px; padding: 2px 8px; border-radius: 12px; background: ${statusColor}20; color: ${statusColor};">${doc.doc_status || '-'}</span>
+                    </div>
+                    <div style="font-size: 13px; color: #6b7280; margin-top: 4px;">Data: ${data} ${doc.doc_hora_ref || ''}</div>
+                    <div style="font-size: 12px; color: #9ca3af; margin-top: 2px;">${escapeHtml(doc.doc_nome_original || '')}</div>
+                    ${doc.doc_observacao ? `<div style="font-size: 12px; color: #374151; margin-top: 4px;">${escapeHtml(doc.doc_observacao)}</div>` : ''}
+                </div>`;
+        }
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    function renderDespesasInline(dados, container) {
+        if (!dados || dados.length === 0) {
+            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhuma despesa no m\u00eas corrente</div></div>';
+            return;
+        }
+        // Agrupar por data
+        const porData = {};
+        let totalGeral = 0;
+        for (const d of dados) {
+            const data = d.dv_data_ref || 'sem-data';
+            if (!porData[data]) porData[data] = [];
+            porData[data].push(d);
+            totalGeral += Number(d.dv_valor) || 0;
+        }
+        let html = `<div class="pwa-consulta-list">
+            <div style="background: #fef3c7; padding: 12px; border-radius: 8px; margin-bottom: 12px; text-align: center;">
+                <div style="font-size: 13px; color: #92400e;">Total do m\u00eas</div>
+                <div style="font-size: 20px; font-weight: 700; color: #78350f;">R$ ${totalGeral.toFixed(2).replace('.', ',')}</div>
+            </div>`;
+        const datasOrdenadas = Object.keys(porData).sort().reverse();
+        for (const data of datasOrdenadas) {
+            const itens = porData[data];
+            const totalDia = itens.reduce((s, i) => s + (Number(i.dv_valor) || 0), 0);
+            html += `<div style="font-weight: 600; color: #374151; margin: 12px 0 6px; font-size: 14px;">${formatarData(data)} - R$ ${totalDia.toFixed(2).replace('.', ',')}</div>`;
+            for (const item of itens) {
+                html += `
+                    <div class="pwa-card" style="margin-bottom: 6px; padding: 10px; display: flex; justify-content: space-between; align-items: center;">
+                        <div style="font-size: 13px; color: #1f2937;">${escapeHtml(item.rubrica_nome || item.dv_gst_codigo || '-')}</div>
+                        <div style="font-weight: 600; color: #1f2937;">R$ ${(Number(item.dv_valor) || 0).toFixed(2).replace('.', ',')}</div>
+                    </div>`;
+            }
+        }
+        html += '</div>';
+        container.innerHTML = html;
     }
 
     function ajustarFiltrosPWA(container) {
@@ -2075,13 +2275,32 @@
 
     /**
      * Verifica se há pesquisas pendentes para o cliente e mostra/esconde botão Pesquisa.
-     * Usa o mapa já calculado pelo app.js após checkin ou faz busca leve.
+     * Prioridade: IndexedDB cache (offline-first) > mapa app.js > fallback API
      */
     function _verificarPesquisaAtendimento(clienteId, repId, dataVisita) {
         const normalizeId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
         const cliNorm = normalizeId(clienteId);
 
-        // 1. Verificar o mapa já existente no app.js (populado pelo verificarPesquisasAposCheckin)
+        // 1. Verificar cache IndexedDB (offline-first, preenchido pela sync diária)
+        if (typeof offlineDB !== 'undefined') {
+            offlineDB.getPesquisasCliente(cliNorm)
+                .then(pesquisas => {
+                    if (pesquisas !== null) {
+                        // Cache encontrado - decisão definitiva
+                        _mostrarBotaoPesquisa(pesquisas.length > 0);
+                        return;
+                    }
+                    // Sem dados no cache deste cliente - verificar mapa do app.js
+                    _verificarPesquisaFallback(cliNorm, repId, dataVisita);
+                })
+                .catch(() => _verificarPesquisaFallback(cliNorm, repId, dataVisita));
+        } else {
+            _verificarPesquisaFallback(cliNorm, repId, dataVisita);
+        }
+    }
+
+    function _verificarPesquisaFallback(cliNorm, repId, dataVisita) {
+        // Verificar o mapa já existente no app.js
         const mapa = window.app?.registroRotaState?.pesquisasPendentesMap;
         if (mapa) {
             const pendentes = mapa.get(cliNorm) || [];
@@ -2089,21 +2308,14 @@
                 _mostrarBotaoPesquisa(true);
                 return;
             }
-            // Se o mapa tem a chave mas está vazia, não há pesquisas
             if (mapa.has(cliNorm)) {
                 _mostrarBotaoPesquisa(false);
                 return;
             }
         }
 
-        // 2. Se não há mapa, fazer busca em background
-        if (typeof window.app?.buscarPesquisasPendentes === 'function' && navigator.onLine) {
-            window.app.buscarPesquisasPendentes(repId, cliNorm, dataVisita, false)
-                .then(pesquisas => _mostrarBotaoPesquisa(pesquisas && pesquisas.length > 0))
-                .catch(() => _mostrarBotaoPesquisa(false));
-        } else {
-            _mostrarBotaoPesquisa(false);
-        }
+        // Sem dados em cache nem mapa - esconder botão (não fazer busca remota)
+        _mostrarBotaoPesquisa(false);
     }
 
     function _mostrarBotaoPesquisa(mostrar) {
@@ -2116,35 +2328,15 @@
         }
     }
 
-    /** Verifica se o cliente tem espaços cadastrados e mostra/esconde botão Espaços */
+    /** Verifica se o cliente tem espaços cadastrados e mostra/esconde botão Espaços.
+     *  Prioridade: IndexedDB cache (offline-first) > localStorage > set app.js
+     *  Sem fallback para servidor - dados vêm da sync diária.
+     */
     function _verificarEspacoAtendimento(clienteId) {
         const normalizeId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
         const cliNorm = normalizeId(clienteId);
 
-        // 1. Verificar set já carregado (instantâneo) - só usar se já foi preenchido (size > 0)
-        const clientesComEspaco = window.app?.registroRotaState?.clientesComEspaco;
-        if (clientesComEspaco && clientesComEspaco.size > 0) {
-            _mostrarBotaoEspacos(clientesComEspaco.has(cliNorm));
-            return;
-        }
-
-        // 2. Verificar cache localStorage (instantâneo)
-        try {
-            const repId = window.app?.registroRotaState?.repositorSelecionado ||
-                          window.app?.registroRotaState?._cacheRepId;
-            if (repId) {
-                const cachedEspacos = localStorage.getItem(`espacos_clientes_${repId}`);
-                if (cachedEspacos) {
-                    const lista = JSON.parse(cachedEspacos);
-                    if (lista.includes(cliNorm)) {
-                        _mostrarBotaoEspacos(true);
-                        return;
-                    }
-                }
-            }
-        } catch (_) {}
-
-        // 3. Verificar cache IndexedDB (rápido, offline-first)
+        // 1. Verificar cache IndexedDB (offline-first, preenchido pela sync diária)
         if (typeof offlineDB !== 'undefined') {
             offlineDB.getEspacosCliente(cliNorm)
                 .then(cached => {
@@ -2152,23 +2344,40 @@
                         _mostrarBotaoEspacos(true);
                         return;
                     }
-                    // 4. Fallback: buscar do servidor se online
-                    _verificarEspacoServidor(cliNorm);
+                    // Fallback para localStorage
+                    _verificarEspacoLocalStorage(cliNorm);
                 })
-                .catch(() => _verificarEspacoServidor(cliNorm));
+                .catch(() => _verificarEspacoLocalStorage(cliNorm));
         } else {
-            _verificarEspacoServidor(cliNorm);
+            _verificarEspacoLocalStorage(cliNorm);
         }
     }
 
-    function _verificarEspacoServidor(cliNorm) {
-        if (navigator.onLine && typeof window.app?.verificarEspacosPendentes === 'function') {
-            const ctx = currentAtendimentoContext;
-            if (!ctx) return;
-            window.app.verificarEspacosPendentes(ctx.repId, cliNorm)
-                .then(res => _mostrarBotaoEspacos(res?.temEspacos === true))
-                .catch(() => _mostrarBotaoEspacos(false));
+    function _verificarEspacoLocalStorage(cliNorm) {
+        // Verificar cache localStorage (instantâneo)
+        try {
+            const repId = typeof authManager !== 'undefined' ? authManager.getRepId?.() :
+                          (window.app?.registroRotaState?.repositorSelecionado ||
+                           window.app?.registroRotaState?._cacheRepId);
+            if (repId) {
+                const cachedEspacos = localStorage.getItem(`espacos_clientes_${repId}`);
+                if (cachedEspacos) {
+                    const lista = JSON.parse(cachedEspacos);
+                    _mostrarBotaoEspacos(lista.includes(cliNorm));
+                    return;
+                }
+            }
+        } catch (_) {}
+
+        // Verificar set já carregado no app.js
+        const clientesComEspaco = window.app?.registroRotaState?.clientesComEspaco;
+        if (clientesComEspaco && clientesComEspaco.size > 0) {
+            _mostrarBotaoEspacos(clientesComEspaco.has(cliNorm));
+            return;
         }
+
+        // Sem dados - esconder botão (não buscar do servidor)
+        _mostrarBotaoEspacos(false);
     }
 
     function _mostrarBotaoEspacos(mostrar) {

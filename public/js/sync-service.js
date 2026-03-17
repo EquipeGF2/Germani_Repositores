@@ -278,22 +278,36 @@ class SyncService {
 
       console.log('[SyncService] Baixando dados do servidor...');
 
-      // Buscar dados em paralelo com timeout
+      // Buscar dados em paralelo com timeout (dados base + dados de consulta)
       const [
         roteiroRes,
         clientesRes,
         coordenadasRes,
         tiposDocRes,
-        tiposGastoRes
+        tiposGastoRes,
+        campanhasRes,
+        documentosRes,
+        despesasRes,
+        roteirosConsultaRes,
+        pesquisasClientesRes,
+        espacosClientesRes,
+        visitasNRRes
       ] = await Promise.all([
         this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/roteiro`, { headers }).then(r => r.json()),
         this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/clientes`, { headers }).then(r => r.json()),
         this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/coordenadas`, { headers }).then(r => r.json()),
         this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/tipos-documento`, { headers }).then(r => r.json()),
-        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/tipos-gasto`, { headers }).then(r => r.json())
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/tipos-gasto`, { headers }).then(r => r.json()),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/campanhas`, { headers }).then(r => r.json()).catch(() => ({ ok: false })),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/documentos-cache`, { headers }).then(r => r.json()).catch(() => ({ ok: false })),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/despesas`, { headers }).then(r => r.json()).catch(() => ({ ok: false })),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/roteiros-consulta`, { headers }).then(r => r.json()).catch(() => ({ ok: false })),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/pesquisas-clientes`, { headers }).then(r => r.json()).catch(() => ({ ok: false })),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/espacos-clientes`, { headers }).then(r => r.json()).catch(() => ({ ok: false })),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/visitas-nao-realizadas`, { headers }).then(r => r.json()).catch(() => ({ ok: false }))
       ]);
 
-      // Salvar no IndexedDB
+      // Salvar dados base no IndexedDB
       if (roteiroRes.ok) {
         await offlineDB.salvarRoteiro(roteiroRes.roteiro || []);
         console.log(`[SyncService] Roteiro: ${roteiroRes.roteiro?.length || 0} itens`);
@@ -315,6 +329,55 @@ class SyncService {
 
       if (tiposGastoRes.ok) {
         await offlineDB.salvarTiposGasto(tiposGastoRes.tipos || []);
+      }
+
+      // Salvar dados de consulta no IndexedDB
+      if (campanhasRes.ok) {
+        await offlineDB.salvarCampanhas(campanhasRes.campanhas || []);
+        console.log(`[SyncService] Campanhas: ${campanhasRes.campanhas?.length || 0} itens`);
+      }
+
+      if (documentosRes.ok) {
+        await offlineDB.salvarDocumentosCache(documentosRes.documentos || []);
+        console.log(`[SyncService] Documentos: ${documentosRes.documentos?.length || 0} itens`);
+      }
+
+      if (despesasRes.ok) {
+        await offlineDB.salvarDespesas(despesasRes.despesas || []);
+        console.log(`[SyncService] Despesas: ${despesasRes.despesas?.length || 0} itens`);
+      }
+
+      if (roteirosConsultaRes.ok) {
+        await offlineDB.salvarRoteirosConsulta(roteirosConsultaRes.roteiros || []);
+        console.log(`[SyncService] Roteiros consulta: ${roteirosConsultaRes.roteiros?.length || 0} itens`);
+      }
+
+      if (pesquisasClientesRes.ok && pesquisasClientesRes.clientesPesquisa) {
+        await offlineDB.salvarPesquisasClientes(pesquisasClientesRes.clientesPesquisa);
+        console.log(`[SyncService] Pesquisas clientes: ${Object.keys(pesquisasClientesRes.clientesPesquisa).length} clientes`);
+      }
+
+      if (espacosClientesRes.ok) {
+        // Salvar lista de clientes com espaço no localStorage (para verificação rápida)
+        const clientesComEspaco = espacosClientesRes.clientesComEspaco || [];
+        try {
+          const repId = JSON.parse(localStorage.getItem('auth_usuario') || '{}').rep_id;
+          if (repId) {
+            localStorage.setItem(`espacos_clientes_${repId}`, JSON.stringify(clientesComEspaco));
+          }
+        } catch (_) {}
+
+        // Salvar detalhes de espaços por cliente no IndexedDB
+        const espacosPorCliente = espacosClientesRes.espacosPorCliente || {};
+        for (const [clienteId, espacos] of Object.entries(espacosPorCliente)) {
+          await offlineDB.salvarEspacosCliente(clienteId, { temEspacos: true, espacos });
+        }
+        console.log(`[SyncService] Espaços: ${clientesComEspaco.length} clientes com espaço`);
+      }
+
+      if (visitasNRRes.ok) {
+        await offlineDB.salvarVisitasNaoRealizadas(visitasNRRes.naoRealizadas || []);
+        console.log(`[SyncService] Visitas não realizadas: ${visitasNRRes.naoRealizadas?.length || 0} itens`);
       }
 
       // Atualizar metadados
@@ -644,10 +707,9 @@ class SyncService {
     // Salvar na fila local
     await offlineDB.atualizarSessaoFila(dadosSessao.localId, checkout);
 
-    // Tentar enviar imediatamente se online
-    const config = await offlineDB.getConfigSync();
-    if (config.enviarNoCheckout && this.isOnline) {
-      console.log('[SyncService] Enviando checkout imediatamente...');
+    // SEMPRE enviar se online (checkout + pendentes acumulados)
+    if (this.isOnline) {
+      console.log('[SyncService] Enviando checkout + pendentes imediatamente...');
       await this.enviarPendentes();
     } else {
       console.log('[SyncService] Checkout salvo na fila para envio posterior');
@@ -655,7 +717,7 @@ class SyncService {
       this.notificar('pendentesAtualizado', pendentes);
     }
 
-    return { ok: true, enviado: this.isOnline && config.enviarNoCheckout };
+    return { ok: true, enviado: this.isOnline };
   }
 
   // ==================== UTILITÁRIOS ====================
