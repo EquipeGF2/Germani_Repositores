@@ -291,7 +291,8 @@ class SyncService {
         roteirosConsultaRes,
         pesquisasClientesRes,
         espacosClientesRes,
-        visitasNRRes
+        visitasNRRes,
+        sessoesRecentesRes
       ] = await Promise.all([
         this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/roteiro`, { headers }).then(r => r.json()),
         this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/clientes`, { headers }).then(r => r.json()),
@@ -304,7 +305,8 @@ class SyncService {
         this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/roteiros-consulta`, { headers }).then(r => r.json()).catch(() => ({ ok: false })),
         this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/pesquisas-clientes`, { headers }).then(r => r.json()).catch(() => ({ ok: false })),
         this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/espacos-clientes`, { headers }).then(r => r.json()).catch(() => ({ ok: false })),
-        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/visitas-nao-realizadas`, { headers }).then(r => r.json()).catch(() => ({ ok: false }))
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/visitas-nao-realizadas`, { headers }).then(r => r.json()).catch(() => ({ ok: false })),
+        this.fetchWithTimeout(`${this.apiBaseUrl}/api/sync/sessoes-recentes`, { headers }).then(r => r.json()).catch(() => ({ ok: false }))
       ]);
 
       // Salvar dados base no IndexedDB
@@ -378,6 +380,11 @@ class SyncService {
       if (visitasNRRes.ok) {
         await offlineDB.salvarVisitasNaoRealizadas(visitasNRRes.naoRealizadas || []);
         console.log(`[SyncService] Visitas não realizadas: ${visitasNRRes.naoRealizadas?.length || 0} itens`);
+      }
+
+      if (sessoesRecentesRes.ok) {
+        await offlineDB.salvarSessoesRecentes(sessoesRecentesRes.sessoes || []);
+        console.log(`[SyncService] Sessões recentes: ${sessoesRecentesRes.sessoes?.length || 0} itens`);
       }
 
       // Atualizar metadados

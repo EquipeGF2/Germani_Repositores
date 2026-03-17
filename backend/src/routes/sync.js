@@ -295,6 +295,94 @@ router.get('/visitas-nao-realizadas', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/sync/sessoes-recentes - Sessões de visita dos últimos 15 dias
+ * Retorna sessões com dados de checkin/checkout para consulta offline
+ */
+router.get('/sessoes-recentes', async (req, res) => {
+  try {
+    const repId = req.user.rep_id;
+    if (!repId) return res.status(400).json({ ok: false, message: 'Usuário não vinculado a um repositor' });
+
+    const dias = parseInt(req.query.dias) || 15;
+    const dataInicio = new Date();
+    dataInicio.setDate(dataInicio.getDate() - dias);
+    const dataInicioStr = dataInicio.toISOString().split('T')[0];
+    const dataFimStr = new Date().toISOString().split('T')[0];
+
+    const checkinDataExpr = `(
+      SELECT COALESCE(rv_data_hora_registro, data_hora)
+      FROM cc_registro_visita rv
+      WHERE COALESCE(rv.rv_sessao_id, rv.sessao_id) = s.sessao_id AND rv.rv_tipo = 'checkin'
+      ORDER BY COALESCE(rv.rv_data_hora_registro, rv.data_hora) ASC
+      LIMIT 1
+    )`;
+    const checkoutDataExpr = `(
+      SELECT COALESCE(rv_data_hora_registro, data_hora)
+      FROM cc_registro_visita rv
+      WHERE COALESCE(rv.rv_sessao_id, rv.sessao_id) = s.sessao_id AND rv.rv_tipo = 'checkout'
+      ORDER BY COALESCE(rv.rv_data_hora_registro, rv.data_hora) DESC
+      LIMIT 1
+    )`;
+    const statusExpr = `CASE
+      WHEN ${checkoutDataExpr} IS NOT NULL OR s.checkout_at IS NOT NULL THEN 'finalizado'
+      WHEN ${checkinDataExpr} IS NOT NULL OR s.checkin_at IS NOT NULL THEN 'em_atendimento'
+      ELSE 'sem_checkin'
+    END`;
+
+    const sql = `
+      SELECT
+        s.sessao_id,
+        s.rep_id,
+        s.cliente_id,
+        COALESCE(NULLIF(s.cliente_nome, ''), (
+          SELECT rv_cliente_nome FROM cc_registro_visita rv
+          WHERE COALESCE(rv.rv_sessao_id, rv.sessao_id) = s.sessao_id
+          ORDER BY COALESCE(rv.rv_data_hora_registro, rv.data_hora) ASC LIMIT 1
+        ), 'N/D') AS cliente_nome,
+        s.data_planejada,
+        ${checkinDataExpr} AS checkin_data_hora,
+        ${checkoutDataExpr} AS checkout_data_hora,
+        ${statusExpr} AS status,
+        COALESCE(s.dia_previsto, (
+          SELECT rv_dia_previsto FROM cc_registro_visita rv
+          WHERE COALESCE(rv.rv_sessao_id, rv.sessao_id) = s.sessao_id AND rv.rv_tipo = 'checkin'
+          ORDER BY COALESCE(rv.rv_data_hora_registro, rv.data_hora) ASC LIMIT 1
+        )) AS dia_previsto,
+        COALESCE(NULLIF(s.endereco_cliente, ''), (
+          SELECT rv_endereco_cliente FROM cc_registro_visita rv
+          WHERE COALESCE(rv.rv_sessao_id, rv.sessao_id) = s.sessao_id AND rv.rv_tipo = 'checkin'
+          ORDER BY COALESCE(rv.rv_data_hora_registro, rv.data_hora) ASC LIMIT 1
+        )) AS endereco_cliente
+      FROM cc_visita_sessao s
+      WHERE s.rep_id = ?
+        AND date(COALESCE(${checkinDataExpr}, s.checkin_at, s.data_planejada, s.criado_em)) >= date(?)
+        AND date(COALESCE(${checkinDataExpr}, s.checkin_at, s.data_planejada, s.criado_em)) <= date(?)
+      ORDER BY ${checkinDataExpr} DESC, COALESCE(s.checkin_at, s.criado_em) DESC
+    `;
+
+    const result = await tursoService.execute(sql, [repId, dataInicioStr, dataFimStr]);
+    const sessoes = (result.rows || []).map(s => ({
+      sessao_id: s.sessao_id,
+      rep_id: s.rep_id,
+      cliente_id: s.cliente_id,
+      cliente_nome: s.cliente_nome,
+      data_planejada: s.data_planejada,
+      checkin_data_hora: s.checkin_data_hora,
+      checkout_data_hora: s.checkout_data_hora,
+      status: s.status,
+      dia_previsto: s.dia_previsto,
+      endereco_cliente: s.endereco_cliente
+    }));
+
+    console.log(`[Sync] Sessões recentes para rep_id ${repId}: ${sessoes.length} itens`);
+    return res.json({ ok: true, sessoes });
+  } catch (error) {
+    console.error('[Sync] Erro ao buscar sessões recentes:', error);
+    return res.status(500).json({ ok: false, message: 'Erro ao buscar sessões recentes' });
+  }
+});
+
 // ==================== UPLOAD DE DADOS ====================
 
 /**

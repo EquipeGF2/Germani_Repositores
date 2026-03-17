@@ -1476,52 +1476,25 @@
 
         const container = document.getElementById('pwaConsultaContent');
 
-        // Tentar renderizar do cache primeiro (instantâneo)
-        const cacheableConsultas = ['consulta-campanha', 'consulta-roteiro', 'consulta-documentos', 'consulta-despesas'];
-        if (cacheableConsultas.includes(consultaId) && typeof offlineDB !== 'undefined') {
+        // Todas as consultas usam cache-first (dados já sincronizados via sync diário)
+        if (typeof offlineDB !== 'undefined') {
             renderConsultaFromCache(consultaId, container);
             return;
         }
 
-        // Para consulta-visitas e outras, usar lógica original
-        if (typeof window.app !== 'undefined' && window.app.navigateTo) {
-            window.app.navigateTo(consultaId, {}, { replaceHistory: true, pwaMode: true, pwaContainer: container });
-
-            setTimeout(() => {
-                const repId = typeof authManager !== 'undefined' ? String(authManager.getRepId?.() || '') : '';
-                if (repId) {
-                    container.querySelectorAll('select[id*="Repositor"], select[id*="repositor"]').forEach(sel => {
-                        if (!sel.querySelector(`option[value="${repId}"]`)) {
-                            const opt = document.createElement('option');
-                            opt.value = repId;
-                            opt.textContent = repId;
-                            sel.appendChild(opt);
-                        }
-                        sel.value = repId;
-                    });
-                }
-                ajustarFiltrosPWA(container);
-                esconderSelectRepositor(container);
-            }, 500);
-        } else {
-            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Carregando...</div></div>';
-        }
+        container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Dados não disponíveis. Execute a sincronização.</div></div>';
     }
 
     // ==================== CONSULTAS DO CACHE (offline-first) ====================
-
-    // Limites de cache por tipo de consulta (em dias)
-    const CACHE_LIMITS = {
-        'consulta-campanha': 15,
-        'consulta-documentos': 15,
-        'consulta-despesas': 'mes_corrente',
-        'consulta-roteiro': null // Sem limite - todos os vigentes
-    };
 
     async function renderConsultaFromCache(consultaId, container) {
         try {
             let dados = [];
             switch (consultaId) {
+                case 'consulta-visitas':
+                    dados = await offlineDB.getSessoesRecentes();
+                    renderVisitasInline(dados, container);
+                    break;
                 case 'consulta-campanha':
                     dados = await offlineDB.getCampanhas();
                     renderCampanhasInline(dados, container);
@@ -1538,65 +1511,14 @@
                     dados = await offlineDB.getDespesas();
                     renderDespesasInline(dados, container);
                     break;
+                default:
+                    container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Consulta não disponível no cache</div></div>';
+                    break;
             }
         } catch (e) {
             console.error('[PWA] Erro ao renderizar consulta do cache:', e);
             container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Erro ao carregar dados</div></div>';
         }
-    }
-
-    /**
-     * Verifica se o período solicitado excede o cache e busca da API se online
-     */
-    async function buscarDadosConsultaComFallback(tipo, dataInicio, dataFim) {
-        const limite = CACHE_LIMITS[tipo];
-        let limiteCacheDate;
-
-        if (limite === 'mes_corrente') {
-            const hoje = new Date();
-            limiteCacheDate = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().split('T')[0];
-        } else if (limite === null) {
-            return null; // Sempre do cache
-        } else {
-            const d = new Date();
-            d.setDate(d.getDate() - limite);
-            limiteCacheDate = d.toISOString().split('T')[0];
-        }
-
-        // Se período dentro do cache, retornar null (usar cache)
-        if (!dataInicio || dataInicio >= limiteCacheDate) return null;
-
-        // Período excede cache - buscar da API se online
-        if (!navigator.onLine) {
-            return { fromCache: true, aviso: 'Dados limitados ao cache offline. Conecte-se para consultar per\u00edodos mais antigos.' };
-        }
-
-        // Buscar da API
-        const token = localStorage.getItem('auth_token');
-        const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
-        const repId = typeof authManager !== 'undefined' ? authManager.getRepId?.() : null;
-
-        try {
-            let url;
-            switch (tipo) {
-                case 'consulta-campanha':
-                    url = `${API_BASE_URL}/api/sync/campanhas?dias=${Math.ceil((new Date() - new Date(dataInicio)) / 86400000)}`;
-                    break;
-                case 'consulta-documentos':
-                    url = `${API_BASE_URL}/api/sync/documentos-cache?dias=${Math.ceil((new Date() - new Date(dataInicio)) / 86400000)}`;
-                    break;
-                case 'consulta-despesas':
-                    url = `${API_BASE_URL}/api/sync/despesas`;
-                    break;
-            }
-            if (url) {
-                const res = await syncService.fetchWithTimeout(url, { headers }).then(r => r.json());
-                if (res.ok) return { fromAPI: true, dados: res };
-            }
-        } catch (e) {
-            console.warn('[PWA] Erro no fallback API consulta:', e);
-        }
-        return null;
     }
 
     function formatarData(dataStr) {
@@ -1606,6 +1528,53 @@
             if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
         } catch (_) {}
         return dataStr;
+    }
+
+    function renderVisitasInline(dados, container) {
+        if (!dados || dados.length === 0) {
+            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhuma visita nos últimos 15 dias</div></div>';
+            return;
+        }
+
+        // Agrupar por data
+        const porData = {};
+        for (const s of dados) {
+            const checkinDate = s.checkin_data_hora || s.data_planejada || '';
+            const dataKey = checkinDate ? checkinDate.split('T')[0] : 'sem-data';
+            if (!porData[dataKey]) porData[dataKey] = [];
+            porData[dataKey].push(s);
+        }
+
+        const datasOrdenadas = Object.keys(porData).sort().reverse();
+        let html = `<div class="pwa-consulta-list">
+            <div style="background: #eff6ff; padding: 10px; border-radius: 8px; margin-bottom: 12px; text-align: center;">
+                <div style="font-size: 13px; color: #1e40af;">Total: ${dados.length} visitas nos últimos 15 dias</div>
+            </div>`;
+
+        for (const data of datasOrdenadas) {
+            const sessoes = porData[data];
+            html += `<div style="font-weight: 700; color: #ef4444; margin: 12px 0 8px; font-size: 15px;">${formatarData(data)} (${sessoes.length} visitas)</div>`;
+            for (const s of sessoes) {
+                const statusColor = s.status === 'finalizado' ? '#10b981' : s.status === 'em_atendimento' ? '#f59e0b' : '#9ca3af';
+                const statusLabel = s.status === 'finalizado' ? 'Finalizado' : s.status === 'em_atendimento' ? 'Em atendimento' : 'Sem check-in';
+                const checkinHora = s.checkin_data_hora ? new Date(s.checkin_data_hora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-';
+                const checkoutHora = s.checkout_data_hora ? new Date(s.checkout_data_hora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-';
+
+                html += `
+                    <div class="pwa-card" style="margin-bottom: 6px; padding: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div style="font-weight: 600; font-size: 13px; color: #1f2937;">${escapeHtml(String(s.cliente_id || ''))} - ${escapeHtml(s.cliente_nome || 'N/D')}</div>
+                            <span style="font-size: 11px; padding: 2px 8px; border-radius: 12px; background: ${statusColor}20; color: ${statusColor};">${statusLabel}</span>
+                        </div>
+                        <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
+                            Checkin: ${checkinHora} | Checkout: ${checkoutHora}
+                        </div>
+                        ${s.endereco_cliente ? `<div style="font-size: 11px; color: #9ca3af; margin-top: 2px;">${escapeHtml(s.endereco_cliente)}</div>` : ''}
+                    </div>`;
+            }
+        }
+        html += '</div>';
+        container.innerHTML = html;
     }
 
     function renderCampanhasInline(dados, container) {
@@ -1713,92 +1682,6 @@
         }
         html += '</div>';
         container.innerHTML = html;
-    }
-
-    function ajustarFiltrosPWA(container) {
-        if (!container) return;
-
-        const filterBars = container.querySelectorAll('.filter-bar, .doc-filter-section, .performance-filters');
-        filterBars.forEach(bar => {
-            if (bar.dataset.pwaAjustado) return;
-            bar.dataset.pwaAjustado = 'true';
-
-            const wrapper = document.createElement('div');
-            wrapper.className = 'pwa-filtros-wrapper';
-
-            const toggleBtn = document.createElement('button');
-            toggleBtn.className = 'pwa-filtros-toggle';
-            toggleBtn.innerHTML = '<span>&#9660; Filtros</span>';
-            toggleBtn.onclick = () => {
-                wrapper.classList.toggle('pwa-filtros-aberto');
-                toggleBtn.innerHTML = wrapper.classList.contains('pwa-filtros-aberto')
-                    ? '<span>&#9650; Ocultar Filtros</span>'
-                    : '<span>&#9660; Filtros</span>';
-            };
-
-            bar.parentNode.insertBefore(wrapper, bar);
-            bar.parentNode.insertBefore(toggleBtn, wrapper);
-            wrapper.appendChild(bar);
-
-            wrapper.classList.remove('pwa-filtros-aberto');
-        });
-    }
-
-    function esconderSelectRepositor(container) {
-        if (!container) return;
-
-        const repId = getRepId();
-        if (!repId) return;
-
-        const usuario = getUsuario();
-        const repNome = usuario.nome_completo || usuario.username || `Repositor ${repId}`;
-
-        const selectIds = [
-            'consultaRepositor', 'perfRepositor', 'filtro_repositor_consulta_roteiro',
-            'uploadRepositor', 'registroRepositor', 'filtro_repositor',
-            'filtro_repositor_cadastro', 'filtro_repositor_roteiro',
-            'filtro_repositor_checking_cancelado', 'filtro_repositor_validacao',
-            'filtro_supervisor', 'filtro_representante', 'filtro_cidade_roteiro'
-        ];
-
-        selectIds.forEach(id => {
-            const select = container.querySelector(`#${id}`) || document.getElementById(id);
-            if (select) {
-                if (id.includes('repositor') || id.includes('Repositor')) {
-                    // Garantir que a opção do repositor logado existe no select (modo offline)
-                    const repIdStr = String(repId);
-                    const optionExiste = Array.from(select.options).some(opt => String(opt.value) === repIdStr);
-                    if (!optionExiste) {
-                        // Injetar opção para o repositor logado
-                        const novaOpcao = document.createElement('option');
-                        novaOpcao.value = repIdStr;
-                        novaOpcao.textContent = repNome;
-                        novaOpcao.selected = true;
-                        select.appendChild(novaOpcao);
-                    }
-                    select.value = repIdStr;
-                    // Disparar evento change para atualizar filtros dependentes
-                    select.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-                const group = select.closest('.form-group, .filter-group, .filter-item');
-                if (group) {
-                    group.style.display = 'none';
-                } else {
-                    select.style.display = 'none';
-                }
-            }
-        });
-
-        // Also hide text input filters for repositor
-        const textInputIds = ['filtro_nome_repositor', 'filtro_nome_repositor_roteiro'];
-        textInputIds.forEach(id => {
-            const input = container.querySelector(`#${id}`) || document.getElementById(id);
-            if (input) {
-                input.value = repNome;
-                const group = input.closest('.form-group, .filter-group, .filter-item');
-                if (group) group.style.display = 'none';
-            }
-        });
     }
 
     /**
