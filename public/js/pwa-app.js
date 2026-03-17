@@ -110,16 +110,40 @@
         const ultimoSyncDia = localStorage.getItem('pwa_ultimo_sync_dia');
         const precisaSincronizarHoje = ultimoSyncDia !== hoje;
 
-        if (precisaSincronizarHoje && navigator.onLine) {
-            // Primeira abertura do dia com internet: sincronização bloqueante
-            await performDailySync();
-        } else {
-            // Já sincronizado hoje ou offline: ir direto para home com dados em cache
-            navigate('pwa-home');
-            if (!navigator.onLine && precisaSincronizarHoje) {
-                showToast('Offline - usando dados anteriores', 'warning');
+        if (precisaSincronizarHoje) {
+            if (navigator.onLine) {
+                // Primeira abertura do dia com internet: sincronização bloqueante
+                await performDailySync();
+            } else {
+                // Offline e não sincronizou hoje: bloquear até ter conexão
+                showWaitingForConnectionScreen();
+                await new Promise(resolve => {
+                    const checkConnection = () => {
+                        if (navigator.onLine) {
+                            window.removeEventListener('online', checkConnection);
+                            resolve();
+                        }
+                    };
+                    window.addEventListener('online', checkConnection);
+                    // Também verificar periodicamente (fallback)
+                    const interval = setInterval(() => {
+                        if (navigator.onLine) {
+                            clearInterval(interval);
+                            window.removeEventListener('online', checkConnection);
+                            resolve();
+                        }
+                    }, 3000);
+                });
+                hideWaitingForConnectionScreen();
+                await performDailySync();
             }
+        } else {
+            // Já sincronizado hoje: ir direto para home com dados em cache
+            navigate('pwa-home');
         }
+
+        // Iniciar monitoramento de sync silencioso no horário de almoço (11:30-13:30)
+        setupMiddaySilentSync();
 
         console.log('[PWA] App v3.0 inicializado - inline-first, zero popups');
     }
@@ -372,6 +396,148 @@
         }
 
         return cachedData.tiposDocumento || [];
+    }
+
+    // ==================== TELA DE AGUARDANDO CONEXÃO ====================
+
+    function showWaitingForConnectionScreen() {
+        // Reutilizar a tela de sync diária com mensagem de aguardando conexão
+        const screen = document.getElementById('pwaDailySyncScreen');
+        if (screen) {
+            screen.classList.remove('hidden');
+            const statusEl = document.getElementById('pwaDailySyncStatus');
+            if (statusEl) statusEl.textContent = 'Aguardando conexão com a internet...';
+            // Esconder os steps
+            for (let i = 1; i <= 3; i++) {
+                const step = document.getElementById('pwaSyncStep' + i);
+                if (step) step.style.display = 'none';
+            }
+        }
+        // Também mostrar overlay próprio se a tela de sync não existir
+        if (!screen) {
+            const overlay = document.createElement('div');
+            overlay.id = 'pwaWaitingConnection';
+            overlay.style.cssText = 'position:fixed;inset:0;background:#fff;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;';
+            overlay.innerHTML = `
+                <div style="font-size:48px;">📡</div>
+                <h3 style="margin:0;color:#374151;">Conexão necessária</h3>
+                <p style="margin:0;color:#6b7280;text-align:center;max-width:280px;">
+                    A sincronização diária é obrigatória no primeiro acesso do dia.
+                    Conecte-se à internet para continuar.
+                </p>
+                <div class="pwa-spinner-small" style="margin-top:8px;"></div>
+                <p style="margin:0;color:#9ca3af;font-size:13px;">Conectando automaticamente...</p>
+            `;
+            document.body.appendChild(overlay);
+        }
+    }
+
+    function hideWaitingForConnectionScreen() {
+        const overlay = document.getElementById('pwaWaitingConnection');
+        if (overlay) overlay.remove();
+        // Restaurar steps da tela de sync
+        for (let i = 1; i <= 3; i++) {
+            const step = document.getElementById('pwaSyncStep' + i);
+            if (step) step.style.display = '';
+        }
+    }
+
+    // ==================== SYNC SILENCIOSO HORÁRIO DE ALMOÇO ====================
+
+    let middaySyncInterval = null;
+    let middaySyncDone = false;
+
+    function setupMiddaySilentSync() {
+        // Verificar a cada minuto se estamos na janela 11:30-13:30
+        middaySyncInterval = setInterval(checkMiddaySync, 60 * 1000);
+        // Verificar imediatamente também
+        checkMiddaySync();
+    }
+
+    async function checkMiddaySync() {
+        if (middaySyncDone) return;
+        if (!navigator.onLine) return;
+
+        const agora = new Date();
+        // Usar horário de São Paulo
+        const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/Sao_Paulo',
+            hour: '2-digit', minute: '2-digit', hour12: false
+        });
+        const parts = formatter.formatToParts(agora);
+        const hora = parseInt(parts.find(p => p.type === 'hour').value);
+        const minuto = parseInt(parts.find(p => p.type === 'minute').value);
+        const totalMinutos = hora * 60 + minuto;
+
+        // Janela: 11:30 (690min) até 13:30 (810min)
+        if (totalMinutos < 690 || totalMinutos > 810) return;
+
+        // Verificar se já se passaram 15 minutos desde a última tentativa
+        const ultimaTentativa = parseInt(localStorage.getItem('pwa_midday_sync_last') || '0');
+        if (Date.now() - ultimaTentativa < 15 * 60 * 1000) return;
+
+        // Verificar se já fez sync de meio-dia hoje
+        const hojeBR = getHojeBR();
+        const ultimoMiddaySync = localStorage.getItem('pwa_midday_sync_dia');
+        if (ultimoMiddaySync === hojeBR) {
+            middaySyncDone = true;
+            return;
+        }
+
+        console.log('[PWA] Iniciando sync silencioso de meio-dia...');
+        localStorage.setItem('pwa_midday_sync_last', String(Date.now()));
+
+        try {
+            const token = localStorage.getItem('auth_token');
+            const headers = {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            };
+            const repId = typeof authManager !== 'undefined' ? authManager.getRepId?.() : null;
+            if (!repId) return;
+
+            // Sync silencioso: atualizar dados essenciais sem bloquear UI
+            const hojePesq = new Date().toISOString().split('T')[0];
+
+            // 1. Atualizar resumo de visitas de hoje (reflete visitas já feitas)
+            try {
+                const resumoRes = await syncService.fetchWithTimeout(
+                    `${API_BASE_URL}/api/registro-rota/visitas?rep_id=${repId}&data_inicio=${hojePesq}&data_fim=${hojePesq}&modo=resumo`,
+                    { headers }
+                ).then(r => r.json());
+                const resumo = resumoRes?.resumo || resumoRes?.visitas || [];
+                if (resumo.length > 0) {
+                    localStorage.setItem(`resumo_visitas_${repId}_${hojePesq}`, JSON.stringify(resumo));
+                }
+            } catch (_) {}
+
+            // 2. Atualizar atendimentos abertos
+            try {
+                const abertosRes = await syncService.fetchWithTimeout(
+                    `${API_BASE_URL}/api/registro-rota/atendimentos-abertos?repositor_id=${repId}`,
+                    { headers }
+                ).then(r => r.json());
+                const abertos = abertosRes?.atendimentos_abertos || [];
+                localStorage.setItem(`atendimentos_abertos_${repId}`, JSON.stringify(abertos));
+            } catch (_) {}
+
+            // 3. Enviar pendentes
+            if (typeof syncService !== 'undefined') {
+                await syncService.enviarPendentes().catch(() => {});
+            }
+            if (typeof app !== 'undefined' && typeof app.syncDespesasPendentes === 'function') {
+                await app.syncDespesasPendentes().catch(() => {});
+            }
+
+            // Marcar como feito
+            localStorage.setItem('pwa_midday_sync_dia', hojeBR);
+            middaySyncDone = true;
+            console.log('[PWA] Sync silencioso de meio-dia concluído');
+
+        } catch (e) {
+            console.warn('[PWA] Erro no sync silencioso de meio-dia:', e);
+            // Não marca como feito - vai tentar novamente em 15 min
+        }
     }
 
     // ==================== TELA DE SINCRONIZAÇÃO DIÁRIA ====================
