@@ -569,6 +569,9 @@
             if (typeof app !== 'undefined' && typeof app.syncDespesasPendentes === 'function') {
                 await app.syncDespesasPendentes().catch(() => {});
             }
+            if (typeof app !== 'undefined' && typeof app.syncCheckoutsPendentes === 'function') {
+                await app.syncCheckoutsPendentes().catch(() => {});
+            }
 
             // Marcar como feito
             localStorage.setItem('pwa_midday_sync_dia', hojeBR);
@@ -835,20 +838,27 @@
             if (typeof app !== 'undefined' && typeof app.syncDespesasPendentes === 'function') {
                 app.syncDespesasPendentes().catch(e => console.warn('[PWA] Erro sync despesas offline:', e));
             }
+            // Sincronizar checkouts offline pendentes
+            if (typeof app !== 'undefined' && typeof app.syncCheckoutsPendentes === 'function') {
+                app.syncCheckoutsPendentes().catch(e => console.warn('[PWA] Erro sync checkouts offline:', e));
+            }
             // Cache de dados para consultas offline (background, não bloqueia o sync principal)
             (async () => {
                 try {
-                    const [docsRes, despesasRes, rotConsultaRes] = await Promise.all([
+                    const [docsRes, despesasRes, rotConsultaRes, campanhasRes] = await Promise.all([
                         syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/documentos-cache`, { headers }, 15000)
                             .then(r => r.json()).catch(() => ({ ok: false })),
                         syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/despesas`, { headers }, 15000)
                             .then(r => r.json()).catch(() => ({ ok: false })),
                         syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/roteiros-consulta`, { headers }, 15000)
+                            .then(r => r.json()).catch(() => ({ ok: false })),
+                        syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/campanhas`, { headers }, 15000)
                             .then(r => r.json()).catch(() => ({ ok: false }))
                     ]);
                     if (docsRes.ok) { await offlineDB.salvarDocumentosCache(docsRes.documentos || []); console.log(`[PWA Sync] Docs cache: ${docsRes.documentos?.length || 0} itens`); }
                     if (despesasRes.ok) { await offlineDB.salvarDespesas(despesasRes.despesas || []); console.log(`[PWA Sync] Despesas cache: ${despesasRes.despesas?.length || 0} itens`); }
                     if (rotConsultaRes.ok) { await offlineDB.salvarRoteirosConsulta(rotConsultaRes.roteiros || []); console.log(`[PWA Sync] Roteiros consulta: ${rotConsultaRes.roteiros?.length || 0} itens`); }
+                    if (campanhasRes.ok) { await offlineDB.salvarCampanhas(campanhasRes.campanhas || []); console.log(`[PWA Sync] Campanhas: ${campanhasRes.campanhas?.length || 0} itens`); }
                     console.log('[PWA] Cache consultas atualizado em background');
                 } catch (e) { console.warn('[PWA] Erro cache consultas:', e.message); }
             })();
@@ -1454,11 +1464,28 @@
                 }
             }
             // Precarregar rubricas (tipos de gasto) para despesa de viagem
+            let tiposGasto = [];
             if (typeof offlineDB !== 'undefined') {
-                const tiposGasto = await offlineDB.getTiposGasto();
-                if (tiposGasto && tiposGasto.length > 0) {
-                    cachedData.tiposGasto = tiposGasto;
-                }
+                tiposGasto = await offlineDB.getTiposGasto().catch(() => []);
+            }
+            // Se IndexedDB vazio, buscar da API e salvar
+            if ((!tiposGasto || tiposGasto.length === 0) && navigator.onLine) {
+                try {
+                    const token = localStorage.getItem('auth_token');
+                    const res = await syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/tipos-gasto`, {
+                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+                    }, 10000).then(r => r.json());
+                    if (res.ok && res.tipos?.length > 0) {
+                        tiposGasto = res.tipos;
+                        if (typeof offlineDB !== 'undefined') {
+                            offlineDB.salvarTiposGasto(tiposGasto).catch(() => {});
+                        }
+                        console.log(`[PWA] Rubricas preload API: ${tiposGasto.length} itens`);
+                    }
+                } catch (e) { console.warn('[PWA] Erro preload rubricas:', e.message); }
+            }
+            if (tiposGasto && tiposGasto.length > 0) {
+                cachedData.tiposGasto = tiposGasto;
             }
         } catch (e) { /* silent */ }
     }
@@ -1489,6 +1516,27 @@
         const consultaInfo = CONSULTAS.find(c => c.id === consultaId);
         const titulo = consultaInfo?.label || 'Consulta';
 
+        // Consulta Roteiro: usar mesma sistemática do modo web (navigateTo) com layout PWA
+        if (consultaId === 'consulta-roteiro' && typeof window.app !== 'undefined' && window.app.navigateTo) {
+            pwaContent.innerHTML = `
+                <div class="pwa-page pwa-fullscreen-page">
+                    <div class="pwa-page-header-bar">
+                        <button class="pwa-back-btn" onclick="pwaApp.voltarConsultas()">&#8592;</button>
+                        <span class="pwa-page-header-title">${titulo}</span>
+                    </div>
+                    <div id="pwaConsultaContent" class="pwa-page-body">
+                        <div class="pwa-loading-inline">
+                            <div class="pwa-spinner-small"></div>
+                            <span>Carregando...</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            const container = document.getElementById('pwaConsultaContent');
+            window.app.navigateTo('consulta-roteiro', {}, { replaceHistory: true, pwaMode: true, pwaContainer: container });
+            return;
+        }
+
         pwaContent.innerHTML = `
             <div class="pwa-page pwa-fullscreen-page">
                 <div class="pwa-page-header-bar">
@@ -1506,7 +1554,7 @@
 
         const container = document.getElementById('pwaConsultaContent');
 
-        // Todas as consultas usam cache-first (dados já sincronizados via sync diário)
+        // Demais consultas usam cache-first (dados já sincronizados via sync diário)
         if (typeof offlineDB !== 'undefined') {
             renderConsultaFromCache(consultaId, container);
             return;
@@ -1515,7 +1563,23 @@
         container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Dados não disponíveis. Execute a sincronização.</div></div>';
     }
 
-    // ==================== CONSULTAS DO CACHE (offline-first) ====================
+    // ==================== CONSULTAS DO CACHE (offline-first, online fallback) ====================
+
+    // Helper: buscar dados da API quando cache está vazio e estamos online
+    async function fetchConsultaOnline(endpoint, dataField) {
+        if (!navigator.onLine) return null;
+        try {
+            const token = localStorage.getItem('auth_token');
+            const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+            const res = await syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/${endpoint}`, { headers }, 15000);
+            const data = await res.json();
+            if (data.ok && data[dataField]) {
+                console.log(`[PWA Consulta] ${endpoint}: ${data[dataField].length} itens da API`);
+                return data[dataField];
+            }
+        } catch (e) { console.warn(`[PWA Consulta] Erro fetch ${endpoint}:`, e.message); }
+        return null;
+    }
 
     async function renderConsultaFromCache(consultaId, container) {
         try {
@@ -1523,6 +1587,23 @@
             switch (consultaId) {
                 case 'consulta-visitas': {
                     dados = await offlineDB.getSessoesRecentes();
+                    // Fallback online: buscar sessões se cache vazio
+                    if ((!dados || dados.length === 0) && navigator.onLine) {
+                        try {
+                            const repId = typeof authManager !== 'undefined' ? authManager.getRepId?.() : null;
+                            if (repId) {
+                                const hoje = new Date().toISOString().split('T')[0];
+                                const quinzeDias = new Date(); quinzeDias.setDate(quinzeDias.getDate() - 15);
+                                const token = localStorage.getItem('auth_token');
+                                const url = `${API_BASE_URL}/api/registro-rota/sessoes?data_checkin_inicio=${quinzeDias.toISOString().split('T')[0]}&data_checkin_fim=${hoje}&rep_id=${repId}&status=todos`;
+                                const res = await syncService.fetchWithTimeout(url, { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } }, 15000).then(r => r.json());
+                                if (res.sessoes) {
+                                    await offlineDB.salvarSessoesRecentes(res.sessoes).catch(() => {});
+                                    dados = res.sessoes;
+                                }
+                            }
+                        } catch (e) { console.warn('[PWA Consulta] Erro fetch visitas:', e.message); }
+                    }
                     // Merge pending sessions
                     const pendingSessions = await offlineDB.getPendingSessions();
                     const pendingMapped = pendingSessions.map(s => ({
@@ -1536,21 +1617,37 @@
                         _pendente: true
                     }));
                     dados = [...dados, ...pendingMapped];
-                    // Store for filtering
                     cachedData._visitas = dados;
                     renderVisitasInline(dados, container);
                     break;
                 }
-                case 'consulta-campanha':
+                case 'consulta-campanha': {
                     dados = await offlineDB.getCampanhas();
+                    // Fallback online
+                    if ((!dados || dados.length === 0) && navigator.onLine) {
+                        const fresh = await fetchConsultaOnline('campanhas', 'campanhas');
+                        if (fresh) { await offlineDB.salvarCampanhas(fresh).catch(() => {}); dados = fresh; }
+                    }
                     renderCampanhasInline(dados, container);
                     break;
-                case 'consulta-roteiro':
+                }
+                case 'consulta-roteiro': {
                     dados = await offlineDB.getRoteirosConsulta();
+                    // Fallback online
+                    if ((!dados || dados.length === 0) && navigator.onLine) {
+                        const fresh = await fetchConsultaOnline('roteiros-consulta', 'roteiros');
+                        if (fresh) { await offlineDB.salvarRoteirosConsulta(fresh).catch(() => {}); dados = fresh; }
+                    }
                     await renderRoteirosInline(dados, container);
                     break;
+                }
                 case 'consulta-documentos': {
                     dados = await offlineDB.getDocumentosCache();
+                    // Fallback online
+                    if ((!dados || dados.length === 0) && navigator.onLine) {
+                        const fresh = await fetchConsultaOnline('documentos-cache', 'documentos');
+                        if (fresh) { await offlineDB.salvarDocumentosCache(fresh).catch(() => {}); dados = fresh; }
+                    }
                     // Merge pending documents
                     const pendingDocs = await offlineDB.getPendingDocumentos();
                     const pendingDocsMapped = pendingDocs.map(d => ({
@@ -1569,6 +1666,11 @@
                 }
                 case 'consulta-despesas': {
                     dados = await offlineDB.getDespesas();
+                    // Fallback online
+                    if ((!dados || dados.length === 0) && navigator.onLine) {
+                        const fresh = await fetchConsultaOnline('despesas', 'despesas');
+                        if (fresh) { await offlineDB.salvarDespesas(fresh).catch(() => {}); dados = fresh; }
+                    }
                     // Merge pending expenses
                     const pendingDesp = await offlineDB.getPendingDespesas();
                     for (const desp of pendingDesp) {
@@ -2993,8 +3095,9 @@
 
                     await syncService.sincronizarAgora();
 
-                    // Enviar despesas/documentos pendentes via app.js
+                    // Enviar despesas/documentos/checkouts pendentes via app.js
                     if (typeof window.app !== 'undefined') {
+                        if (typeof window.app.syncCheckoutsPendentes === 'function') await window.app.syncCheckoutsPendentes().catch(() => {});
                         if (typeof window.app.syncDespesasPendentes === 'function') await window.app.syncDespesasPendentes().catch(() => {});
                         if (typeof window.app.syncDocumentosPendentes === 'function') await window.app.syncDocumentosPendentes().catch(() => {});
                     }

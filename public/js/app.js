@@ -16590,6 +16590,137 @@ class App {
         }
     }
 
+    async syncCheckoutsPendentes() {
+        if (!navigator.onLine) return;
+        if (typeof window.offlineDB === 'undefined') return;
+        try {
+            await window.offlineDB.init();
+            const allMeta = await window.offlineDB.getAll('syncMeta');
+            const pendingCheckouts = (allMeta || []).filter(item => item.key && item.key.startsWith('pendingCheckout_'));
+
+            if (pendingCheckouts.length === 0) return;
+
+            console.log(`[SYNC] Sincronizando ${pendingCheckouts.length} checkout(s) offline...`);
+            let synced = 0;
+
+            for (const entry of pendingCheckouts) {
+                const data = entry.value || entry;
+                const clienteId = data.clienteId;
+                const backendUrl = this.registroRotaState?.backendUrl || API_BASE_URL;
+
+                try {
+                    let rvId = null;
+
+                    // 1. Enviar checkin pendente (se existir)
+                    if (data.checkinLocal) {
+                        const checkin = data.checkinLocal;
+                        const checkinForm = new FormData();
+                        checkinForm.append('rep_id', checkin.repId || data.repId);
+                        checkinForm.append('cliente_id', checkin.clienteId || clienteId);
+                        checkinForm.append('latitude', Number(checkin.gpsCoords?.latitude || checkin.latitude || 0));
+                        checkinForm.append('longitude', Number(checkin.gpsCoords?.longitude || checkin.longitude || 0));
+                        checkinForm.append('endereco_resolvido', checkin.enderecoResolvido || '');
+                        checkinForm.append('tipo', 'checkin');
+                        checkinForm.append('cliente_nome', checkin.clienteNome || data.clienteNome || '');
+                        checkinForm.append('cliente_endereco', checkin.enderecoRoteiro || '');
+                        if (checkin.dataVisita || data.dataVisita) checkinForm.append('data_planejada', checkin.dataVisita || data.dataVisita);
+                        if (checkin.novaVisita) checkinForm.append('allow_nova_visita', 'true');
+                        // Foto do checkin
+                        if (checkin.fotoBlob) {
+                            checkinForm.append('fotos', checkin.fotoBlob);
+                        }
+
+                        const checkinResp = await fetchJson(`${backendUrl}/api/registro-rota/visitas`, {
+                            method: 'POST',
+                            body: checkinForm
+                        });
+                        rvId = checkinResp?.rv_id || checkinResp?.sessao_id;
+                        console.log(`[SYNC] Checkin offline enviado, rv_id: ${rvId}`);
+                    }
+
+                    // 2. Enviar atividades (se existirem)
+                    if (rvId && data.atividadesLocal?.payload) {
+                        try {
+                            await fetch(`${backendUrl}/api/registro-rota/sessoes/${rvId}/servicos`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(data.atividadesLocal.payload)
+                            });
+                            console.log(`[SYNC] Atividades offline enviadas para rv_id: ${rvId}`);
+                        } catch (atvErr) {
+                            console.warn('[SYNC] Erro ao enviar atividades pendentes:', atvErr);
+                        }
+                    }
+
+                    // 3. Enviar fotos de campanha (se existirem)
+                    if (rvId && data.campanhaFotos && data.campanhaFotos.length > 0) {
+                        try {
+                            const campanhaForm = new FormData();
+                            campanhaForm.append('rep_id', data.repId);
+                            campanhaForm.append('cliente_id', clienteId);
+                            campanhaForm.append('latitude', Number(data.gpsCoords?.latitude || 0));
+                            campanhaForm.append('longitude', Number(data.gpsCoords?.longitude || 0));
+                            campanhaForm.append('endereco_resolvido', data.enderecoResolvido || '');
+                            campanhaForm.append('tipo', 'campanha');
+                            campanhaForm.append('cliente_nome', data.clienteNome || '');
+                            if (data.dataVisita) campanhaForm.append('data_planejada', data.dataVisita);
+                            campanhaForm.append('rv_id', rvId);
+                            for (const foto of data.campanhaFotos) {
+                                if (foto.blob || foto) {
+                                    campanhaForm.append('fotos', foto.blob || foto);
+                                }
+                            }
+                            await fetchJson(`${backendUrl}/api/registro-rota/visitas`, {
+                                method: 'POST',
+                                body: campanhaForm
+                            });
+                            console.log(`[SYNC] Campanha offline enviada (${data.campanhaFotos.length} fotos)`);
+                        } catch (campErr) {
+                            console.warn('[SYNC] Erro ao enviar campanha pendente:', campErr);
+                        }
+                    }
+
+                    // 4. Enviar checkout
+                    const checkoutForm = new FormData();
+                    checkoutForm.append('rep_id', data.repId);
+                    checkoutForm.append('cliente_id', clienteId);
+                    checkoutForm.append('latitude', Number(data.gpsCoords?.latitude || 0));
+                    checkoutForm.append('longitude', Number(data.gpsCoords?.longitude || 0));
+                    checkoutForm.append('endereco_resolvido', data.enderecoResolvido || '');
+                    checkoutForm.append('tipo', 'checkout');
+                    checkoutForm.append('cliente_nome', data.clienteNome || '');
+                    if (data.dataVisita) checkoutForm.append('data_planejada', data.dataVisita);
+                    if (rvId) checkoutForm.append('rv_id', rvId);
+                    // Foto do checkout
+                    if (data.checkoutFotoBlob) {
+                        checkoutForm.append('fotos', data.checkoutFotoBlob);
+                    }
+
+                    await fetchJson(`${backendUrl}/api/registro-rota/visitas`, {
+                        method: 'POST',
+                        body: checkoutForm
+                    });
+                    console.log(`[SYNC] Checkout offline enviado para cliente ${clienteId}`);
+
+                    // Sucesso: remover da fila
+                    await window.offlineDB.delete('syncMeta', entry.key);
+                    synced++;
+
+                } catch (err) {
+                    console.error(`[SYNC] Erro ao sincronizar checkout cliente ${clienteId}:`, err.message);
+                    // Manter na fila para próxima tentativa
+                }
+            }
+
+            if (synced > 0) {
+                console.log(`[SYNC] ${synced}/${pendingCheckouts.length} checkout(s) offline sincronizado(s)`);
+                this.showNotification(`${synced} checkout(s) offline sincronizado(s) com sucesso!`, 'success');
+            }
+        } catch (e) {
+            console.error('[SYNC] Erro geral ao sincronizar checkouts pendentes:', e);
+        }
+    }
+
     async abrirCameraRubrica(rubricaId) {
         const rubrica = this.documentosState.rubricas?.find(r => r.id === rubricaId);
         if (!rubrica) return;
