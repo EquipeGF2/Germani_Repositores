@@ -1362,25 +1362,40 @@ export const pages = {
     },
 
     'consulta-roteiro': async () => {
-        const [repositores, cidadesRoteiro, supervisores, representantes] = await Promise.all([
-            db.getAllRepositors(),
-            db.getCidadesRoteiroDistintas(),
-            db.getSupervisoresComercial(),
-            db.getRepresentantesComercial()
-        ]);
-
-        // PWA com repositor logado: mostrar apenas o repositor logado
+        // PWA com repositor logado: detectar antes das queries DB
         const isPWA = window.authManager?.isPWA;
         const repIdLogado = window.authManager?.getRepId?.();
         const perfilLogado = window.authManager?.usuario?.perfil;
         const filtrarParaRepositor = isPWA && perfilLogado === 'repositor' && repIdLogado;
 
-        const repositoresFiltrados = filtrarParaRepositor
-            ? repositores.filter(repo => String(repo.repo_cod) === String(repIdLogado))
-            : repositores;
+        // Queries DB com fallback para offline (Turso WebSocket pode falhar sem internet)
+        let repositores = [], cidadesRoteiro = [], supervisores = [], representantes = [];
+        try {
+            [repositores, cidadesRoteiro, supervisores, representantes] = await Promise.all([
+                db.getAllRepositors().catch(() => []),
+                db.getCidadesRoteiroDistintas().catch(() => []),
+                db.getSupervisoresComercial().catch(() => []),
+                db.getRepresentantesComercial().catch(() => [])
+            ]);
+        } catch (e) { console.warn('[Consulta Roteiro] Erro ao carregar filtros (offline?):', e.message); }
+
+        // PWA repositor: usar authManager quando DB não retorna dados (offline)
+        let repositoresFiltrados;
+        if (filtrarParaRepositor) {
+            const repoDoDb = repositores.filter(repo => String(repo.repo_cod) === String(repIdLogado));
+            if (repoDoDb.length > 0) {
+                repositoresFiltrados = repoDoDb;
+            } else {
+                // Offline fallback: criar option a partir do authManager
+                const nomeRepositor = window.authManager?.usuario?.nome || `Repositor ${repIdLogado}`;
+                repositoresFiltrados = [{ repo_cod: repIdLogado, repo_nome: nomeRepositor }];
+            }
+        } else {
+            repositoresFiltrados = repositores;
+        }
 
         const repositorOptions = repositoresFiltrados.map(repo => `
-            <option value="${repo.repo_cod}">${repo.repo_cod} - ${repo.repo_nome}</option>
+            <option value="${repo.repo_cod}" ${filtrarParaRepositor ? 'selected' : ''}>${repo.repo_cod} - ${repo.repo_nome}</option>
         `).join('');
 
         const cidadesRoteiroOptions = cidadesRoteiro.map(cidade => `<option value="${cidade}">${cidade}</option>`).join('');

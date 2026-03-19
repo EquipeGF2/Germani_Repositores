@@ -666,7 +666,7 @@
                     syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/tipos-gasto`, { headers }).then(r => r.json()).catch(e => { console.warn('[PWA] Erro sync tipos-gasto:', e.message); return { ok: false }; })
                 ]);
                 try { if (tiposDocRes.ok) { await offlineDB.salvarTiposDocumento(tiposDocRes.tipos || []); console.log(`[PWA Sync] Tipos documento: ${tiposDocRes.tipos?.length || 0} itens`); } } catch (e) { console.error('[PWA] Erro save tipos-doc:', e.message); }
-                try { if (tiposGastoRes.ok) { await offlineDB.salvarTiposGasto(tiposGastoRes.tipos || []); console.log(`[PWA Sync] Tipos gasto (rubricas): ${tiposGastoRes.tipos?.length || 0} itens`); } } catch (e) { console.error('[PWA] Erro save tipos-gasto:', e.message); }
+                try { if (tiposGastoRes.ok) { await offlineDB.salvarTiposGasto(tiposGastoRes.tipos || []); cachedData.tiposGasto = tiposGastoRes.tipos || []; console.log(`[PWA Sync] Tipos gasto (rubricas): ${tiposGastoRes.tipos?.length || 0} itens`); } } catch (e) { console.error('[PWA] Erro save tipos-gasto:', e.message); }
             } catch (e) {
                 console.warn('[PWA] Erro parcial no passo 2:', e);
             }
@@ -842,26 +842,25 @@
             if (typeof app !== 'undefined' && typeof app.syncCheckoutsPendentes === 'function') {
                 app.syncCheckoutsPendentes().catch(e => console.warn('[PWA] Erro sync checkouts offline:', e));
             }
-            // Cache de dados para consultas offline (background, não bloqueia o sync principal)
-            (async () => {
-                try {
-                    const [docsRes, despesasRes, rotConsultaRes, campanhasRes] = await Promise.all([
-                        syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/documentos-cache`, { headers }, 15000)
-                            .then(r => r.json()).catch(() => ({ ok: false })),
-                        syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/despesas`, { headers }, 15000)
-                            .then(r => r.json()).catch(() => ({ ok: false })),
-                        syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/roteiros-consulta`, { headers }, 15000)
-                            .then(r => r.json()).catch(() => ({ ok: false })),
-                        syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/campanhas`, { headers }, 15000)
-                            .then(r => r.json()).catch(() => ({ ok: false }))
-                    ]);
-                    if (docsRes.ok) { await offlineDB.salvarDocumentosCache(docsRes.documentos || []); console.log(`[PWA Sync] Docs cache: ${docsRes.documentos?.length || 0} itens`); }
-                    if (despesasRes.ok) { await offlineDB.salvarDespesas(despesasRes.despesas || []); console.log(`[PWA Sync] Despesas cache: ${despesasRes.despesas?.length || 0} itens`); }
-                    if (rotConsultaRes.ok) { await offlineDB.salvarRoteirosConsulta(rotConsultaRes.roteiros || []); console.log(`[PWA Sync] Roteiros consulta: ${rotConsultaRes.roteiros?.length || 0} itens`); }
-                    if (campanhasRes.ok) { await offlineDB.salvarCampanhas(campanhasRes.campanhas || []); console.log(`[PWA Sync] Campanhas: ${campanhasRes.campanhas?.length || 0} itens`); }
-                    console.log('[PWA] Cache consultas atualizado em background');
-                } catch (e) { console.warn('[PWA] Erro cache consultas:', e.message); }
-            })();
+            // Cache de dados para consultas offline (BLOQUEANTE - deve completar antes de "Pronto!")
+            updateDailySyncStatus('Salvando consultas...');
+            try {
+                const [docsRes, despesasRes, rotConsultaRes, campanhasRes] = await Promise.all([
+                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/documentos-cache`, { headers }, 10000)
+                        .then(r => r.json()).catch(() => ({ ok: false })),
+                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/despesas`, { headers }, 10000)
+                        .then(r => r.json()).catch(() => ({ ok: false })),
+                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/roteiros-consulta`, { headers }, 10000)
+                        .then(r => r.json()).catch(() => ({ ok: false })),
+                    syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/campanhas`, { headers }, 10000)
+                        .then(r => r.json()).catch(() => ({ ok: false }))
+                ]);
+                try { if (docsRes.ok) { await offlineDB.salvarDocumentosCache(docsRes.documentos || []); console.log(`[PWA Sync] Docs cache: ${docsRes.documentos?.length || 0} itens`); } } catch (e) { console.warn('[PWA Sync] Erro save docs:', e.message); }
+                try { if (despesasRes.ok) { await offlineDB.salvarDespesas(despesasRes.despesas || []); console.log(`[PWA Sync] Despesas cache: ${despesasRes.despesas?.length || 0} itens`); } } catch (e) { console.warn('[PWA Sync] Erro save despesas:', e.message); }
+                try { if (rotConsultaRes.ok) { await offlineDB.salvarRoteirosConsulta(rotConsultaRes.roteiros || []); console.log(`[PWA Sync] Roteiros consulta: ${rotConsultaRes.roteiros?.length || 0} itens`); } } catch (e) { console.warn('[PWA Sync] Erro save roteiros:', e.message); }
+                try { if (campanhasRes.ok) { await offlineDB.salvarCampanhas(campanhasRes.campanhas || []); console.log(`[PWA Sync] Campanhas: ${campanhasRes.campanhas?.length || 0} itens`); } } catch (e) { console.warn('[PWA Sync] Erro save campanhas:', e.message); }
+                console.log('[PWA] Cache consultas salvo com sucesso');
+            } catch (e) { console.warn('[PWA] Erro cache consultas:', e.message); }
 
             setDailySyncStep(3, 'done');
             updateDailySyncStatus('Pronto!');
