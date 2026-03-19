@@ -1565,15 +1565,17 @@
     // ==================== CONSULTAS DO CACHE (offline-first, online fallback) ====================
 
     // Helper: buscar dados da API quando cache está vazio e estamos online
-    async function fetchConsultaOnline(endpoint, dataField) {
+    // Online: últimos 90 dias (3 meses). Offline sync: 15 dias (definido no performDailySync)
+    async function fetchConsultaOnline(endpoint, dataField, dias = 90) {
         if (!navigator.onLine) return null;
         try {
             const token = localStorage.getItem('auth_token');
             const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
-            const res = await syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/${endpoint}`, { headers }, 15000);
+            const url = `${API_BASE_URL}/api/sync/${endpoint}?dias=${dias}`;
+            const res = await syncService.fetchWithTimeout(url, { headers }, 15000);
             const data = await res.json();
             if (data.ok && data[dataField]) {
-                console.log(`[PWA Consulta] ${endpoint}: ${data[dataField].length} itens da API`);
+                console.log(`[PWA Consulta] ${endpoint} (${dias}d): ${data[dataField].length} itens da API`);
                 return data[dataField];
             }
         } catch (e) { console.warn(`[PWA Consulta] Erro fetch ${endpoint}:`, e.message); }
@@ -1583,26 +1585,15 @@
     async function renderConsultaFromCache(consultaId, container) {
         try {
             let dados = [];
+            // Semana atual para filtro default
+            const hoje = new Date();
+            const inicioSemana = new Date(hoje); inicioSemana.setDate(hoje.getDate() - 7);
+            const hojeStr = hoje.toISOString().split('T')[0];
+            const semanaStr = inicioSemana.toISOString().split('T')[0];
+
             switch (consultaId) {
                 case 'consulta-visitas': {
                     dados = await offlineDB.getSessoesRecentes();
-                    // Fallback online: buscar sessões se cache vazio
-                    if ((!dados || dados.length === 0) && navigator.onLine) {
-                        try {
-                            const repId = typeof authManager !== 'undefined' ? authManager.getRepId?.() : null;
-                            if (repId) {
-                                const hoje = new Date().toISOString().split('T')[0];
-                                const quinzeDias = new Date(); quinzeDias.setDate(quinzeDias.getDate() - 15);
-                                const token = localStorage.getItem('auth_token');
-                                const url = `${API_BASE_URL}/api/registro-rota/sessoes?data_checkin_inicio=${quinzeDias.toISOString().split('T')[0]}&data_checkin_fim=${hoje}&rep_id=${repId}&status=todos`;
-                                const res = await syncService.fetchWithTimeout(url, { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } }, 15000).then(r => r.json());
-                                if (res.sessoes) {
-                                    await offlineDB.salvarSessoesRecentes(res.sessoes).catch(() => {});
-                                    dados = res.sessoes;
-                                }
-                            }
-                        } catch (e) { console.warn('[PWA Consulta] Erro fetch visitas:', e.message); }
-                    }
                     // Merge pending sessions
                     const pendingSessions = await offlineDB.getPendingSessions();
                     const pendingMapped = pendingSessions.map(s => ({
@@ -1617,22 +1608,17 @@
                     }));
                     dados = [...dados, ...pendingMapped];
                     cachedData._visitas = dados;
-                    renderVisitasInline(dados, container);
+                    renderVisitasInline(dados, container, hojeStr, semanaStr);
                     break;
                 }
                 case 'consulta-campanha': {
                     dados = await offlineDB.getCampanhas();
-                    // Fallback online
-                    if ((!dados || dados.length === 0) && navigator.onLine) {
-                        const fresh = await fetchConsultaOnline('campanhas', 'campanhas');
-                        if (fresh) { await offlineDB.salvarCampanhas(fresh).catch(() => {}); dados = fresh; }
-                    }
-                    renderCampanhasInline(dados, container);
+                    cachedData._campanhas = dados;
+                    renderCampanhasInline(dados, container, hojeStr, semanaStr);
                     break;
                 }
                 case 'consulta-roteiro': {
                     dados = await offlineDB.getRoteirosConsulta();
-                    // Fallback online
                     if ((!dados || dados.length === 0) && navigator.onLine) {
                         const fresh = await fetchConsultaOnline('roteiros-consulta', 'roteiros');
                         if (fresh) { await offlineDB.salvarRoteirosConsulta(fresh).catch(() => {}); dados = fresh; }
@@ -1642,11 +1628,6 @@
                 }
                 case 'consulta-documentos': {
                     dados = await offlineDB.getDocumentosCache();
-                    // Fallback online
-                    if ((!dados || dados.length === 0) && navigator.onLine) {
-                        const fresh = await fetchConsultaOnline('documentos-cache', 'documentos');
-                        if (fresh) { await offlineDB.salvarDocumentosCache(fresh).catch(() => {}); dados = fresh; }
-                    }
                     // Merge pending documents
                     const pendingDocs = await offlineDB.getPendingDocumentos();
                     const pendingDocsMapped = pendingDocs.map(d => ({
@@ -1660,16 +1641,12 @@
                         _pendente: true
                     }));
                     dados = [...dados, ...pendingDocsMapped];
-                    renderDocumentosInline(dados, container);
+                    cachedData._documentos = dados;
+                    renderDocumentosInline(dados, container, hojeStr, semanaStr);
                     break;
                 }
                 case 'consulta-despesas': {
                     dados = await offlineDB.getDespesas();
-                    // Fallback online
-                    if ((!dados || dados.length === 0) && navigator.onLine) {
-                        const fresh = await fetchConsultaOnline('despesas', 'despesas');
-                        if (fresh) { await offlineDB.salvarDespesas(fresh).catch(() => {}); dados = fresh; }
-                    }
                     // Merge pending expenses
                     const pendingDesp = await offlineDB.getPendingDespesas();
                     for (const desp of pendingDesp) {
@@ -1688,7 +1665,8 @@
                             }
                         }
                     }
-                    renderDespesasInline(dados, container);
+                    cachedData._despesas = dados;
+                    renderDespesasInline(dados, container, hojeStr, semanaStr);
                     break;
                 }
                 default:
@@ -1710,7 +1688,7 @@
         return dataStr;
     }
 
-    function renderVisitasInline(dados, container) {
+    function renderVisitasInline(dados, container, hojeStr, semanaStr) {
         // Build client options from data
         const clientesUnicos = {};
         (dados || []).forEach(s => {
@@ -1728,8 +1706,8 @@
         let html = `
             <div style="background:#f9fafb;padding:10px;border-radius:8px;margin-bottom:12px;">
                 <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
-                    <input type="date" id="pwaFiltroVisitaDataIni" style="flex:1;min-width:120px;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" />
-                    <input type="date" id="pwaFiltroVisitaDataFim" style="flex:1;min-width:120px;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" />
+                    <input type="date" id="pwaFiltroVisitaDataIni" value="${semanaStr || ''}" style="flex:1;min-width:120px;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" />
+                    <input type="date" id="pwaFiltroVisitaDataFim" value="${hojeStr || ''}" style="flex:1;min-width:120px;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" />
                 </div>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
                     <select id="pwaFiltroVisitaCliente" style="flex:2;min-width:140px;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
@@ -1746,11 +1724,14 @@
                     <button onclick="pwaApp.filtrarVisitas()" style="flex:1;padding:8px;background:#ef4444;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">Buscar</button>
                     <button onclick="pwaApp.limparFiltrosVisitas()" style="flex:1;padding:8px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-size:13px;cursor:pointer;">Limpar</button>
                 </div>
+                ${!navigator.onLine ? '<div style="font-size:11px;color:#9ca3af;margin-top:6px;text-align:center;">Offline — dados do cache local (15 dias)</div>' : '<div style="font-size:11px;color:#9ca3af;margin-top:6px;text-align:center;">Online — busque até 3 meses</div>'}
             </div>
             <div id="pwaVisitasResultados"></div>`;
 
         container.innerHTML = html;
-        renderVisitasResultados(dados);
+        // Filtrar dados da semana para exibição inicial
+        const filtrados = filtrarPorData(dados || [], semanaStr, hojeStr, 'checkin_data_hora', 'data_planejada');
+        renderVisitasResultados(filtrados);
     }
 
     function renderVisitasResultados(dados) {
@@ -1806,11 +1787,30 @@
 
     // Filtrar visitas em memória
     window.pwaApp = window.pwaApp || {};
-    pwaApp.filtrarVisitas = function() {
+    pwaApp.filtrarVisitas = async function() {
         const dataIni = document.getElementById('pwaFiltroVisitaDataIni')?.value || '';
         const dataFim = document.getElementById('pwaFiltroVisitaDataFim')?.value || '';
         const clienteId = document.getElementById('pwaFiltroVisitaCliente')?.value || '';
         const status = document.getElementById('pwaFiltroVisitaStatus')?.value || '';
+
+        // Online: buscar da API com o período selecionado
+        if (navigator.onLine && dataIni) {
+            const resultsEl = document.getElementById('pwaVisitasResultados');
+            if (resultsEl) resultsEl.innerHTML = '<div class="pwa-loading-inline"><div class="pwa-spinner-small"></div><span>Buscando...</span></div>';
+            try {
+                const repId = typeof authManager !== 'undefined' ? authManager.getRepId?.() : null;
+                if (repId) {
+                    const fim = dataFim || new Date().toISOString().split('T')[0];
+                    const token = localStorage.getItem('auth_token');
+                    const url = `${API_BASE_URL}/api/registro-rota/sessoes?data_checkin_inicio=${dataIni}&data_checkin_fim=${fim}&rep_id=${repId}&status=todos`;
+                    const res = await syncService.fetchWithTimeout(url, { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } }, 15000).then(r => r.json());
+                    if (res.sessoes) {
+                        await offlineDB.salvarSessoesRecentes(res.sessoes).catch(() => {});
+                        cachedData._visitas = res.sessoes;
+                    }
+                }
+            } catch (e) { console.warn('[PWA Consulta] Erro fetch visitas:', e.message); }
+        }
 
         let filtrados = cachedData._visitas || [];
         if (dataIni) {
@@ -1842,14 +1842,150 @@
         renderVisitasResultados(cachedData._visitas || []);
     };
 
-    async function renderCampanhasInline(dados, container) {
+    // ==================== HELPER: Filtrar por data ====================
+    function filtrarPorData(dados, dataIni, dataFim, ...camposData) {
+        if (!dados || dados.length === 0) return [];
+        let filtrados = dados;
+        if (dataIni) {
+            filtrados = filtrados.filter(item => {
+                for (const campo of camposData) {
+                    const val = item[campo];
+                    if (val) { return (val.split('T')[0] || val) >= dataIni; }
+                }
+                return false;
+            });
+        }
+        if (dataFim) {
+            filtrados = filtrados.filter(item => {
+                for (const campo of camposData) {
+                    const val = item[campo];
+                    if (val) { return (val.split('T')[0] || val) <= dataFim; }
+                }
+                return false;
+            });
+        }
+        return filtrados;
+    }
+
+    // ==================== FILTROS: Campanhas ====================
+    pwaApp.buscarCampanhas = async function() {
+        const dataIni = document.getElementById('pwaFiltroCampanhaDataIni')?.value || '';
+        const dataFim = document.getElementById('pwaFiltroCampanhaDataFim')?.value || '';
+        // Online: buscar da API com o período selecionado
+        if (navigator.onLine && dataIni) {
+            const resultsEl = document.getElementById('pwaCampanhasResultados');
+            if (resultsEl) resultsEl.innerHTML = '<div class="pwa-loading-inline"><div class="pwa-spinner-small"></div><span>Buscando...</span></div>';
+            const dias = Math.min(90, Math.ceil((new Date(dataFim || new Date()) - new Date(dataIni)) / 86400000) + 7);
+            const fresh = await fetchConsultaOnline('campanhas', 'campanhas', dias);
+            if (fresh) {
+                await offlineDB.salvarCampanhas(fresh).catch(() => {});
+                cachedData._campanhas = fresh;
+            }
+        }
+        const filtrados = filtrarPorData(cachedData._campanhas || [], dataIni, dataFim, 'data_planejada', 'data_hora');
+        renderCampanhasResultados(filtrados);
+    };
+    pwaApp.limparFiltrosCampanhas = function() {
+        const el1 = document.getElementById('pwaFiltroCampanhaDataIni'); if (el1) el1.value = '';
+        const el2 = document.getElementById('pwaFiltroCampanhaDataFim'); if (el2) el2.value = '';
+        renderCampanhasResultados(cachedData._campanhas || []);
+    };
+
+    // ==================== FILTROS: Documentos ====================
+    pwaApp.buscarDocumentos = async function() {
+        const dataIni = document.getElementById('pwaFiltroDocDataIni')?.value || '';
+        const dataFim = document.getElementById('pwaFiltroDocDataFim')?.value || '';
+        if (navigator.onLine && dataIni) {
+            const resultsEl = document.getElementById('pwaDocumentosResultados');
+            if (resultsEl) resultsEl.innerHTML = '<div class="pwa-loading-inline"><div class="pwa-spinner-small"></div><span>Buscando...</span></div>';
+            const dias = Math.min(90, Math.ceil((new Date(dataFim || new Date()) - new Date(dataIni)) / 86400000) + 7);
+            const fresh = await fetchConsultaOnline('documentos-cache', 'documentos', dias);
+            if (fresh) {
+                await offlineDB.salvarDocumentosCache(fresh).catch(() => {});
+                // Merge pendentes
+                const pendingDocs = await offlineDB.getPendingDocumentos().catch(() => []);
+                const merged = [...fresh, ...pendingDocs.map(d => ({
+                    doc_id: d.id || `pending_${d.createdAt}`, tipo_nome: d.tipoNome || 'Documento',
+                    doc_status: 'PENDENTE', doc_data_ref: d.dataRef || '', _pendente: true
+                }))];
+                cachedData._documentos = merged;
+            }
+        }
+        const filtrados = filtrarPorData(cachedData._documentos || [], dataIni, dataFim, 'doc_data_ref');
+        renderDocumentosResultados(filtrados);
+    };
+    pwaApp.limparFiltrosDocumentos = function() {
+        const el1 = document.getElementById('pwaFiltroDocDataIni'); if (el1) el1.value = '';
+        const el2 = document.getElementById('pwaFiltroDocDataFim'); if (el2) el2.value = '';
+        renderDocumentosResultados(cachedData._documentos || []);
+    };
+
+    // ==================== FILTROS: Despesas ====================
+    pwaApp.buscarDespesas = async function() {
+        const dataIni = document.getElementById('pwaFiltroDespDataIni')?.value || '';
+        const dataFim = document.getElementById('pwaFiltroDespDataFim')?.value || '';
+        if (navigator.onLine && dataIni) {
+            const resultsEl = document.getElementById('pwaDespesasResultados');
+            if (resultsEl) resultsEl.innerHTML = '<div class="pwa-loading-inline"><div class="pwa-spinner-small"></div><span>Buscando...</span></div>';
+            const dias = Math.min(90, Math.ceil((new Date(dataFim || new Date()) - new Date(dataIni)) / 86400000) + 7);
+            const fresh = await fetchConsultaOnline('despesas', 'despesas', dias);
+            if (fresh) {
+                await offlineDB.salvarDespesas(fresh).catch(() => {});
+                // Merge pendentes
+                const pendingDesp = await offlineDB.getPendingDespesas().catch(() => []);
+                const merged = [...fresh];
+                for (const desp of pendingDesp) {
+                    if (desp.rubricas && Array.isArray(desp.rubricas)) {
+                        for (const rub of desp.rubricas) {
+                            if (Number(rub.valor) > 0) {
+                                merged.push({ id: `pending_${desp.id}_${rub.id}`, dv_data_ref: desp.dataRef || '', dv_valor: rub.valor, rubrica_nome: rub.nome || '-', _pendente: true });
+                            }
+                        }
+                    }
+                }
+                cachedData._despesas = merged;
+            }
+        }
+        const filtrados = filtrarPorData(cachedData._despesas || [], dataIni, dataFim, 'dv_data_ref');
+        renderDespesasResultados(filtrados);
+    };
+    pwaApp.limparFiltrosDespesas = function() {
+        const el1 = document.getElementById('pwaFiltroDespDataIni'); if (el1) el1.value = '';
+        const el2 = document.getElementById('pwaFiltroDespDataFim'); if (el2) el2.value = '';
+        renderDespesasResultados(cachedData._despesas || []);
+    };
+
+    async function renderCampanhasInline(dados, container, hojeStr, semanaStr) {
+        const html = `
+            <div style="background:#f9fafb;padding:10px;border-radius:8px;margin-bottom:12px;">
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+                    <input type="date" id="pwaFiltroCampanhaDataIni" value="${semanaStr || ''}" style="flex:1;min-width:120px;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" />
+                    <input type="date" id="pwaFiltroCampanhaDataFim" value="${hojeStr || ''}" style="flex:1;min-width:120px;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" />
+                </div>
+                <div style="display:flex;gap:6px;">
+                    <button onclick="pwaApp.buscarCampanhas()" style="flex:1;padding:8px;background:#ef4444;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">Buscar</button>
+                    <button onclick="pwaApp.limparFiltrosCampanhas()" style="flex:1;padding:8px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-size:13px;cursor:pointer;">Limpar</button>
+                </div>
+                ${!navigator.onLine ? '<div style="font-size:11px;color:#9ca3af;margin-top:6px;text-align:center;">Offline — dados do cache local (15 dias)</div>' : '<div style="font-size:11px;color:#9ca3af;margin-top:6px;text-align:center;">Online — busque até 3 meses</div>'}
+            </div>
+            <div id="pwaCampanhasResultados"></div>`;
+        container.innerHTML = html;
+        // Filtrar dados da semana para exibição inicial
+        const filtrados = filtrarPorData(dados || [], semanaStr, hojeStr, 'data_planejada', 'data_hora');
+        renderCampanhasResultados(filtrados);
+    }
+
+    function renderCampanhasResultados(dados) {
+        const container = document.getElementById('pwaCampanhasResultados');
+        if (!container) return;
         if (!dados || dados.length === 0) {
-            const ultimaSync = typeof offlineDB !== 'undefined' ? await offlineDB.getUltimaSync() : null;
-            const syncInfo = ultimaSync ? `Última sincronização: ${new Date(ultimaSync).toLocaleString('pt-BR')}` : 'Nenhuma sincronização realizada';
-            container.innerHTML = `<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhuma campanha nos últimos 15 dias</div><div style="font-size:12px;color:#9ca3af;margin-top:4px">${syncInfo}</div></div>`;
+            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhuma campanha no período</div></div>';
             return;
         }
-        let html = '<div class="pwa-consulta-list">';
+        let html = `<div class="pwa-consulta-list">
+            <div style="background:#eff6ff;padding:10px;border-radius:8px;margin-bottom:12px;text-align:center;">
+                <div style="font-size:13px;color:#1e40af;">Total: ${dados.length} campanhas</div>
+            </div>`;
         for (const item of dados) {
             const data = formatarData(item.data_planejada || (item.data_hora ? item.data_hora.split('T')[0] : ''));
             html += `
@@ -2052,14 +2188,36 @@
         } catch (e) { showToast('Erro ao gerar mensagem: ' + e.message, 'error'); }
     };
 
-    async function renderDocumentosInline(dados, container) {
+    async function renderDocumentosInline(dados, container, hojeStr, semanaStr) {
+        const html = `
+            <div style="background:#f9fafb;padding:10px;border-radius:8px;margin-bottom:12px;">
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+                    <input type="date" id="pwaFiltroDocDataIni" value="${semanaStr || ''}" style="flex:1;min-width:120px;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" />
+                    <input type="date" id="pwaFiltroDocDataFim" value="${hojeStr || ''}" style="flex:1;min-width:120px;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" />
+                </div>
+                <div style="display:flex;gap:6px;">
+                    <button onclick="pwaApp.buscarDocumentos()" style="flex:1;padding:8px;background:#ef4444;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">Buscar</button>
+                    <button onclick="pwaApp.limparFiltrosDocumentos()" style="flex:1;padding:8px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-size:13px;cursor:pointer;">Limpar</button>
+                </div>
+                ${!navigator.onLine ? '<div style="font-size:11px;color:#9ca3af;margin-top:6px;text-align:center;">Offline — dados do cache local (15 dias)</div>' : '<div style="font-size:11px;color:#9ca3af;margin-top:6px;text-align:center;">Online — busque até 3 meses</div>'}
+            </div>
+            <div id="pwaDocumentosResultados"></div>`;
+        container.innerHTML = html;
+        const filtrados = filtrarPorData(dados || [], semanaStr, hojeStr, 'doc_data_ref');
+        renderDocumentosResultados(filtrados);
+    }
+
+    function renderDocumentosResultados(dados) {
+        const container = document.getElementById('pwaDocumentosResultados');
+        if (!container) return;
         if (!dados || dados.length === 0) {
-            const ultimaSync = typeof offlineDB !== 'undefined' ? await offlineDB.getUltimaSync() : null;
-            const syncInfo = ultimaSync ? `Última sincronização: ${new Date(ultimaSync).toLocaleString('pt-BR')}` : 'Nenhuma sincronização realizada';
-            container.innerHTML = `<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhum documento nos últimos 15 dias</div><div style="font-size:12px;color:#9ca3af;margin-top:4px">${syncInfo}</div></div>`;
+            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhum documento no período</div></div>';
             return;
         }
-        let html = '<div class="pwa-consulta-list">';
+        let html = `<div class="pwa-consulta-list">
+            <div style="background:#eff6ff;padding:10px;border-radius:8px;margin-bottom:12px;text-align:center;">
+                <div style="font-size:13px;color:#1e40af;">Total: ${dados.length} documentos</div>
+            </div>`;
         for (const doc of dados) {
             const data = formatarData(doc.doc_data_ref);
             const isPendente = doc._pendente;
@@ -2081,19 +2239,32 @@
         container.innerHTML = html;
     }
 
-    async function renderDespesasInline(dados, container) {
+    async function renderDespesasInline(dados, container, hojeStr, semanaStr) {
+        const html = `
+            <div style="background:#f9fafb;padding:10px;border-radius:8px;margin-bottom:12px;">
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+                    <input type="date" id="pwaFiltroDespDataIni" value="${semanaStr || ''}" style="flex:1;min-width:120px;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" />
+                    <input type="date" id="pwaFiltroDespDataFim" value="${hojeStr || ''}" style="flex:1;min-width:120px;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" />
+                </div>
+                <div style="display:flex;gap:6px;">
+                    <button onclick="pwaApp.buscarDespesas()" style="flex:1;padding:8px;background:#ef4444;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">Buscar</button>
+                    <button onclick="pwaApp.limparFiltrosDespesas()" style="flex:1;padding:8px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-size:13px;cursor:pointer;">Limpar</button>
+                </div>
+                ${!navigator.onLine ? '<div style="font-size:11px;color:#9ca3af;margin-top:6px;text-align:center;">Offline — dados do cache local</div>' : '<div style="font-size:11px;color:#9ca3af;margin-top:6px;text-align:center;">Online — busque até 3 meses</div>'}
+            </div>
+            <div id="pwaDespesasResultados"></div>`;
+        container.innerHTML = html;
+        const filtrados = filtrarPorData(dados || [], semanaStr, hojeStr, 'dv_data_ref');
+        renderDespesasResultados(filtrados);
+    }
+
+    function renderDespesasResultados(dados) {
+        const container = document.getElementById('pwaDespesasResultados');
+        if (!container) return;
         if (!dados || dados.length === 0) {
-            let syncInfo = 'Nenhuma sincroniza\u00e7\u00e3o realizada';
-            try {
-                if (typeof offlineDB !== 'undefined') {
-                    const ultimaSync = await offlineDB.getUltimaSync();
-                    if (ultimaSync) syncInfo = '\u00daltima sincroniza\u00e7\u00e3o: ' + new Date(ultimaSync).toLocaleString('pt-BR');
-                }
-            } catch (_) {}
-            container.innerHTML = `<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhuma despesa no m\u00eas corrente</div><div style="font-size:12px;color:#9ca3af;margin-top:4px">${syncInfo}</div></div>`;
+            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Nenhuma despesa no período</div></div>';
             return;
         }
-        // Agrupar por data
         const porData = {};
         let totalGeral = 0;
         for (const d of dados) {
@@ -2104,7 +2275,7 @@
         }
         let html = `<div class="pwa-consulta-list">
             <div style="background: #fef3c7; padding: 12px; border-radius: 8px; margin-bottom: 12px; text-align: center;">
-                <div style="font-size: 13px; color: #92400e;">Total do m\u00eas</div>
+                <div style="font-size: 13px; color: #92400e;">Total do período</div>
                 <div style="font-size: 20px; font-weight: 700; color: #78350f;">R$ ${totalGeral.toFixed(2).replace('.', ',')}</div>
             </div>`;
         const datasOrdenadas = Object.keys(porData).sort().reverse();

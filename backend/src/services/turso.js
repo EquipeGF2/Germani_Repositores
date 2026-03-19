@@ -4470,10 +4470,19 @@ class TursoService {
   /**
    * Buscar despesas do mês corrente para o repositor (sync PWA)
    */
-  async buscarDespesasRepositor(repId) {
+  async buscarDespesasRepositor(repId, dias = 0) {
     try {
       const hoje = new Date();
-      const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().split('T')[0];
+      // Se dias > 0, usar período de N dias. Senão, usar mês atual (padrão)
+      let dataInicio;
+      if (dias > 0) {
+        const dataLimite = new Date();
+        dataLimite.setDate(dataLimite.getDate() - dias);
+        dataInicio = dataLimite.toISOString().split('T')[0];
+      } else {
+        dataInicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().split('T')[0];
+      }
+      const primeiroDiaMes = dataInicio;
 
       const sql = `
         SELECT
