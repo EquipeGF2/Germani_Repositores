@@ -1,8 +1,8 @@
 // Service Worker para PWA - Sistema de Repositores Germani
 // Permite operação offline completa da aplicação
 
-const CACHE_NAME = 'germani-repositores-v19';
-const RUNTIME_CACHE = 'germani-runtime-v19';
+const CACHE_NAME = 'germani-repositores-v20';
+const RUNTIME_CACHE = 'germani-runtime-v20';
 
 // Arquivos essenciais para funcionar offline
 // Usar caminhos relativos para funcionar com GitHub Pages (subdiretório)

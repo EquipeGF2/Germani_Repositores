@@ -257,10 +257,15 @@ class OfflineDB {
       const clienteId = String(item.cliente_id || item.cli_codigo || '').trim().replace(/\.0$/, '');
       const normalized = {
         ...item,
+        rot_cli_id: item.rot_cli_id || `${clienteId}_${item.dia_semana || item.rot_cid_id || ''}`,
         cliente_id: clienteId,
         cli_codigo: clienteId
       };
-      await this.put('roteiro', normalized);
+      try {
+        await this.put('roteiro', normalized);
+      } catch (e) {
+        console.warn('[OfflineDB] Erro ao salvar item roteiro:', e.message, normalized);
+      }
     }
   }
 
@@ -397,7 +402,16 @@ class OfflineDB {
   async salvarRoteirosConsulta(roteiros) {
     await this.clear('roteirosConsulta');
     for (const item of roteiros) {
-      await this.put('roteirosConsulta', item);
+      const clienteId = String(item.cliente_id || item.cli_codigo || '').trim().replace(/\.0$/, '');
+      const normalized = {
+        ...item,
+        rot_cli_id: item.rot_cli_id || `${clienteId}_${item.dia_semana || item.rot_cid_id || ''}`
+      };
+      try {
+        await this.put('roteirosConsulta', normalized);
+      } catch (e) {
+        console.warn('[OfflineDB] Erro ao salvar roteiro consulta:', e.message);
+      }
     }
   }
 

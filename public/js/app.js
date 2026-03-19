@@ -16363,28 +16363,38 @@ class App {
                 try {
                     await window.offlineDB.init();
                     const cached = await window.offlineDB.getAll('tiposGasto').catch(() => []);
-                    console.log(`[Rubricas] IndexedDB tiposGasto: ${cached.length} itens`);
+                    console.log(`[Rubricas] Tier1 IndexedDB: ${cached.length} itens`);
                     rubricas = cached.map(mapRubrica).filter(r => r.gst_ativo !== false);
                 } catch (e) {
-                    console.warn('[Rubricas] Erro IndexedDB:', e.message);
-                    rubricas = [];
-                }
-            }
-            // Tier 2: Turso direto (WebSocket do browser)
-            if (rubricas.length === 0 && navigator.onLine) {
-                try {
-                    rubricas = await db.listarTiposGasto(true);
-                    console.log(`[Rubricas] Turso direto: ${rubricas.length} itens`);
-                    if (rubricas.length > 0 && typeof window.offlineDB !== 'undefined') {
-                        window.offlineDB.salvarTiposGasto(rubricas).catch(() => {});
-                    }
-                } catch (e) {
-                    console.warn('[Rubricas] Erro Turso:', e.message);
+                    console.warn('[Rubricas] Tier1 Erro IndexedDB:', e.message);
                     rubricas = [];
                 }
             }
 
-            // Tier 3: API sync backend (alternativa ao Turso WebSocket)
+            // Tier 2: Cache em memória do PWA (funciona offline se sync populou cachedData)
+            if (rubricas.length === 0 && window.pwaApp?.getRubricasCache) {
+                try {
+                    const pwaCache = window.pwaApp.getRubricasCache();
+                    console.log(`[Rubricas] Tier2 PWA memória: ${pwaCache?.length || 0} itens`);
+                    rubricas = (pwaCache || []).map(mapRubrica).filter(r => r.gst_ativo !== false);
+                } catch (_) {}
+            }
+
+            // Tier 3: Turso direto (WebSocket do browser - online only)
+            if (rubricas.length === 0 && navigator.onLine) {
+                try {
+                    rubricas = await db.listarTiposGasto(true);
+                    console.log(`[Rubricas] Tier3 Turso direto: ${rubricas.length} itens`);
+                    if (rubricas.length > 0 && typeof window.offlineDB !== 'undefined') {
+                        window.offlineDB.salvarTiposGasto(rubricas).catch(() => {});
+                    }
+                } catch (e) {
+                    console.warn('[Rubricas] Tier3 Erro Turso:', e.message);
+                    rubricas = [];
+                }
+            }
+
+            // Tier 4: API sync backend (online only)
             if (rubricas.length === 0 && navigator.onLine) {
                 try {
                     const token = localStorage.getItem('auth_token');
@@ -16395,7 +16405,7 @@ class App {
                         if (resp.ok) {
                             const data = await resp.json();
                             if (data.ok && data.tipos?.length > 0) {
-                                console.log(`[Rubricas] API sync: ${data.tipos.length} itens`);
+                                console.log(`[Rubricas] Tier4 API sync: ${data.tipos.length} itens`);
                                 rubricas = data.tipos.map(mapRubrica).filter(r => r.gst_ativo !== false);
                                 if (typeof window.offlineDB !== 'undefined') {
                                     window.offlineDB.salvarTiposGasto(data.tipos).catch(() => {});
@@ -16404,17 +16414,8 @@ class App {
                         }
                     }
                 } catch (e) {
-                    console.warn('[Rubricas] Erro API sync:', e.message);
+                    console.warn('[Rubricas] Tier4 Erro API sync:', e.message);
                 }
-            }
-
-            // Tier 4: Cache em memória do PWA (cachedData.tiposGasto)
-            if (rubricas.length === 0 && window.pwaApp?.getRubricasCache) {
-                try {
-                    const pwaCache = window.pwaApp.getRubricasCache();
-                    console.log(`[Rubricas] PWA cache: ${pwaCache?.length || 0} itens`);
-                    rubricas = (pwaCache || []).map(mapRubrica).filter(r => r.gst_ativo !== false);
-                } catch (_) {}
             }
 
             console.log(`[Rubricas] Final: ${rubricas.length} rubricas ativas carregadas`);

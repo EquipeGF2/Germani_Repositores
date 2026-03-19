@@ -217,7 +217,8 @@ router.get('/despesas', async (req, res) => {
     const repId = req.user.rep_id;
     if (!repId) return res.status(400).json({ ok: false, message: 'Usuário não vinculado a um repositor' });
 
-    const despesas = await tursoService.buscarDespesasRepositor(repId);
+    const dias = parseInt(req.query.dias) || 0;
+    const despesas = await tursoService.buscarDespesasRepositor(repId, dias);
 
     return res.json({ ok: true, despesas: despesas || [] });
   } catch (error) {

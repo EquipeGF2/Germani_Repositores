@@ -1565,15 +1565,17 @@
     // ==================== CONSULTAS DO CACHE (offline-first, online fallback) ====================
 
     // Helper: buscar dados da API quando cache está vazio e estamos online
-    async function fetchConsultaOnline(endpoint, dataField) {
+    // Online: últimos 90 dias (3 meses). Offline sync: 15 dias (definido no performDailySync)
+    async function fetchConsultaOnline(endpoint, dataField, dias = 90) {
         if (!navigator.onLine) return null;
         try {
             const token = localStorage.getItem('auth_token');
             const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
-            const res = await syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/${endpoint}`, { headers }, 15000);
+            const url = `${API_BASE_URL}/api/sync/${endpoint}?dias=${dias}`;
+            const res = await syncService.fetchWithTimeout(url, { headers }, 15000);
             const data = await res.json();
             if (data.ok && data[dataField]) {
-                console.log(`[PWA Consulta] ${endpoint}: ${data[dataField].length} itens da API`);
+                console.log(`[PWA Consulta] ${endpoint} (${dias}d): ${data[dataField].length} itens da API`);
                 return data[dataField];
             }
         } catch (e) { console.warn(`[PWA Consulta] Erro fetch ${endpoint}:`, e.message); }
@@ -1586,15 +1588,15 @@
             switch (consultaId) {
                 case 'consulta-visitas': {
                     dados = await offlineDB.getSessoesRecentes();
-                    // Fallback online: buscar sessões se cache vazio
+                    // Fallback online: buscar sessões (3 meses quando online, 15 dias para cache offline)
                     if ((!dados || dados.length === 0) && navigator.onLine) {
                         try {
                             const repId = typeof authManager !== 'undefined' ? authManager.getRepId?.() : null;
                             if (repId) {
                                 const hoje = new Date().toISOString().split('T')[0];
-                                const quinzeDias = new Date(); quinzeDias.setDate(quinzeDias.getDate() - 15);
+                                const tresMeses = new Date(); tresMeses.setDate(tresMeses.getDate() - 90);
                                 const token = localStorage.getItem('auth_token');
-                                const url = `${API_BASE_URL}/api/registro-rota/sessoes?data_checkin_inicio=${quinzeDias.toISOString().split('T')[0]}&data_checkin_fim=${hoje}&rep_id=${repId}&status=todos`;
+                                const url = `${API_BASE_URL}/api/registro-rota/sessoes?data_checkin_inicio=${tresMeses.toISOString().split('T')[0]}&data_checkin_fim=${hoje}&rep_id=${repId}&status=todos`;
                                 const res = await syncService.fetchWithTimeout(url, { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } }, 15000).then(r => r.json());
                                 if (res.sessoes) {
                                     await offlineDB.salvarSessoesRecentes(res.sessoes).catch(() => {});
