@@ -625,7 +625,11 @@ router.post('/visitas', upload.any(), async (req, res) => {
           status: 409,
           code: 'CHECKIN_EXISTENTE',
           message: 'Já existe um atendimento em andamento para este cliente. Finalize o checkout primeiro.',
-          requestId
+          requestId,
+          detalhes: {
+            rv_id: sessaoEmAndamentoCliente.rv_id || sessaoEmAndamentoCliente.id,
+            sessao_id: sessaoEmAndamentoCliente.rv_id || sessaoEmAndamentoCliente.id
+          }
         });
       }
       const atendimentoFechadoHoje = Boolean(sessaoDiaOperacional?.checkin_at && sessaoDiaOperacional?.checkout_at);
@@ -636,7 +640,11 @@ router.post('/visitas', upload.any(), async (req, res) => {
           status: 409,
           code: 'CHECKIN_EXISTENTE',
           message: 'Já existe check-in para este cliente no dia.',
-          requestId
+          requestId,
+          detalhes: {
+            rv_id: sessaoDiaOperacional.rv_id || sessaoDiaOperacional.sessao_id || sessaoDiaOperacional.id,
+            sessao_id: sessaoDiaOperacional.rv_id || sessaoDiaOperacional.sessao_id || sessaoDiaOperacional.id
+          }
         });
       }
 
