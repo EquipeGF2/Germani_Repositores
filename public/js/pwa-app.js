@@ -2787,9 +2787,86 @@
 
         // Chamar a lógica original do app.js
         setTimeout(async () => {
-            // Se o modal não foi salvo (primeira navegação ou erro), tentar injetar do DOM
+            // Se o modal não foi salvo (primeira navegação, atendimento page, ou erro), criar dinamicamente
             if (!modalSalvo) {
-                injectCaptureModalInline();
+                let modal = document.getElementById('modalCapturarVisita');
+                if (!modal) {
+                    // Criar modal dinamicamente - mesmo HTML do template registro-rota em pages.js
+                    const modalHTML = `
+                        <div class="modal modal-captura pwa-inline-modal" id="modalCapturarVisita">
+                            <div class="modal-content captura-modal">
+                                <div class="modal-header captura-header">
+                                    <div class="captura-title-row">
+                                        <div class="captura-title-group">
+                                            <span id="capturaTipoBadge" class="captura-badge">CHECKIN</span>
+                                            <h3 id="modalCapturaTitulo">Registrar Visita</h3>
+                                        </div>
+                                        <button class="modal-close captura-close" onclick="window.app.fecharModalCaptura()" aria-label="Fechar" title="Fechar">&times;</button>
+                                    </div>
+                                    <p id="avisoFotosCampanha" class="aviso-fotos-campanha" style="display: none; font-size: 0.75rem; color: #666; margin: 4px 0 0 0; padding: 0;">Máx 10 fotos</p>
+                                    <p id="capturaClienteInfo" class="captura-cliente-info"></p>
+                                </div>
+                                <div class="captura-localizacao">
+                                    <div class="gps-chip" id="gpsChip">
+                                        <span class="gps-chip-icon">📍</span>
+                                        <span id="gpsStatusResumo" class="gps-chip-text">GPS aguardando</span>
+                                        <button type="button" id="gpsDetalhesToggle" class="gps-details-btn" aria-expanded="false">Detalhes</button>
+                                    </div>
+                                    <div id="gpsDetalhes" class="gps-details" hidden>
+                                        <div id="gpsStatus" class="gps-status-detalhe">Aguardando geolocalização...</div>
+                                    </div>
+                                </div>
+                                <div id="resumoAtividades" class="resumo-atividades" style="display: none;">
+                                    <div class="resumo-atividades-header">
+                                        <div class="resumo-atividades-titulo">
+                                            <span>📋 Resumo</span>
+                                            <span id="resumoAtividadesCount" class="resumo-atividades-count">(0)</span>
+                                        </div>
+                                        <button type="button" class="resumo-toggle" id="toggleResumoAtividades" aria-expanded="false">Mostrar</button>
+                                    </div>
+                                    <div id="resumoAtividadesConteudo" class="resumo-atividades-conteudo"></div>
+                                </div>
+                                <div class="modal-body captura-body">
+                                    <div class="captura-main">
+                                        <div class="camera-wrapper">
+                                            <div id="cameraArea" class="camera-area">
+                                                <video id="videoPreview" class="camera-video" autoplay playsinline muted></video>
+                                                <canvas id="canvasCaptura" class="camera-canvas"></canvas>
+                                                <div id="cameraPlaceholder" class="camera-placeholder">📷 Preparando câmera...</div>
+                                                <div id="cameraErro" class="camera-erro" style="display:none;"></div>
+                                            </div>
+                                            <div class="captura-hint" id="capturaHint">Capture uma única foto para este registro. Você pode refazer antes de salvar.</div>
+                                        </div>
+                                        <div id="galeriaCampanhaWrapper" class="captura-thumbs-wrapper" style="display:none;">
+                                            <div class="captura-thumbs-header">
+                                                <span id="contadorFotosCaptura">Fotos: 0</span>
+                                                <span id="statusEnvioCaptura" class="captura-status" aria-live="polite"></span>
+                                            </div>
+                                            <div id="galeriaCampanha" class="camera-thumbs"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="modal-footer captura-footer">
+                                    <div class="captura-actions-left">
+                                        <button class="btn btn-secondary" id="btnPermitirCamera" style="display:none;" aria-label="Permitir câmera" title="Permitir câmera">📷 <span class="btn-text">Permitir câmera</span></button>
+                                    </div>
+                                    <div class="captura-actions-right">
+                                        <button class="btn btn-secondary" onclick="window.app.fecharModalCaptura()" aria-label="Cancelar captura" title="Cancelar captura"><span aria-hidden="true">✖️</span> <span class="btn-text">Cancelar</span></button>
+                                        <button class="btn btn-primary" id="btnCapturarFoto" aria-label="Capturar foto" title="Capturar foto">📸 <span class="btn-text">Capturar Foto</span></button>
+                                        <button class="btn btn-secondary" id="btnNovaFoto" style="display: none;" aria-label="Nova foto" title="Nova foto">🔄 <span class="btn-text">Nova Foto</span></button>
+                                        <button class="btn btn-primary" id="btnSalvarVisita" disabled aria-label="Salvar registro" title="Salvar registro">💾 <span class="btn-text">Salvar Visita</span></button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>`;
+                    const inlineArea = document.getElementById('pwaCheckinInlineArea');
+                    if (inlineArea) {
+                        inlineArea.innerHTML = modalHTML;
+                        console.log('[PWA] Modal de captura criado dinamicamente');
+                    }
+                } else {
+                    injectCaptureModalInline();
+                }
             }
             if (typeof window.app !== 'undefined' && window.app._originalAbrirModalCaptura) {
                 await window.app._originalAbrirModalCaptura(repId, clienteId, clienteNome, enderecoLinha, dataVisita, tipoRegistro, enderecoCadastro, novaVisita);
@@ -3052,6 +3129,18 @@
                 if (cachedEspacos) {
                     const lista = JSON.parse(cachedEspacos);
                     _mostrarBotaoEspacos(lista.includes(cliNorm));
+                    return;
+                }
+            }
+        } catch (_) {}
+
+        // Verificar dados de espaços salvos diretamente (backup do _atualizarEspacosCache)
+        try {
+            const espacosData = localStorage.getItem(`espacos_data_${cliNorm}`);
+            if (espacosData) {
+                const parsed = JSON.parse(espacosData);
+                if (parsed && parsed.length > 0) {
+                    _mostrarBotaoEspacos(true);
                     return;
                 }
             }
