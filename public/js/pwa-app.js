@@ -52,6 +52,86 @@
 
     // ==================== INIT ====================
 
+    // ==================== CONSOLE VISUAL MOBILE ====================
+    const _mobileConsole = {
+        logs: [],
+        maxLogs: 150,
+        visible: false,
+        el: null,
+        _originalConsole: {
+            log: console.log.bind(console),
+            warn: console.warn.bind(console),
+            error: console.error.bind(console),
+            info: console.info.bind(console)
+        },
+        init() {
+            // Criar container fixo
+            const el = document.createElement('div');
+            el.id = 'pwaDebugConsole';
+            el.innerHTML = `
+                <div id="pwaDebugHeader" style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#1e293b;border-bottom:1px solid #334155;cursor:pointer;">
+                    <span style="font-weight:700;font-size:12px;color:#38bdf8;">Console Debug</span>
+                    <div style="display:flex;gap:8px;">
+                        <button onclick="pwaApp.clearDebugConsole()" style="background:#ef4444;color:white;border:none;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;">Limpar</button>
+                        <button onclick="pwaApp.toggleDebugConsole()" style="background:#475569;color:white;border:none;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;">Fechar</button>
+                    </div>
+                </div>
+                <div id="pwaDebugBody" style="flex:1;overflow-y:auto;padding:4px 8px;font-family:monospace;font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-all;"></div>
+            `;
+            el.style.cssText = 'display:none;position:fixed;bottom:60px;left:0;right:0;height:45vh;background:#0f172a;color:#e2e8f0;z-index:99999;flex-direction:column;border-top:2px solid #38bdf8;';
+            document.body.appendChild(el);
+            this.el = el;
+
+            // Interceptar console.log/warn/error
+            const self = this;
+            ['log', 'warn', 'error', 'info'].forEach(method => {
+                console[method] = function(...args) {
+                    self._originalConsole[method](...args);
+                    self.addLog(method, args);
+                };
+            });
+
+            // Capturar erros globais
+            window.addEventListener('error', (e) => {
+                self.addLog('error', [`[UNCAUGHT] ${e.message} (${e.filename}:${e.lineno})`]);
+            });
+            window.addEventListener('unhandledrejection', (e) => {
+                self.addLog('error', [`[PROMISE] ${e.reason?.message || e.reason}`]);
+            });
+        },
+        addLog(type, args) {
+            const time = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const text = args.map(a => {
+                if (typeof a === 'object') {
+                    try { return JSON.stringify(a, null, 0).substring(0, 300); } catch { return String(a); }
+                }
+                return String(a);
+            }).join(' ');
+            const colors = { log: '#e2e8f0', warn: '#fbbf24', error: '#f87171', info: '#38bdf8' };
+            this.logs.push({ time, type, text, color: colors[type] || '#e2e8f0' });
+            if (this.logs.length > this.maxLogs) this.logs.shift();
+            this.render();
+        },
+        render() {
+            if (!this.visible) return;
+            const body = document.getElementById('pwaDebugBody');
+            if (!body) return;
+            body.innerHTML = this.logs.map(l =>
+                `<div style="color:${l.color};border-bottom:1px solid #1e293b;padding:2px 0;"><span style="color:#64748b;">${l.time}</span> <span style="color:${l.color};font-weight:${l.type === 'error' ? '700' : '400'}">[${l.type.toUpperCase()}]</span> ${l.text.replace(/</g, '&lt;')}</div>`
+            ).join('');
+            body.scrollTop = body.scrollHeight;
+        },
+        toggle() {
+            this.visible = !this.visible;
+            if (this.el) this.el.style.display = this.visible ? 'flex' : 'none';
+            if (this.visible) this.render();
+        },
+        clear() {
+            this.logs = [];
+            this.render();
+        }
+    };
+
     window.pwaApp = {
         init,
         navigate,
@@ -68,6 +148,9 @@
         abrirAtividadesInline,
         fecharAtividadesInline,
         sincronizarHome,
+        // Debug console
+        toggleDebugConsole: () => _mobileConsole.toggle(),
+        clearDebugConsole: () => _mobileConsole.clear(),
         // Tela de atendimento pós-checkin
         abrirAtendimentoTela,
         voltarAtendimento,
@@ -96,6 +179,7 @@
         }
 
         document.body.classList.add('pwa-mode');
+        _mobileConsole.init();
         setupTabs();
         updateHeader();
         setupConnectivity();
@@ -2495,7 +2579,9 @@
             cliente_id: clienteId,
             cliente_nome: clienteNome,
             data_visita: dataVisita,
+            data_hora: new Date().toISOString(),
             motivo: motivo,
+            descricao: motivo,
             registrado_em: new Date().toISOString()
         };
 
@@ -3312,6 +3398,15 @@
                     <div class="pwa-menu-item danger" id="pwaMenuSair">
                         <span class="pwa-menu-icon">&#10005;</span>
                         <span class="pwa-menu-label">Sair</span>
+                    </div>
+                </div>
+
+                <div class="pwa-section-title">Desenvolvimento</div>
+                <div class="pwa-menu-group">
+                    <div class="pwa-menu-item" onclick="pwaApp.toggleDebugConsole()">
+                        <span class="pwa-menu-icon">&#128187;</span>
+                        <span class="pwa-menu-label">Console Debug</span>
+                        <span class="pwa-menu-value">Ver logs</span>
                     </div>
                 </div>
 
