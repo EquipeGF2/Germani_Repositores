@@ -370,7 +370,21 @@
             cachedData.roteiro = roteiro;
             cachedData.clientes = clientes;
             cachedData.tiposDocumento = tiposDoc;
-            cachedData.tiposGasto = tiposGasto;
+            // Se IndexedDB vazio para tiposGasto, tentar localStorage
+            let tiposGastoFinal = tiposGasto;
+            if ((!tiposGasto || tiposGasto.length === 0)) {
+                try {
+                    const lsCached = localStorage.getItem('tipos_gasto_cache');
+                    if (lsCached) {
+                        const parsed = JSON.parse(lsCached);
+                        if (parsed?.length > 0) {
+                            tiposGastoFinal = parsed;
+                            console.log(`[PWA] tiposGasto restaurado do localStorage: ${parsed.length} itens`);
+                        }
+                    }
+                } catch (_) {}
+            }
+            cachedData.tiposGasto = tiposGastoFinal;
 
             console.log('[PWA] Dados locais:', {
                 roteiro: roteiro.length,
@@ -782,6 +796,8 @@
                         console.log(`[PWA Sync] Rubricas recebidas da API: ${tipos.length} itens`, tipos.length > 0 ? tipos[0] : 'VAZIO');
                         await offlineDB.salvarTiposGasto(tipos);
                         cachedData.tiposGasto = tipos;
+                        // Backup localStorage para fallback offline
+                        try { localStorage.setItem('tipos_gasto_cache', JSON.stringify(tipos)); } catch (_) {}
                         // Verificar se salvou corretamente
                         const verificar = await offlineDB.getTiposGasto().catch(() => []);
                         console.log(`[PWA Sync] Rubricas verificação IndexedDB: ${verificar.length} itens`);
@@ -1628,6 +1644,8 @@
                         if (typeof offlineDB !== 'undefined') {
                             offlineDB.salvarTiposGasto(tiposGasto).catch(() => {});
                         }
+                        // Backup localStorage
+                        try { localStorage.setItem('tipos_gasto_cache', JSON.stringify(tiposGasto)); } catch (_) {}
                         console.log(`[PWA] Rubricas preload API: ${tiposGasto.length} itens`);
                     }
                 } catch (e) { console.warn('[PWA] Erro preload rubricas:', e.message); }
