@@ -11141,6 +11141,22 @@ class App {
                         }
                     });
 
+                    // Preservar status _checkinLocal antes de substituir o Map
+                    if (this.registroRotaState._checkinLocal) {
+                        const cliLocal = normalizeClienteId(this.registroRotaState._checkinLocal.clienteId);
+                        const statusLocal = mapaResumo.get(cliLocal);
+                        if (!statusLocal || statusLocal.status !== 'em_atendimento') {
+                            mapaResumo.set(cliLocal, {
+                                ...(statusLocal || {}),
+                                status: 'em_atendimento',
+                                rv_id: this.registroRotaState._checkinLocal.localId || this.registroRotaState._checkinLocal.rv_id || `local_${Date.now()}`,
+                                cliente_id: cliLocal,
+                                checkin_data_hora: this.registroRotaState._checkinLocal.timestamp,
+                                atividades_count: Number(statusLocal?.atividades_count || 0),
+                                _from_local_checkin: true
+                            });
+                        }
+                    }
                     this.registroRotaState.resumoVisitas = mapaResumo;
                     // Atualizar visualmente sem re-render completo
                     this.atualizarStatusVisuaisRoteiro();
@@ -11217,6 +11233,12 @@ class App {
                     this.atualizarBotoesEspacosRoteiro();
                     // Salvar no cache para próxima vez
                     try { localStorage.setItem(`espacos_clientes_${repId}`, JSON.stringify(lista)); } catch (_) {}
+
+                    // Pré-cachear dados de espaços para cada cliente (para uso offline)
+                    // Usar _atualizarEspacosCache que tem fallback para /api/espacos/clientes/{id}
+                    for (const cliId of lista) {
+                        this._atualizarEspacosCache(repId, cliId).catch(() => {});
+                    }
                 }
             })
             .catch(() => { /* silencioso */ });
@@ -11334,9 +11356,50 @@ class App {
 
         this.registroRotaState.resumoVisitas = mapaResumo;
 
+        // PWA: Se _checkinLocal foi restaurado, injetar status em_atendimento no Map
+        // (o servidor não sabe do checkin local, então resumo_visitas não tem esse cliente)
+        if (isPWA && this.registroRotaState._checkinLocal) {
+            const checkinLocal = this.registroRotaState._checkinLocal;
+            const cliCheckin = normalizeClienteId(checkinLocal.clienteId);
+            const statusAtual = mapaResumo.get(cliCheckin);
+            if (!statusAtual || statusAtual.status !== 'em_atendimento') {
+                mapaResumo.set(cliCheckin, {
+                    ...(statusAtual || {}),
+                    status: 'em_atendimento',
+                    rv_id: checkinLocal.localId || checkinLocal.rv_id || `local_${Date.now()}`,
+                    cliente_id: cliCheckin,
+                    checkin_data_hora: checkinLocal.timestamp,
+                    atividades_count: Number(statusAtual?.atividades_count || 0),
+                    _from_local_checkin: true
+                });
+                console.log('[PWA] Injetado status em_atendimento do _checkinLocal para:', cliCheckin);
+            }
+        }
+
         // Guardar roteiro no state para uso posterior (refresh de distâncias)
         this.registroRotaState.roteiroAtual = roteiro;
         } // fim do else (!cacheValido)
+
+        // PWA: Também injetar _checkinLocal quando cacheValido (segundo render da mesma sessão)
+        if (isPWA && this.registroRotaState._checkinLocal) {
+            const checkinLocal = this.registroRotaState._checkinLocal;
+            const cliCheckin = normalizeClienteId(checkinLocal.clienteId);
+            const mapaAtual = this.registroRotaState.resumoVisitas || new Map();
+            const statusAtual = mapaAtual.get(cliCheckin);
+            if (!statusAtual || statusAtual.status !== 'em_atendimento') {
+                mapaAtual.set(cliCheckin, {
+                    ...(statusAtual || {}),
+                    status: 'em_atendimento',
+                    rv_id: checkinLocal.localId || checkinLocal.rv_id || `local_${Date.now()}`,
+                    cliente_id: cliCheckin,
+                    checkin_data_hora: checkinLocal.timestamp,
+                    atividades_count: Number(statusAtual?.atividades_count || 0),
+                    _from_local_checkin: true
+                });
+                this.registroRotaState.resumoVisitas = mapaAtual;
+                console.log('[PWA] Injetado status em_atendimento (cacheValido) para:', cliCheckin);
+            }
+        }
 
         container.innerHTML = '';
 
@@ -24121,20 +24184,34 @@ class App {
             const dados = await this._buscarEspacosDoServidor(repositorId, cliNorm);
             if (dados.temEspacos && typeof offlineDB !== 'undefined') {
                 await offlineDB.salvarEspacosCliente(cliNorm, dados);
+                // Backup em localStorage para fallback extra
+                try {
+                    const espacosParaLS = dados.espacosPendentes || dados.espacos || [];
+                    if (espacosParaLS.length > 0) {
+                        localStorage.setItem(`espacos_data_${cliNorm}`, JSON.stringify(espacosParaLS));
+                    }
+                } catch (_) {}
+                console.log(`[Espaços] Cache atualizado para cliente ${cliNorm} via /pendentes`);
                 return;
             }
             // Se pendentes não retornou dados, buscar espaços cadastrados diretamente
             const respDireto = await fetchJson(`${API_BASE_URL}/api/espacos/clientes/${encodeURIComponent(cliNorm)}`);
             if (respDireto?.ok && respDireto.data?.length > 0 && typeof offlineDB !== 'undefined') {
+                const espacosMapeados = respDireto.data.map(e => ({
+                    ces_tipo_espaco_id: e.ces_tipo_espaco_id,
+                    tipo_espaco_id: e.ces_tipo_espaco_id,
+                    tipo_nome: e.tipo_nome,
+                    ces_quantidade: e.ces_quantidade,
+                    quantidade_esperada: e.ces_quantidade,
+                    ces_cidade: e.ces_cidade
+                }));
                 await offlineDB.salvarEspacosCliente(cliNorm, {
                     temEspacos: true,
-                    espacos: respDireto.data.map(e => ({
-                        ces_tipo_espaco_id: e.ces_tipo_espaco_id,
-                        tipo_nome: e.tipo_nome,
-                        ces_quantidade: e.ces_quantidade,
-                        ces_cidade: e.ces_cidade
-                    }))
+                    espacos: espacosMapeados
                 });
+                // Backup em localStorage
+                try { localStorage.setItem(`espacos_data_${cliNorm}`, JSON.stringify(espacosMapeados)); } catch (_) {}
+                console.log(`[Espaços] Cache atualizado para cliente ${cliNorm} via /clientes/${cliNorm}`);
             }
             // NÃO sobrescrever cache se nenhum endpoint retornou dados
             // (preserva dados do sync que podem já estar no IndexedDB)

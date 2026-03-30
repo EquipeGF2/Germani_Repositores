@@ -146,6 +146,13 @@ class GeoService {
             return this.lastLocation;
         }
 
+        // OFFLINE: Se temos qualquer localização anterior, usar imediatamente
+        // (evita esperar 65s de timeout do GPS que vai falhar mesmo)
+        if (!navigator.onLine && this.lastLocation) {
+            console.log('[GeoService] Offline com localização em cache, usando diretamente sem tentar GPS');
+            return this.lastLocation;
+        }
+
         // Tentar obter GPS fresco; offline fallback para última localização conhecida
         let position;
         try {
