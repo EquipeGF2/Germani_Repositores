@@ -12611,6 +12611,43 @@ class App {
         const dataVisita = dataVisitaParam || dataInput;
         let statusCliente = this.registroRotaState.resumoVisitas.get(clienteIdNorm);
 
+        // PWA offline: se resumoVisitas não tem o cliente (app reabriu sem carregar roteiro),
+        // recuperar status de fontes locais (localStorage, _checkinLocal)
+        if (!statusCliente && window.authManager?.isPWA) {
+            // 1. Tentar localStorage resumo_visitas
+            try {
+                const repIdLocal = repId || this.registroRotaState._cacheRepId;
+                const dataLocal = dataVisita || new Date().toISOString().split('T')[0];
+                const cachedResumo = localStorage.getItem(`resumo_visitas_${repIdLocal}_${dataLocal}`);
+                if (cachedResumo) {
+                    const resumoArr = JSON.parse(cachedResumo);
+                    const found = resumoArr.find(r => normalizeClienteId(r.cliente_id) === clienteIdNorm);
+                    if (found) {
+                        statusCliente = found;
+                        // Também restaurar no Map para uso posterior
+                        this.registroRotaState.resumoVisitas.set(clienteIdNorm, found);
+                    }
+                }
+            } catch (_) {}
+            // 2. Tentar ATENDIMENTO_ localStorage (persistido por atualizarStatusClienteLocal)
+            if (!statusCliente) {
+                const atendimentoPersist = this.recuperarAtendimentoPersistido(repId, clienteIdNorm);
+                if (atendimentoPersist?.rv_id) {
+                    statusCliente = { status: 'em_atendimento', rv_id: atendimentoPersist.rv_id, cliente_id: clienteIdNorm };
+                    this.registroRotaState.resumoVisitas.set(clienteIdNorm, statusCliente);
+                }
+            }
+            // 3. Tentar _checkinLocal (checkin pendente = em_atendimento)
+            if (!statusCliente && this.registroRotaState._checkinLocal?.clienteId === clienteIdNorm) {
+                const checkin = this.registroRotaState._checkinLocal;
+                statusCliente = { status: 'em_atendimento', rv_id: checkin.localId, cliente_id: clienteIdNorm };
+                this.registroRotaState.resumoVisitas.set(clienteIdNorm, statusCliente);
+            }
+            if (statusCliente) {
+                console.log('[PWA] Status do cliente recuperado de fonte local:', clienteIdNorm, statusCliente.status);
+            }
+        }
+
         let tipoPadrao = tipoRegistro || (statusCliente?.status === 'em_atendimento' ? 'checkout' : 'checkin');
         this.registroRotaState.novaVisita = Boolean(novaVisita);
 
@@ -24139,9 +24176,28 @@ class App {
                         }
                     }
                 } catch (cacheErr) { console.warn('[Espaços] Erro ao ler cache:', cacheErr.message); }
+                // Salvar no localStorage como backup (caso IndexedDB perca dados)
+                if (espacosParaRegistrar?.length > 0) {
+                    try { localStorage.setItem(`espacos_data_${cliNorm}`, JSON.stringify(espacosParaRegistrar)); } catch (_) {}
+                }
             }
 
-            // 2. Se não tem cache, buscar do servidor ou tentar IndexedDB
+            // 2. Se não tem cache IndexedDB, tentar localStorage (backup extra)
+            if (!espacosParaRegistrar) {
+                try {
+                    const lsKey = `espacos_data_${cliNorm}`;
+                    const lsCached = localStorage.getItem(lsKey);
+                    if (lsCached) {
+                        const parsed = JSON.parse(lsCached);
+                        if (parsed?.length > 0) {
+                            espacosParaRegistrar = parsed;
+                            console.log(`[Espaços] Dados restaurados do localStorage para ${cliNorm}`);
+                        }
+                    }
+                } catch (_) {}
+            }
+
+            // 3. Se não tem cache nenhum, buscar do servidor ou mostrar aviso
             if (!espacosParaRegistrar) {
                 if (navigator.onLine) {
                     const espacosStatus = await this.verificarEspacosPendentes(repId, clienteId);
@@ -24162,6 +24218,10 @@ class App {
                                 }));
                             }
                         } catch (_) {}
+                    }
+                    // Salvar no localStorage como backup para uso offline futuro
+                    if (espacosParaRegistrar?.length > 0) {
+                        try { localStorage.setItem(`espacos_data_${cliNorm}`, JSON.stringify(espacosParaRegistrar)); } catch (_) {}
                     }
                 } else {
                     this.showNotification('Sem dados de espaços disponíveis offline. Sincronize o app quando estiver online.', 'warning');

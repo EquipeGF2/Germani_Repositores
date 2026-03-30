@@ -140,13 +140,24 @@ class GeoService {
             throw { code: 'GEO_UNAVAILABLE', message: 'GPS não disponível no navegador.' };
         }
 
-        // Reutiliza captura recente (5 min online, 30 min offline para cobrir restart do PWA)
-        const cacheTTL = navigator.onLine ? 5 * 60 * 1000 : 30 * 60 * 1000;
+        // Reutiliza captura recente (5 min online, 4 horas offline para cobrir restart do PWA)
+        const cacheTTL = navigator.onLine ? 5 * 60 * 1000 : 4 * 60 * 60 * 1000;
         if (this.lastLocation && Date.now() - (this.lastLocation.ts || 0) < cacheTTL) {
             return this.lastLocation;
         }
 
-        const position = await this.obterLocalizacao();
+        // Tentar obter GPS fresco; offline fallback para última localização conhecida
+        let position;
+        try {
+            position = await this.obterLocalizacao();
+        } catch (geoErr) {
+            // Se offline e temos localização anterior (mesmo expirada), usar como fallback
+            if (!navigator.onLine && this.lastLocation) {
+                console.log('[GeoService] GPS falhou offline, usando última localização conhecida');
+                return this.lastLocation;
+            }
+            throw geoErr;
+        }
 
         const location = {
             lat: position.coords.latitude,
