@@ -1305,6 +1305,15 @@
                 dataVisita: new Date().toISOString().split('T')[0], // Approximation
                 enderecoCadastro: checkin.enderecoResolvido || ''
             };
+            // Pre-carregar clientesComEspaco do localStorage para que o botão espaços apareça
+            if (checkin.repId && window.app.registroRotaState) {
+                try {
+                    const cachedEsp = localStorage.getItem(`espacos_clientes_${checkin.repId}`);
+                    if (cachedEsp && !window.app.registroRotaState.clientesComEspaco?.size) {
+                        window.app.registroRotaState.clientesComEspaco = new Set(JSON.parse(cachedEsp));
+                    }
+                } catch (_) {}
+            }
         }
 
         const avisoAtendimento = currentAtendimentoContext ? (() => {
@@ -3033,10 +3042,13 @@
         // Verificar cache localStorage (instantâneo)
         try {
             const repId = typeof authManager !== 'undefined' ? authManager.getRepId?.() :
-                          (window.app?.registroRotaState?.repositorSelecionado ||
-                           window.app?.registroRotaState?._cacheRepId);
-            if (repId) {
-                const cachedEspacos = localStorage.getItem(`espacos_clientes_${repId}`);
+                          null;
+            const repIdFallback = window.app?.registroRotaState?.repositorSelecionado ||
+                           window.app?.registroRotaState?._cacheRepId ||
+                           currentAtendimentoContext?.repId;
+            const repIdFinal = repId || repIdFallback;
+            if (repIdFinal) {
+                const cachedEspacos = localStorage.getItem(`espacos_clientes_${repIdFinal}`);
                 if (cachedEspacos) {
                     const lista = JSON.parse(cachedEspacos);
                     _mostrarBotaoEspacos(lista.includes(cliNorm));
@@ -3518,6 +3530,8 @@
                     if (pendentes.espacos > 0) itens.push({ icon: '&#127981;', label: 'Espaços', count: pendentes.espacos });
                     if (pendentes.checkinLocal > 0) itens.push({ icon: '&#9989;', label: 'Check-in local', count: pendentes.checkinLocal });
                     if (pendentes.checkoutsPendentes > 0) itens.push({ icon: '&#128682;', label: 'Checkouts', count: pendentes.checkoutsPendentes });
+                    if (pendentes.atividadesPendentes > 0) itens.push({ icon: '&#128203;', label: 'Atividades', count: pendentes.atividadesPendentes });
+                    if (pendentes.cancelPendentes > 0) itens.push({ icon: '&#10060;', label: 'Cancelamentos', count: pendentes.cancelPendentes });
                     if (pendentes.despesasPendentes > 0) itens.push({ icon: '&#128176;', label: 'Despesas de viagem', count: pendentes.despesasPendentes });
                     if (pendentes.documentosPendentes > 0) itens.push({ icon: '&#128196;', label: 'Documentos', count: pendentes.documentosPendentes });
                     if (pendentes.deadLetters > 0) itens.push({ icon: '&#9888;', label: 'Itens com erro (retry)', count: pendentes.deadLetters });
