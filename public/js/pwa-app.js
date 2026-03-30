@@ -1491,11 +1491,33 @@
 
     // ==================== PÁGINA: CONSULTAS ====================
 
-    function renderConsultas() {
-        // Offline: mostrar apenas Visitas e Documentos (as demais não funcionam offline)
-        const consultasVisiveis = navigator.onLine
-            ? CONSULTAS
-            : CONSULTAS.filter(c => ['consulta-visitas', 'consulta-documentos'].includes(c.id));
+    async function renderConsultas() {
+        let consultasVisiveis;
+        if (navigator.onLine) {
+            // Online: todas as consultas disponíveis
+            consultasVisiveis = CONSULTAS;
+        } else {
+            // Offline: visitas sempre, demais apenas se houver registros offline pendentes
+            consultasVisiveis = [CONSULTAS.find(c => c.id === 'consulta-visitas')];
+            try {
+                const pendingDocs = typeof offlineDB !== 'undefined' ? await offlineDB.getPendingDocumentos().catch(() => []) : [];
+                if (pendingDocs && pendingDocs.length > 0) {
+                    consultasVisiveis.push(CONSULTAS.find(c => c.id === 'consulta-documentos'));
+                }
+                // Campanhas: verificar se há fotos de campanha em checkouts pendentes
+                const allMeta = typeof offlineDB !== 'undefined' ? await offlineDB.getAll('syncMeta').catch(() => []) : [];
+                const hasCampanha = (allMeta || []).some(item => item.key && item.key.startsWith('pendingCheckout_') && item.value?.campanhaFotos?.length > 0);
+                if (hasCampanha) {
+                    consultasVisiveis.push(CONSULTAS.find(c => c.id === 'consulta-campanha'));
+                }
+                // Despesas: verificar pendentes
+                const pendingDesp = typeof offlineDB !== 'undefined' ? await offlineDB.getPendingDespesas().catch(() => []) : [];
+                if (pendingDesp && pendingDesp.length > 0) {
+                    consultasVisiveis.push(CONSULTAS.find(c => c.id === 'consulta-despesas'));
+                }
+            } catch (e) { console.warn('[PWA] Erro ao verificar pendentes para consultas:', e.message); }
+            consultasVisiveis = consultasVisiveis.filter(Boolean);
+        }
 
         pwaContent.innerHTML = `
             <div class="pwa-page pwa-fullscreen-page">
@@ -1504,7 +1526,7 @@
                     <span class="pwa-page-header-title">Consultas</span>
                 </div>
                 <div class="pwa-page-body">
-                ${!navigator.onLine ? '<div style="background:#fef3c7;padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:12px;color:#92400e;text-align:center;">Modo offline — algumas consultas estão disponíveis apenas online</div>' : ''}
+                ${!navigator.onLine ? '<div style="background:#fef3c7;padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:12px;color:#92400e;text-align:center;">Modo offline — exibindo registros offline pendentes</div>' : ''}
                 ${consultasVisiveis.map(c => `
                     <div class="pwa-consulta-item" onclick="pwaApp.navigate('${c.id}')">
                         <span class="pwa-consulta-icon">${c.icon}</span>
@@ -1512,6 +1534,7 @@
                         <span class="pwa-consulta-arrow">&#8250;</span>
                     </div>
                 `).join('')}
+                ${!navigator.onLine && consultasVisiveis.length <= 1 ? '<div style="padding:20px;text-align:center;font-size:13px;color:#9ca3af;">Nenhum registro offline pendente para exibir</div>' : ''}
                 </div>
             </div>
         `;
@@ -1599,6 +1622,8 @@
 
             switch (consultaId) {
                 case 'consulta-visitas': {
+                    // Offline: cache 15 dias + registros offline pendentes
+                    // Online: cache + fetch com filtro de data
                     dados = await offlineDB.getSessoesRecentes();
                     // Merge pending sessions
                     const pendingSessions = await offlineDB.getPendingSessions();
@@ -1618,9 +1643,26 @@
                     break;
                 }
                 case 'consulta-campanha': {
-                    dados = await offlineDB.getCampanhas();
-                    cachedData._campanhas = dados;
-                    renderCampanhasInline(dados, container, hojeStr, semanaStr);
+                    if (navigator.onLine) {
+                        // Online: buscar da API com filtros
+                        dados = await offlineDB.getCampanhas();
+                        cachedData._campanhas = dados;
+                        renderCampanhasInline(dados, container, hojeStr, semanaStr);
+                    } else {
+                        // Offline: mostrar apenas registros pendentes de campanha
+                        const allMeta = await offlineDB.getAll('syncMeta').catch(() => []);
+                        const pendingCheckouts = (allMeta || []).filter(item => item.key && item.key.startsWith('pendingCheckout_') && item.value?.campanhaFotos?.length > 0);
+                        dados = pendingCheckouts.map(item => ({
+                            id: `pending_${item.key}`,
+                            cliente_nome: item.value?.clienteNome || 'N/D',
+                            cliente_id: item.value?.clienteId || '',
+                            data_planejada: item.value?.dataVisita || item.value?.timestamp || '',
+                            _pendente: true,
+                            fotos_count: item.value?.campanhaFotos?.length || 0
+                        }));
+                        cachedData._campanhas = dados;
+                        renderCampanhasInline(dados, container, hojeStr, semanaStr);
+                    }
                     break;
                 }
                 case 'consulta-roteiro': {
@@ -1633,8 +1675,13 @@
                     break;
                 }
                 case 'consulta-documentos': {
-                    dados = await offlineDB.getDocumentosCache();
-                    // Merge pending documents
+                    if (navigator.onLine) {
+                        // Online: cache do servidor + pendentes
+                        dados = await offlineDB.getDocumentosCache();
+                    } else {
+                        // Offline: apenas documentos pendentes
+                        dados = [];
+                    }
                     const pendingDocs = await offlineDB.getPendingDocumentos();
                     const pendingDocsMapped = pendingDocs.map(d => ({
                         doc_id: d.id || `pending_${d.createdAt}`,
@@ -1652,8 +1699,13 @@
                     break;
                 }
                 case 'consulta-despesas': {
-                    dados = await offlineDB.getDespesas();
-                    // Merge pending expenses
+                    if (navigator.onLine) {
+                        // Online: cache do servidor + pendentes
+                        dados = await offlineDB.getDespesas();
+                    } else {
+                        // Offline: apenas despesas pendentes
+                        dados = [];
+                    }
                     const pendingDesp = await offlineDB.getPendingDespesas();
                     for (const desp of pendingDesp) {
                         if (desp.rubricas && Array.isArray(desp.rubricas)) {
