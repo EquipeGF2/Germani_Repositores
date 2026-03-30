@@ -14179,6 +14179,7 @@ class App {
                             repId, clienteId, clienteNome, dataVisita,
                             gpsCoords: { ...gpsCoords },
                             enderecoResolvido,
+                            enderecoRoteiro: this.registroRotaState.clienteAtual?.clienteEndereco || '',
                             timestamp: new Date().toISOString(),
                             // Salvar rv_id do checkin online para sync posterior
                             rvIdOnline: rvSessaoId || null,
@@ -16792,6 +16793,7 @@ class App {
                             campanhaForm.append('endereco_resolvido', data.enderecoResolvido || '');
                             campanhaForm.append('tipo', 'campanha');
                             campanhaForm.append('cliente_nome', data.clienteNome || '');
+                            campanhaForm.append('cliente_endereco', data.enderecoRoteiro || data.checkinLocal?.enderecoRoteiro || '');
                             if (data.dataVisita) campanhaForm.append('data_planejada', data.dataVisita);
                             campanhaForm.append('rv_id', rvId);
                             for (const foto of data.campanhaFotos) {
@@ -16825,6 +16827,7 @@ class App {
                     checkoutForm.append('endereco_resolvido', data.enderecoResolvido || '');
                     checkoutForm.append('tipo', 'checkout');
                     checkoutForm.append('cliente_nome', data.clienteNome || '');
+                    checkoutForm.append('cliente_endereco', data.enderecoRoteiro || data.checkinLocal?.enderecoRoteiro || '');
                     if (data.dataVisita) checkoutForm.append('data_planejada', data.dataVisita);
                     if (rvId) checkoutForm.append('rv_id', rvId);
                     // Foto do checkout (pode ser Blob ou base64)
