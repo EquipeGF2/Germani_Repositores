@@ -11717,8 +11717,8 @@ class App {
         conteudo.className = 'modal-body-text';
         conteudo.innerHTML = `
             <p style="margin-bottom: 12px;">Isso encerra o atendimento sem checkout. Deseja continuar?</p>
-            <label for="motivoCancelamento" style="font-weight: 600; font-size: 14px;">Motivo (opcional)</label>
-            <input id="motivoCancelamento" type="text" maxlength="200" placeholder="Ex.: cliente ausente" class="input" style="width:100%;" />
+            <label for="motivoCancelamento" style="font-weight: 600; font-size: 14px;">Motivo / Justificativa *</label>
+            <input id="motivoCancelamento" type="text" maxlength="200" placeholder="Ex.: cliente ausente" class="input" style="width:100%;" required />
         `;
 
         const rodape = document.createElement('div');
@@ -11805,11 +11805,19 @@ class App {
 
         btnConfirmar.addEventListener('click', async () => {
             if (carregando) return;
+
+            const motivo = (motivoInput?.value || '').trim();
+            if (!motivo) {
+                this.showNotification('Informe o motivo do cancelamento.', 'warning');
+                motivoInput?.focus();
+                return;
+            }
+
             setLoading(true);
 
             try {
                 // If it's only a local offline checkin with no server ID yet
-                if (hasLocalCheckin && (!rvId || rvId.startsWith('LOCAL_'))) {
+                if (hasLocalCheckin && (!rvId || String(rvId).startsWith('LOCAL_'))) {
                     this.registroRotaState._checkinLocal = null;
                     try { localStorage.removeItem('PWA_CHECKIN_LOCAL_META'); } catch (_) {}
                     if (this.registroRotaState._atividadesLocal?.clienteId === clienteIdNorm) {
@@ -11818,13 +11826,61 @@ class App {
                     if (this.registroRotaState._campanhaFotosLocal && this.registroRotaState._campanhaFotosLocal[0]?.clienteId === clienteIdNorm) {
                         this.registroRotaState._campanhaFotosLocal = null;
                     }
+                    // Remover pendingCheckout se existir
+                    try {
+                        if (typeof offlineDB !== 'undefined') {
+                            await offlineDB.delete('syncMeta', `pendingCheckout_${clienteIdNorm}`);
+                        }
+                    } catch (_) {}
                     this.showNotification('Atendimento local cancelado.', 'success');
                 } else {
-                    const resposta = await this.cancelarAtendimentoApi({
-                        rvId,
-                        repId,
-                        motivo: motivoInput?.value
-                    });
+                    // Tentar cancelar via API
+                    let canceladoOnline = false;
+                    try {
+                        await this.cancelarAtendimentoApi({ rvId, repId, motivo });
+                        canceladoOnline = true;
+                    } catch (apiError) {
+                        const isNetworkError = !navigator.onLine
+                            || apiError?.message?.includes('Failed to fetch')
+                            || apiError?.message?.includes('NetworkError')
+                            || apiError?.message?.includes('fetch');
+                        const is404or409 = [404, 409].includes(Number(apiError?.status));
+
+                        if (is404or409) {
+                            // Sessão já não existe no servidor — limpar local
+                            console.warn('[Cancelar] Sessão não encontrada no servidor (404/409), limpando local');
+                            canceladoOnline = true;
+                        } else if (isNetworkError) {
+                            // Offline — salvar cancelamento para sincronizar depois
+                            console.warn('[Cancelar] Offline — salvando cancelamento na fila');
+                            try {
+                                if (typeof offlineDB !== 'undefined') {
+                                    await offlineDB.setSyncMeta(`pendingCancel_${clienteIdNorm}`, {
+                                        rvId,
+                                        repId,
+                                        clienteId: clienteIdNorm,
+                                        motivo,
+                                        timestamp: new Date().toISOString()
+                                    });
+                                }
+                            } catch (dbErr) {
+                                console.error('[Cancelar] Erro ao salvar cancelamento offline:', dbErr);
+                            }
+                            canceladoOnline = true; // Permitir limpeza local
+                            this.showNotification('Cancelamento salvo. Será sincronizado quando online.', 'info');
+                        } else {
+                            throw apiError;
+                        }
+                    }
+
+                    if (!canceladoOnline) return;
+
+                    // Remover pendingCheckout se existir
+                    try {
+                        if (typeof offlineDB !== 'undefined') {
+                            await offlineDB.delete('syncMeta', `pendingCheckout_${clienteIdNorm}`);
+                        }
+                    } catch (_) {}
                 }
 
                 limparEstadoLocal();
@@ -11836,13 +11892,7 @@ class App {
             } catch (error) {
                 console.error('Erro ao cancelar atendimento:', error);
                 const motivoFalha = error?.message || 'Erro ao cancelar atendimento';
-                const precisaReidratar = [404, 409].includes(Number(error?.status));
-                this.showNotification(motivoFalha, precisaReidratar ? 'warning' : 'error');
-
-                if (precisaReidratar) {
-                    limparEstadoLocal();
-                    await this.reidratarAtendimentosAposCancelamento(repId);
-                }
+                this.showNotification(motivoFalha, 'error');
             } finally {
                 setLoading(false);
             }
