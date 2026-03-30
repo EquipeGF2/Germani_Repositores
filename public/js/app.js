@@ -13264,9 +13264,27 @@ class App {
             return;
         }
 
-        // Se offline e sem cache, ocultar botões de pesquisa (nada a fazer)
+        // Se offline e sem localStorage cache, tentar IndexedDB (dados do sync)
         if (!navigator.onLine) {
-            console.log('📋 Offline sem cache de pesquisas');
+            console.log('📋 Offline sem cache localStorage, tentando IndexedDB...');
+            try {
+                if (typeof offlineDB !== 'undefined') {
+                    const allPesquisas = await offlineDB.getAllPesquisasClientes();
+                    if (allPesquisas && allPesquisas.length > 0) {
+                        allPesquisas.forEach(entry => {
+                            const cliId = String(entry.clienteId).trim().replace(/\.0$/, '');
+                            if (entry.pesquisas && entry.pesquisas.length > 0) {
+                                this.registroRotaState.pesquisasPendentesMap.set(cliId, entry.pesquisas);
+                            }
+                        });
+                        roteiro.forEach(cliente => {
+                            const cliId = String(cliente.cli_codigo || '').trim().replace(/\.0$/, '');
+                            this.atualizarCardCliente(cliId);
+                        });
+                        console.log(`📋 Pesquisas offline do IndexedDB: ${this.registroRotaState.pesquisasPendentesMap.size} clientes`);
+                    }
+                }
+            } catch (e) { console.warn('Erro ao carregar pesquisas do IndexedDB:', e); }
             return;
         }
 
@@ -14374,7 +14392,7 @@ class App {
                 // Verificar pesquisas pendentes após checkin para habilitar botão de pesquisa
                 this.verificarPesquisasAposCheckin(repId, clienteId, dataVisita);
 
-                // Pré-carregar espaços do cliente para uso offline
+                // Pré-carregar espaços do cliente para uso offline (apenas clientes com espaço registrado)
                 if (this.registroRotaState.clientesComEspaco?.has(String(clienteId).trim().replace(/\.0$/, ''))) {
                     this._atualizarEspacosCache(repId, clienteId).catch(e => console.warn('[Espaços] Erro ao pré-carregar:', e.message));
                 }
@@ -21296,18 +21314,42 @@ class App {
             // IMPORTANTE: Sempre usar data de HOJE para verificar respostas
             // pois as respostas são salvas com a data atual, não a data da visita
             const dataRef = hoje;
+            const clienteNorm = String(clienteId).trim().replace(/\.0$/, '');
 
-            // Buscar pesquisas e respostas em paralelo (otimização)
-            const [pesquisas, respondidas] = await Promise.all([
-                db.getPesquisasPendentesRepositor(repId, clienteId),
-                db.getPesquisasRespondidas(repId, clienteId, dataRef)
-            ]);
+            let pesquisas, respondidas;
 
-            // Também considerar pesquisas salvas na fila local (cache-first, ainda não sincronizadas)
+            // Tentar buscar do banco (Turso) — funciona apenas online
+            try {
+                [pesquisas, respondidas] = await Promise.all([
+                    db.getPesquisasPendentesRepositor(repId, clienteId),
+                    db.getPesquisasRespondidas(repId, clienteId, dataRef)
+                ]);
+            } catch (dbErr) {
+                console.warn('[Pesquisa] Erro ao buscar do Turso (offline?), tentando IndexedDB:', dbErr.message);
+                pesquisas = null;
+            }
+
+            // Fallback offline: usar dados do sync (IndexedDB pesquisasClientes)
+            if (!pesquisas || pesquisas.length === 0) {
+                try {
+                    if (typeof offlineDB !== 'undefined') {
+                        const pesquisasSync = await offlineDB.getPesquisasCliente(clienteNorm);
+                        if (pesquisasSync && pesquisasSync.length > 0) {
+                            pesquisas = pesquisasSync;
+                            console.log(`[Pesquisa] Usando ${pesquisas.length} pesquisa(s) do cache offline`);
+                        }
+                    }
+                } catch (_) {}
+                if (!respondidas) respondidas = new Set();
+            }
+
+            if (!pesquisas) pesquisas = [];
+            if (!respondidas) respondidas = new Set();
+
+            // Considerar pesquisas salvas na fila local (cache-first, ainda não sincronizadas)
             try {
                 if (typeof offlineDB !== 'undefined') {
                     const filaPendente = await offlineDB.getAll('filaPesquisas');
-                    const clienteNorm = String(clienteId).trim().replace(/\.0$/, '');
                     filaPendente.forEach(item => {
                         if (item.syncStatus !== 'error'
                             && String(item.clienteCodigo).trim().replace(/\.0$/, '') === clienteNorm
@@ -21323,7 +21365,8 @@ class App {
                 clienteId,
                 dataRef,
                 totalPesquisas: pesquisas.length,
-                respondidas: [...respondidas]
+                respondidas: [...respondidas],
+                ignorarRespondidas
             });
 
             // Filtrar pesquisas pendentes em uma única passagem
@@ -21376,6 +21419,19 @@ class App {
                     }
                 }
             } catch (_) {}
+        }
+
+        // Tentar IndexedDB (dados do sync) como fallback
+        if (!todasPesquisas || todasPesquisas.length === 0) {
+            try {
+                if (typeof offlineDB !== 'undefined') {
+                    const pesquisasSync = await offlineDB.getPesquisasCliente(cliNorm);
+                    if (pesquisasSync && pesquisasSync.length > 0) {
+                        todasPesquisas = pesquisasSync;
+                        console.log(`[Pesquisa] Dados offline do sync para cliente ${cliNorm}:`, pesquisasSync.length, 'pesquisas');
+                    }
+                }
+            } catch (e) { console.warn('[Pesquisa] Erro ao ler IndexedDB:', e); }
         }
 
         // Se ainda não há dados e estamos online, buscar do banco
@@ -23342,19 +23398,37 @@ class App {
             const tiposResp = await fetchJson(`${API_BASE_URL}/api/espacos/tipos`);
             if (tiposResp?.ok && tiposResp.data) {
                 const selectTipo = document.getElementById('filtro_tipo_espaco');
-                if (selectTipo) {
+                if (selectTipo && selectTipo.options.length <= 1) {
                     selectTipo.innerHTML = '<option value="">Todos</option>' +
                         tiposResp.data.map(t => `<option value="${t.esp_id}">${t.esp_nome}</option>`).join('');
+                }
+            }
+
+            // Carregar repositores para o filtro
+            const selectRepositor = document.getElementById('filtro_repositor_espaco');
+            if (selectRepositor && selectRepositor.options.length <= 1) {
+                try {
+                    const repResp = await fetchJson(`${API_BASE_URL}/api/performance/repositores`);
+                    if (repResp?.ok && repResp.repositores) {
+                        selectRepositor.innerHTML = '<option value="">Todos</option>' +
+                            repResp.repositores.map(r => `<option value="${r.rep_id}">${r.rep_id} - ${r.rep_name}</option>`).join('');
+                    }
+                } catch (e) {
+                    console.warn('Erro ao carregar repositores para filtro:', e);
                 }
             }
 
             // Buscar filtros
             const cidade = document.getElementById('filtro_cidade_espaco')?.value || '';
             const tipoEspacoId = document.getElementById('filtro_tipo_espaco')?.value || '';
+            const repositorId = document.getElementById('filtro_repositor_espaco')?.value || '';
+            const ativo = document.getElementById('filtro_ativo_espaco')?.value || '1';
 
             const params = new URLSearchParams();
             if (cidade) params.append('cidade', cidade);
             if (tipoEspacoId) params.append('tipo_espaco_id', tipoEspacoId);
+            if (repositorId) params.append('repositor_id', repositorId);
+            params.append('ativo', ativo);
 
             const response = await fetchJson(`${API_BASE_URL}/api/espacos/clientes?${params.toString()}`);
 
@@ -23433,9 +23507,10 @@ class App {
                         <h4>📍 ${cidade}</h4>
                         <div class="cards-clientes">
                             ${clientes.map(ce => `
-                                <div class="cliente-espaco-card">
+                                <div class="cliente-espaco-card" style="${ce.ces_ativo === 0 ? 'opacity:0.6;' : ''}">
                                     <div class="cliente-nome">
                                         ${ce.ces_cliente_id} - ${ce.cliente_nome || ''}
+                                        ${ce.ces_ativo === 0 ? '<span style="color:#ef4444;font-size:12px;margin-left:6px;">(Inativo)</span>' : ''}
                                     </div>
                                     <div style="display: flex; justify-content: space-between; align-items: center;">
                                         <div>
@@ -23445,7 +23520,10 @@ class App {
                                         </div>
                                         <div class="card-actions">
                                             <button class="btn btn-sm" style="background:#f59e0b;color:white;" onclick="window.app.editarClienteEspaco(${ce.ces_id}, ${ce.ces_quantidade})" title="Editar">✏️</button>
-                                            <button class="btn btn-sm btn-danger" onclick="window.app.inativarClienteEspaco(${ce.ces_id})" title="Inativar">🚫</button>
+                                            ${ce.ces_ativo === 0
+                                                ? `<button class="btn btn-sm" style="background:#22c55e;color:white;" onclick="window.app.reativarClienteEspaco(${ce.ces_id})" title="Reativar">&#10003;</button>`
+                                                : `<button class="btn btn-sm btn-danger" onclick="window.app.inativarClienteEspaco(${ce.ces_id})" title="Inativar">&#128683;</button>`
+                                            }
                                         </div>
                                     </div>
                                 </div>
@@ -23465,12 +23543,13 @@ class App {
                                     <th style="min-width: 160px; white-space: nowrap;">Tipo</th>
                                     <th style="width: 50px; text-align: center;">Qtd</th>
                                     <th style="width: 100px; white-space: nowrap;">Vigência</th>
+                                    <th style="width: 70px; text-align: center;">Status</th>
                                     <th style="width: 90px; text-align: center;">Ações</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 ${response.data.map(ce => `
-                                    <tr>
+                                    <tr style="${ce.ces_ativo === 0 ? 'opacity:0.6;' : ''}">
                                         <td style="white-space: nowrap;">${ce.ces_cidade}</td>
                                         <td>
                                             <strong>${ce.ces_cliente_id}</strong> - ${ce.cliente_nome || ce.ces_cliente_nome || ''}
@@ -23478,9 +23557,17 @@ class App {
                                         <td style="white-space: nowrap;">${ce.tipo_nome || '-'}</td>
                                         <td style="text-align: center;">${ce.ces_quantidade}</td>
                                         <td style="white-space: nowrap;">${ce.ces_vigencia_inicio ? ce.ces_vigencia_inicio.split('-').reverse().join('/') : '-'}</td>
+                                        <td style="text-align: center;">
+                                            <span style="padding:2px 8px;border-radius:12px;font-size:12px;background:${ce.ces_ativo === 0 ? '#fee2e2;color:#dc2626' : '#dcfce7;color:#16a34a'};">
+                                                ${ce.ces_ativo === 0 ? 'Inativo' : 'Ativo'}
+                                            </span>
+                                        </td>
                                         <td style="text-align: center; white-space: nowrap;">
                                             <button class="btn btn-sm" style="background:#f59e0b;color:white;padding:4px 6px;" onclick="window.app.editarClienteEspaco(${ce.ces_id}, ${ce.ces_quantidade})" title="Editar quantidade">✏️</button>
-                                            <button class="btn btn-sm btn-danger" style="padding:4px 6px;" onclick="window.app.inativarClienteEspaco(${ce.ces_id})" title="Inativar espaço">🚫</button>
+                                            ${ce.ces_ativo === 0
+                                                ? `<button class="btn btn-sm" style="background:#22c55e;color:white;padding:4px 6px;" onclick="window.app.reativarClienteEspaco(${ce.ces_id})" title="Reativar espaço">&#10003;</button>`
+                                                : `<button class="btn btn-sm btn-danger" style="padding:4px 6px;" onclick="window.app.inativarClienteEspaco(${ce.ces_id})" title="Inativar espaço">&#128683;</button>`
+                                            }
                                         </td>
                                     </tr>
                                 `).join('')}
@@ -23666,6 +23753,24 @@ class App {
         }
     }
 
+    async reativarClienteEspaco(id) {
+        if (!confirm('Deseja realmente reativar este espaço do cliente?')) return;
+
+        try {
+            const response = await fetchJson(`${API_BASE_URL}/api/espacos/clientes/${id}/reativar`, {
+                method: 'POST'
+            });
+
+            if (response?.ok) {
+                this.showNotification('Espaço reativado com sucesso', 'success');
+                await this.carregarClientesEspaco();
+            }
+        } catch (error) {
+            console.error('Erro ao reativar espaço do cliente:', error);
+            this.showNotification(error.message || 'Erro ao reativar espaço do cliente', 'error');
+        }
+    }
+
     async editarClienteEspaco(id, quantidadeAtual) {
         const novaQuantidade = prompt('Digite a nova quantidade de espaços:', quantidadeAtual);
 
@@ -23840,10 +23945,27 @@ class App {
     }
 
     async _atualizarEspacosCache(repositorId, clienteId) {
-        const dados = await this._buscarEspacosDoServidor(repositorId, clienteId);
+        const cliNorm = String(clienteId).trim().replace(/\.0$/, '');
+        const dados = await this._buscarEspacosDoServidor(repositorId, cliNorm);
         if (dados.temEspacos && typeof offlineDB !== 'undefined') {
-            await offlineDB.salvarEspacosCliente(clienteId, dados);
+            await offlineDB.salvarEspacosCliente(cliNorm, dados);
+            return;
         }
+        // Fallback: buscar diretamente os espaços cadastrados do cliente
+        try {
+            const respDireto = await fetchJson(`${API_BASE_URL}/api/espacos/clientes/${encodeURIComponent(cliNorm)}`);
+            if (respDireto?.ok && respDireto.data?.length > 0 && typeof offlineDB !== 'undefined') {
+                await offlineDB.salvarEspacosCliente(cliNorm, {
+                    temEspacos: true,
+                    espacos: respDireto.data.map(e => ({
+                        ces_tipo_espaco_id: e.ces_tipo_espaco_id,
+                        tipo_nome: e.tipo_nome,
+                        ces_quantidade: e.ces_quantidade,
+                        ces_cidade: e.ces_cidade
+                    }))
+                });
+            }
+        } catch (_) {}
     }
 
     async verificarEAbrirRegistroEspacos(repId, clienteId, clienteNome, dataVisita) {
