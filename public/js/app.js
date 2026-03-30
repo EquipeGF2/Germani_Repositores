@@ -14180,6 +14180,8 @@ class App {
                             gpsCoords: { ...gpsCoords },
                             enderecoResolvido,
                             timestamp: new Date().toISOString(),
+                            // Salvar rv_id do checkin online para sync posterior
+                            rvIdOnline: rvSessaoId || null,
                             checkinLocal: this.registroRotaState._checkinLocal
                                 ? { ...this.registroRotaState._checkinLocal, fotoBlob: checkinFotoB64 }
                                 : null,
@@ -16697,7 +16699,8 @@ class App {
                 const backendUrl = this.registroRotaState?.backendUrl || API_BASE_URL;
 
                 try {
-                    let rvId = null;
+                    // Se checkin foi feito online, já temos o rv_id
+                    let rvId = data.rvIdOnline || null;
 
                     // 1. Enviar checkin pendente (se existir)
                     if (data.checkinLocal) {
@@ -16834,14 +16837,25 @@ class App {
                         }
                     }
 
-                    await fetchJson(`${backendUrl}/api/registro-rota/visitas`, {
-                        method: 'POST',
-                        headers: authHeaders,
-                        body: checkoutForm
-                    });
-                    console.log(`[SYNC] Checkout offline enviado para cliente ${clienteId}`);
+                    try {
+                        await fetchJson(`${backendUrl}/api/registro-rota/visitas`, {
+                            method: 'POST',
+                            headers: authHeaders,
+                            body: checkoutForm
+                        });
+                        console.log(`[SYNC] Checkout offline enviado para cliente ${clienteId}`);
+                    } catch (checkoutErr) {
+                        // Se atendimento já fechado = sync anterior já completou tudo
+                        // Remover da fila em vez de ficar tentando infinitamente
+                        if (checkoutErr.status === 409) {
+                            const errCode = checkoutErr.body?.code || '';
+                            console.warn(`[SYNC] Checkout 409 (${errCode}) para cliente ${clienteId} — atendimento já processado, removendo da fila`);
+                        } else {
+                            throw checkoutErr;
+                        }
+                    }
 
-                    // Sucesso: remover da fila
+                    // Sucesso ou 409 já processado: remover da fila
                     await window.offlineDB.delete('syncMeta', entry.key);
                     synced++;
 
