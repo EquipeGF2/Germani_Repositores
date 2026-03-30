@@ -352,12 +352,21 @@ class OfflineDB {
   }
 
   async salvarTiposGasto(tipos) {
-    await this.clear('tiposGasto');
-    for (const tipo of tipos) {
-      // Normalizar keyPath: store usa 'id' mas API retorna 'gst_id'
-      const item = { ...tipo, id: tipo.id || tipo.gst_id };
-      await this.put('tiposGasto', item);
-    }
+    if (!this.db) await this.init();
+    // Transação única: clear + puts atômicos para evitar perda de dados
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction('tiposGasto', 'readwrite');
+      const store = tx.objectStore('tiposGasto');
+      store.clear();
+      let salvos = 0;
+      for (const tipo of tipos) {
+        // Normalizar keyPath: store usa 'id' mas API retorna 'gst_id'
+        const item = { ...tipo, id: tipo.id || tipo.gst_id || `gasto_${salvos}` };
+        try { store.put(item); salvos++; } catch (e) { console.warn('[OfflineDB] Erro put tiposGasto:', e.message); }
+      }
+      tx.oncomplete = () => { console.log(`[OfflineDB] tiposGasto salvos: ${salvos}/${tipos.length}`); resolve(); };
+      tx.onerror = () => reject(tx.error);
+    });
   }
 
   async getTiposGasto() {
