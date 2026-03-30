@@ -1143,7 +1143,18 @@
     function setupConnectivity() {
         const dot = document.getElementById('pwaOnlineDot');
         if (!dot) return;
-        const update = () => dot.classList.toggle('offline', !navigator.onLine);
+        const update = () => {
+            dot.classList.toggle('offline', !navigator.onLine);
+            // Ocultar/exibir aba Consultas conforme conectividade
+            const tabConsultas = document.querySelector('.pwa-tab[data-pwa-tab="pwa-consultas"]');
+            if (tabConsultas) {
+                tabConsultas.style.display = navigator.onLine ? '' : 'none';
+                // Se estava na aba consultas e ficou offline, voltar para home
+                if (!navigator.onLine && currentTab === 'pwa-consultas') {
+                    navigate('pwa-home');
+                }
+            }
+        };
         window.addEventListener('online', update);
         window.addEventListener('offline', update);
         update();
@@ -1621,51 +1632,10 @@
     // ==================== PÁGINA: CONSULTAS ====================
 
     async function renderConsultas() {
-        // Mostrar loading imediato enquanto verifica pendentes
-        pwaContent.innerHTML = `
-            <div class="pwa-page pwa-fullscreen-page">
-                <div class="pwa-page-header-bar">
-                    <button class="pwa-back-btn" onclick="pwaApp.voltarHome()">&#8592;</button>
-                    <span class="pwa-page-header-title">Consultas</span>
-                </div>
-                <div class="pwa-page-body">
-                    <div class="pwa-loading-inline"><div class="pwa-spinner-small"></div><span>Carregando...</span></div>
-                </div>
-            </div>`;
-
-        let consultasVisiveis;
-        if (navigator.onLine) {
-            // Online: todas as consultas disponíveis
-            consultasVisiveis = CONSULTAS;
-        } else {
-            // Offline: visitas sempre visível (cache 15 dias + pendentes)
-            consultasVisiveis = [CONSULTAS.find(c => c.id === 'consulta-visitas')];
-            try {
-                // Checkouts pendentes (contém campanha + visitas)
-                const allMeta = typeof offlineDB !== 'undefined' ? await offlineDB.getAll('syncMeta').catch(() => []) : [];
-                const hasCheckouts = (allMeta || []).some(item => item.key && item.key.startsWith('pendingCheckout_'));
-
-                // Se há checkouts pendentes, mostrar visitas (já mostrada) e verificar campanha
-                const hasCampanha = (allMeta || []).some(item => item.key && item.key.startsWith('pendingCheckout_') && item.value?.campanhaFotos?.length > 0);
-                if (hasCampanha) {
-                    consultasVisiveis.push(CONSULTAS.find(c => c.id === 'consulta-campanha'));
-                }
-
-                // Documentos pendentes
-                const pendingDocs = typeof offlineDB !== 'undefined' ? await offlineDB.getPendingDocumentos().catch(() => []) : [];
-                if (pendingDocs && pendingDocs.length > 0) {
-                    consultasVisiveis.push(CONSULTAS.find(c => c.id === 'consulta-documentos'));
-                }
-
-                // Despesas pendentes
-                const pendingDesp = typeof offlineDB !== 'undefined' ? await offlineDB.getPendingDespesas().catch(() => []) : [];
-                if (pendingDesp && pendingDesp.length > 0) {
-                    consultasVisiveis.push(CONSULTAS.find(c => c.id === 'consulta-despesas'));
-                }
-
-                console.log(`[PWA] Consultas offline: checkouts=${hasCheckouts}, campanha=${hasCampanha}, docs=${pendingDocs?.length || 0}, desp=${pendingDesp?.length || 0}`);
-            } catch (e) { console.warn('[PWA] Erro ao verificar pendentes para consultas:', e.message); }
-            consultasVisiveis = consultasVisiveis.filter(Boolean);
+        // Offline: consultas não disponíveis, redirecionar para home
+        if (!navigator.onLine) {
+            navigate('pwa-home');
+            return;
         }
 
         pwaContent.innerHTML = `
@@ -1675,15 +1645,13 @@
                     <span class="pwa-page-header-title">Consultas</span>
                 </div>
                 <div class="pwa-page-body">
-                ${!navigator.onLine ? '<div style="background:#fef3c7;padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:12px;color:#92400e;text-align:center;">Modo offline — exibindo registros offline pendentes</div>' : ''}
-                ${consultasVisiveis.map(c => `
+                ${CONSULTAS.map(c => `
                     <div class="pwa-consulta-item" onclick="pwaApp.navigate('${c.id}')">
                         <span class="pwa-consulta-icon">${c.icon}</span>
                         <span class="pwa-consulta-label">${c.label}</span>
                         <span class="pwa-consulta-arrow">&#8250;</span>
                     </div>
                 `).join('')}
-                ${!navigator.onLine && consultasVisiveis.length <= 1 ? '<div style="padding:20px;text-align:center;font-size:13px;color:#9ca3af;">Nenhum registro offline pendente para exibir</div>' : ''}
                 </div>
             </div>
         `;

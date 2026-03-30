@@ -11747,9 +11747,30 @@ class App {
         let carregando = false;
 
         const limparEstadoLocal = () => {
+            // Verificar se havia visita finalizada anterior (para manter "Nova Visita" no card)
+            const resumoAtual = this.registroRotaState.resumoVisitas?.get(clienteIdNorm);
+            const cacheKey = `resumo_visitas_${repId}_${this.registroRotaState._cacheDataVisita || new Date().toISOString().split('T')[0]}`;
+            let tinhaVisitaAnterior = false;
+            try {
+                const cachedResumo = localStorage.getItem(cacheKey);
+                if (cachedResumo) {
+                    const resumoArr = JSON.parse(cachedResumo);
+                    const clienteResumo = resumoArr.find(r => String(r.cliente_id).trim().replace(/\.0$/, '') === clienteIdNorm);
+                    if (clienteResumo && (clienteResumo.status === 'finalizado' || clienteResumo.status === 'nao_atendido')) {
+                        tinhaVisitaAnterior = true;
+                    }
+                }
+            } catch (_) {}
+            // Se a sessão cancelada era "nova visita" sobre uma visita anterior finalizada
+            if (!tinhaVisitaAnterior && resumoAtual?.novaVisita) {
+                tinhaVisitaAnterior = true;
+            }
+
+            const statusAposCancelamento = tinhaVisitaAnterior ? 'finalizado' : 'sem_checkin';
+
             // Limpar estado em memória
             this.atualizarStatusClienteLocal(clienteIdNorm, {
-                status: 'sem_checkin',
+                status: statusAposCancelamento,
                 rv_id: null,
                 atividades_count: 0,
                 rep_id: repId
@@ -11760,8 +11781,8 @@ class App {
             if (this.registroRotaState.atendimentosAbertos instanceof Map) {
                 this.registroRotaState.atendimentosAbertos.delete(clienteIdNorm);
             }
-            // Limpar do resumo de visitas
-            if (this.registroRotaState.resumoVisitas instanceof Map) {
+            // Se não tinha visita anterior, limpar do resumo de visitas
+            if (!tinhaVisitaAnterior && this.registroRotaState.resumoVisitas instanceof Map) {
                 this.registroRotaState.resumoVisitas.delete(clienteIdNorm);
             }
             // CRÍTICO: Limpar cache de sessão para evitar dados stale
@@ -12065,13 +12086,15 @@ class App {
                 ? 'status-visited'
                 : 'status-pending';
 
-        const podeNovaVisita = statusBase === 'finalizado';
+        const podeNovaVisita = statusBase === 'finalizado' || statusBase === 'nao_atendido';
 
         const statusTexto = statusBase === 'em_atendimento'
             ? 'Em atendimento'
             : statusBase === 'finalizado'
                 ? `Finalizado${statusCliente.tempo_minutos ? ` ${String(statusCliente.tempo_minutos).padStart(2, '0')} min` : ''}`
-                : 'Pendente';
+                : statusBase === 'nao_atendido'
+                    ? 'Não atendido'
+                    : 'Pendente';
 
         const repId = card.dataset.repId;
         const dataVisita = card.dataset.dataVisita;
@@ -14063,7 +14086,8 @@ class App {
                     checkout_data_hora: null,
                     atividades_count: 0,
                     rv_id: localId,
-                    rep_id: repId
+                    rep_id: repId,
+                    novaVisita: novaVisitaFlag || false
                 });
 
                 this.showNotification('Check-in registrado!', 'success');
@@ -14124,8 +14148,8 @@ class App {
                 try {
                     if (window.offlineDB) {
                         // Converter Blobs para base64 antes de salvar no IndexedDB (mais confiável)
-                        // Converter Blob para base64 com compressão (max 800px, qualidade 0.6)
-                        const blobToBase64 = (blob) => {
+                        // Converter Blob para base64 com compressão (max 800px)
+                        const blobToBase64 = (blob, quality = 0.6) => {
                             if (!blob) return Promise.resolve(null);
                             return new Promise((resolve) => {
                                 const img = new Image();
@@ -14141,7 +14165,7 @@ class App {
                                         const canvas = document.createElement('canvas');
                                         canvas.width = w; canvas.height = h;
                                         canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-                                        const compressed = canvas.toDataURL('image/jpeg', 0.6);
+                                        const compressed = canvas.toDataURL('image/jpeg', quality);
                                         console.log(`[SYNC] Foto comprimida: ${(compressed.length / 1024).toFixed(0)}KB`);
                                         resolve(compressed);
                                     } catch (e) {
@@ -14171,7 +14195,7 @@ class App {
                         const campanhaFotosB64 = [];
                         for (const foto of (this.registroRotaState._campanhaFotosLocal || [])) {
                             const fotoBlob = foto.blob || foto;
-                            const b64 = fotoBlob ? await blobToBase64(fotoBlob) : null;
+                            const b64 = fotoBlob ? await blobToBase64(fotoBlob, 0.3) : null;
                             if (b64) campanhaFotosB64.push({ b64, clienteId: foto.clienteId, clienteNome: foto.clienteNome });
                         }
 
@@ -14368,11 +14392,17 @@ class App {
                     checkout_data_hora: null,
                     atividades_count: 0,
                     rv_id: rvResposta,
-                    rep_id: repId
+                    rep_id: repId,
+                    novaVisita: novaVisitaFlag || false
                 });
 
                 // Verificar pesquisas pendentes após checkin para habilitar botão de pesquisa
                 this.verificarPesquisasAposCheckin(repId, clienteId, dataVisita);
+
+                // Pré-carregar espaços do cliente para uso offline
+                if (this.registroRotaState.clientesComEspaco?.has(String(clienteId).trim().replace(/\.0$/, ''))) {
+                    this._atualizarEspacosCache(repId, clienteId).catch(e => console.warn('[Espaços] Erro ao pré-carregar:', e.message));
+                }
             }
 
             if (tipoRegistro === 'checkout') {
