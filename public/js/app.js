@@ -14124,13 +14124,41 @@ class App {
                 try {
                     if (window.offlineDB) {
                         // Converter Blobs para base64 antes de salvar no IndexedDB (mais confiável)
+                        // Converter Blob para base64 com compressão (max 800px, qualidade 0.6)
                         const blobToBase64 = (blob) => {
                             if (!blob) return Promise.resolve(null);
                             return new Promise((resolve) => {
-                                const reader = new FileReader();
-                                reader.onloadend = () => resolve(reader.result);
-                                reader.onerror = () => resolve(null);
-                                reader.readAsDataURL(blob);
+                                const img = new Image();
+                                img.onload = () => {
+                                    try {
+                                        const MAX_SIZE = 800;
+                                        let w = img.width, h = img.height;
+                                        if (w > MAX_SIZE || h > MAX_SIZE) {
+                                            const ratio = Math.min(MAX_SIZE / w, MAX_SIZE / h);
+                                            w = Math.round(w * ratio);
+                                            h = Math.round(h * ratio);
+                                        }
+                                        const canvas = document.createElement('canvas');
+                                        canvas.width = w; canvas.height = h;
+                                        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                                        const compressed = canvas.toDataURL('image/jpeg', 0.6);
+                                        console.log(`[SYNC] Foto comprimida: ${(compressed.length / 1024).toFixed(0)}KB`);
+                                        resolve(compressed);
+                                    } catch (e) {
+                                        // Fallback: base64 sem compressão
+                                        const reader = new FileReader();
+                                        reader.onloadend = () => resolve(reader.result);
+                                        reader.onerror = () => resolve(null);
+                                        reader.readAsDataURL(blob);
+                                    }
+                                };
+                                img.onerror = () => {
+                                    const reader = new FileReader();
+                                    reader.onloadend = () => resolve(reader.result);
+                                    reader.onerror = () => resolve(null);
+                                    reader.readAsDataURL(blob);
+                                };
+                                img.src = URL.createObjectURL(blob);
                             });
                         };
                         const checkinFotoB64 = this.registroRotaState._checkinLocal?.fotoBlob
@@ -17589,12 +17617,23 @@ class App {
                         for (const rubrica of rubricasComValor) {
                             for (const foto of (rubrica.fotos || [])) {
                                 if (foto.file) {
+                                    // Comprimir foto (max 800px, qualidade 0.6) para reduzir peso no IndexedDB
                                     const b64 = await new Promise(resolve => {
-                                        const reader = new FileReader();
-                                        reader.onload = e => resolve(e.target.result);
-                                        reader.readAsDataURL(foto.file);
+                                        const img = new Image();
+                                        img.onload = () => {
+                                            try {
+                                                const MAX = 800;
+                                                let w = img.width, h = img.height;
+                                                if (w > MAX || h > MAX) { const r = Math.min(MAX/w, MAX/h); w = Math.round(w*r); h = Math.round(h*r); }
+                                                const c = document.createElement('canvas'); c.width = w; c.height = h;
+                                                c.getContext('2d').drawImage(img, 0, 0, w, h);
+                                                resolve(c.toDataURL('image/jpeg', 0.6));
+                                            } catch { const reader = new FileReader(); reader.onload = e => resolve(e.target.result); reader.readAsDataURL(foto.file); }
+                                        };
+                                        img.onerror = () => { const reader = new FileReader(); reader.onload = e => resolve(e.target.result); reader.readAsDataURL(foto.file); };
+                                        img.src = URL.createObjectURL(foto.file);
                                     });
-                                    fotosB64.push({ rubricaCodigo: rubrica.codigo, b64, name: foto.file.name || 'foto.jpg', type: foto.file.type || 'image/jpeg' });
+                                    fotosB64.push({ rubricaCodigo: rubrica.codigo, b64, name: foto.file.name || 'foto.jpg', type: 'image/jpeg' });
                                 }
                             }
                         }
@@ -17645,12 +17684,25 @@ class App {
                         const fotosB64 = [];
                         for (const item of arquivosParaEnvio) {
                             if (item.file) {
+                                // Comprimir imagem (max 800px, qualidade 0.6)
                                 const b64 = await new Promise(resolve => {
-                                    const reader = new FileReader();
-                                    reader.onload = () => resolve(reader.result);
-                                    reader.readAsDataURL(item.file);
+                                    if (!item.file.type.startsWith('image/')) {
+                                        const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.readAsDataURL(item.file); return;
+                                    }
+                                    const img = new Image();
+                                    img.onload = () => {
+                                        try {
+                                            const MAX = 800; let w = img.width, h = img.height;
+                                            if (w > MAX || h > MAX) { const r = Math.min(MAX/w, MAX/h); w = Math.round(w*r); h = Math.round(h*r); }
+                                            const c = document.createElement('canvas'); c.width = w; c.height = h;
+                                            c.getContext('2d').drawImage(img, 0, 0, w, h);
+                                            resolve(c.toDataURL('image/jpeg', 0.6));
+                                        } catch { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.readAsDataURL(item.file); }
+                                    };
+                                    img.onerror = () => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.readAsDataURL(item.file); };
+                                    img.src = URL.createObjectURL(item.file);
                                 });
-                                fotosB64.push({ b64, name: item.file.name, type: item.file.type });
+                                fotosB64.push({ b64, name: item.file.name, type: item.file.type.startsWith('image/') ? 'image/jpeg' : item.file.type });
                             }
                         }
                         pending.push({
