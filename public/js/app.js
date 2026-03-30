@@ -12446,6 +12446,25 @@ class App {
                     data_planejada: dataPlanejada
                 };
             }
+            // Fallback: tentar restaurar do cache localStorage (app reaberto offline)
+            try {
+                const cachedAbertos = localStorage.getItem(`atendimentos_abertos_${repId}`);
+                if (cachedAbertos) {
+                    const abertos = JSON.parse(cachedAbertos);
+                    if (abertos && abertos.length > 0) {
+                        const primeiro = abertos[0];
+                        return {
+                            sessao_id: primeiro.rv_id,
+                            rv_sessao_id: primeiro.rv_id,
+                            cliente_id: primeiro.cliente_id,
+                            cliente_nome: primeiro.cliente_nome || '',
+                            checkin_at: primeiro.checkin_em,
+                            atividades_count: primeiro.atividades_count || 0,
+                            data_planejada: dataPlanejada
+                        };
+                    }
+                }
+            } catch (_) {}
             return null;
         }
 
@@ -13986,7 +14005,7 @@ class App {
             const abertoMapRvId = (this.registroRotaState.atendimentosAbertos instanceof Map)
                 ? this.registroRotaState.atendimentosAbertos.get(clienteId)?.rv_id
                 : null;
-            const rvSessaoId = novaVisitaFlag ? null : (statusCliente?.rv_id || atendimentoPersistido.rv_id || abertoMapRvId || null);
+            let rvSessaoId = novaVisitaFlag ? null : (statusCliente?.rv_id || atendimentoPersistido.rv_id || abertoMapRvId || null);
 
             const gpsCoords = this.registroRotaState.gpsCoords;
             const fotos = this.registroRotaState.fotosCapturadas || [];
@@ -14056,12 +14075,27 @@ class App {
                 statusCliente?.status === 'em_atendimento'
             );
             if (['campanha', 'checkout'].includes(tipoRegistro) && !rvSessaoId && !temCheckinLocalPendente) {
-                const sessaoBackend = await this.buscarSessaoAberta(repId, dataVisita);
-                if (sessaoBackend && normalizeClienteId(sessaoBackend.cliente_id) === clienteId) {
-                    this.reconciliarSessaoAbertaLocal(sessaoBackend, repId);
+                if (navigator.onLine) {
+                    const sessaoBackend = await this.buscarSessaoAberta(repId, dataVisita);
+                    if (sessaoBackend && normalizeClienteId(sessaoBackend.cliente_id) === clienteId) {
+                        this.reconciliarSessaoAbertaLocal(sessaoBackend, repId);
+                    } else {
+                        this.showNotification('Sessão de atendimento não encontrada. Realize o check-in novamente.', 'error');
+                        return;
+                    }
                 } else {
-                    this.showNotification('Sessão de atendimento não encontrada. Realize o check-in novamente.', 'error');
-                    return;
+                    // Offline: tentar recuperar rv_id de qualquer fonte local disponível
+                    const rvLocal = atendimentoPersistido?.rv_id
+                        || this.registroRotaState.atendimentosAbertos?.get?.(clienteId)?.rv_id
+                        || null;
+                    if (rvLocal) {
+                        console.log('[Offline] Sessão recuperada do localStorage:', rvLocal);
+                        rvSessaoId = rvLocal;
+                        if (statusCliente) statusCliente.rv_id = rvLocal;
+                    } else {
+                        this.showNotification('Sessão de atendimento não encontrada offline. Sincronize quando estiver online.', 'error');
+                        return;
+                    }
                 }
             }
 
@@ -14165,8 +14199,8 @@ class App {
                 return;
             }
 
-            // === PWA OFFLINE-FIRST: Campanha salva localmente quando checkin é local ===
-            if (isPWA && tipoRegistro === 'campanha' && this.registroRotaState._checkinLocal?.clienteId === clienteId) {
+            // === PWA OFFLINE-FIRST: Campanha salva localmente quando checkin é local OU offline com sessão online ===
+            if (isPWA && tipoRegistro === 'campanha' && (this.registroRotaState._checkinLocal?.clienteId === clienteId || !navigator.onLine)) {
                 if (!this.registroRotaState._campanhaFotosLocal) {
                     this.registroRotaState._campanhaFotosLocal = [];
                 }
@@ -14786,6 +14820,14 @@ class App {
     }
 
     async preCarregarAtividades() {
+        // Restaurar do localStorage primeiro (sobrevive a recarregamento)
+        try {
+            const cached = localStorage.getItem('atividades_cache');
+            if (cached) {
+                this._atividadesCache = JSON.parse(cached);
+            }
+        } catch (_) {}
+
         try {
             const token = localStorage.getItem('auth_token');
             if (!token) return;
@@ -14797,6 +14839,7 @@ class App {
                 const atividades = data.data || [];
                 if (atividades.length > 0) {
                     this._atividadesCache = atividades;
+                    try { localStorage.setItem('atividades_cache', JSON.stringify(atividades)); } catch (_) {}
                     console.log('[INIT] Atividades pré-carregadas:', atividades.length);
                 }
             }
@@ -15157,7 +15200,7 @@ class App {
             const isPWA = window.authManager?.isPWA;
             const sessaoLocal = isPWA && String(sessao.sessaoId || '').startsWith('LOCAL_');
 
-            if (isPWA && sessaoLocal) {
+            if (isPWA && (sessaoLocal || !navigator.onLine)) {
                 // PWA offline-first: salvar atividades localmente, enviar no checkout
                 this.registroRotaState._atividadesLocal = {
                     sessaoId: sessao.sessaoId,
@@ -15165,6 +15208,9 @@ class App {
                     repId: sessao.repId,
                     payload
                 };
+                if (!sessaoLocal && !navigator.onLine) {
+                    console.log('[Atividades] Offline com sessão online — salvo localmente para envio no checkout');
+                }
             } else {
                 // Modo web ou sessão já sincronizada: enviar diretamente ao servidor
                 const response = await fetch(`${this.registroRotaState.backendUrl}/api/registro-rota/sessoes/${sessao.sessaoId}/servicos`, {
