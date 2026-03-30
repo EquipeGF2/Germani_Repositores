@@ -9,11 +9,21 @@ class GeoService {
 
     recuperarUltimaLocalizacao() {
         try {
+            // Tentar sessionStorage primeiro (sessão atual)
             const salvo = sessionStorage.getItem(STORAGE_KEY);
-            if (!salvo) return null;
-            const parsed = JSON.parse(salvo);
-            if (parsed && Number.isFinite(parsed.lat) && Number.isFinite(parsed.lng)) {
-                return parsed;
+            if (salvo) {
+                const parsed = JSON.parse(salvo);
+                if (parsed && Number.isFinite(parsed.lat) && Number.isFinite(parsed.lng)) {
+                    return parsed;
+                }
+            }
+            // Fallback: localStorage (sobrevive a restart do app/PWA)
+            const salvoLocal = localStorage.getItem(STORAGE_KEY);
+            if (salvoLocal) {
+                const parsed = JSON.parse(salvoLocal);
+                if (parsed && Number.isFinite(parsed.lat) && Number.isFinite(parsed.lng)) {
+                    return parsed;
+                }
             }
         } catch (error) {
             console.warn('Não foi possível ler a localização salva:', error);
@@ -25,9 +35,10 @@ class GeoService {
         this.lastLocation = location;
         try {
             sessionStorage.setItem(STORAGE_KEY, JSON.stringify(location));
-        } catch (error) {
-            console.warn('Não foi possível salvar a localização na sessão:', error);
-        }
+        } catch (_) {}
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(location));
+        } catch (_) {}
     }
 
     validarContextoSeguro() {
@@ -129,8 +140,9 @@ class GeoService {
             throw { code: 'GEO_UNAVAILABLE', message: 'GPS não disponível no navegador.' };
         }
 
-        // Reutiliza captura recente (até 5 minutos)
-        if (this.lastLocation && Date.now() - (this.lastLocation.ts || 0) < 5 * 60 * 1000) {
+        // Reutiliza captura recente (5 min online, 30 min offline para cobrir restart do PWA)
+        const cacheTTL = navigator.onLine ? 5 * 60 * 1000 : 30 * 60 * 1000;
+        if (this.lastLocation && Date.now() - (this.lastLocation.ts || 0) < cacheTTL) {
             return this.lastLocation;
         }
 

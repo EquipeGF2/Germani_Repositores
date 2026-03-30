@@ -11092,6 +11092,23 @@ class App {
                         }
                     } catch (_) {}
                 }
+
+                // Restaurar atividades pendentes do syncMeta após page refresh
+                if (!this.registroRotaState._atividadesLocal && window.offlineDB) {
+                    try {
+                        const allMeta = await window.offlineDB.getAll('syncMeta');
+                        const atvPending = (allMeta || []).find(m => m.key && m.key.startsWith('pendingAtividades_'));
+                        if (atvPending?.value) {
+                            this.registroRotaState._atividadesLocal = {
+                                sessaoId: atvPending.value.sessaoId,
+                                clienteId: atvPending.value.clienteId,
+                                repId: atvPending.value.repId,
+                                payload: atvPending.value.payload
+                            };
+                            console.log('[PWA] Atividades locais restauradas do syncMeta:', atvPending.value.clienteId);
+                        }
+                    } catch (_) {}
+                }
             }
 
             // Buscar status do backend em background e atualizar a UI quando chegar
@@ -12586,6 +12603,7 @@ class App {
     }
 
     async abrirModalCaptura(repId, clienteId, clienteNome, enderecoLinha = null, dataVisitaParam = null, tipoRegistro = 'campanha', enderecoCadastro = '', novaVisita = false) {
+      try {
         const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
 
         const clienteIdNorm = normalizeClienteId(clienteId);
@@ -12832,6 +12850,10 @@ class App {
         this.ajustarAreaCamera();
         await this.ativarCamera();
         this.iniciarCapturaGPS();
+      } catch (err) {
+        console.error('[abrirModalCaptura] Erro inesperado:', err);
+        this.showNotification(`Erro ao abrir captura: ${err?.message || 'erro desconhecido'}`, 'error');
+      }
     }
 
     async carregarResumoAtividades(repId, clienteId, dataVisita) {
@@ -14308,6 +14330,10 @@ class App {
                 try { localStorage.removeItem('PWA_CHECKIN_LOCAL_META'); } catch (_) {}
                 this.registroRotaState._atividadesLocal = null;
                 this.registroRotaState._campanhaFotosLocal = null;
+                // Limpar atividades pendentes do syncMeta (já incluídas no checkout)
+                if (window.offlineDB) {
+                    window.offlineDB.delete('syncMeta', `pendingAtividades_${clienteId}`).catch(() => {});
+                }
 
                 this.showNotification('Offline — checkout salvo! Será enviado ao conectar à internet.', 'success');
                 this._sessaoCache = {};
@@ -14373,6 +14399,7 @@ class App {
                             console.warn('Erro ao enviar atividades pendentes:', atvError);
                         }
                         this.registroRotaState._atividadesLocal = null;
+                        if (window.offlineDB) window.offlineDB.delete('syncMeta', `pendingAtividades_${clienteId}`).catch(() => {});
                     }
 
                     // 3. Se há fotos de campanha locais pendentes, enviar
@@ -15208,6 +15235,16 @@ class App {
                     repId: sessao.repId,
                     payload
                 };
+                // Persistir no syncMeta para sobreviver a page refresh e aparecer nas pendências
+                if (window.offlineDB) {
+                    window.offlineDB.setSyncMeta(`pendingAtividades_${sessao.clienteId}`, {
+                        sessaoId: sessao.sessaoId,
+                        clienteId: sessao.clienteId,
+                        repId: sessao.repId,
+                        payload,
+                        timestamp: new Date().toISOString()
+                    }).catch(e => console.warn('[Atividades] Erro ao persistir no syncMeta:', e));
+                }
                 if (!sessaoLocal && !navigator.onLine) {
                     console.log('[Atividades] Offline com sessão online — salvo localmente para envio no checkout');
                 }
@@ -16979,6 +17016,8 @@ class App {
 
                     // Sucesso ou 409 já processado: remover da fila
                     await window.offlineDB.delete('syncMeta', entry.key);
+                    // Limpar atividades pendentes do mesmo cliente (já enviadas no checkout)
+                    await window.offlineDB.delete('syncMeta', `pendingAtividades_${clienteId}`).catch(() => {});
                     synced++;
 
                 } catch (err) {
