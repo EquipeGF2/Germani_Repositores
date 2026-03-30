@@ -72,6 +72,7 @@
                 <div id="pwaDebugHeader" style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#1e293b;border-bottom:1px solid #334155;cursor:pointer;">
                     <span style="font-weight:700;font-size:12px;color:#38bdf8;">Console Debug</span>
                     <div style="display:flex;gap:8px;">
+                        <button onclick="pwaApp.copyDebugConsole()" style="background:#2563eb;color:white;border:none;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;">Copiar</button>
                         <button onclick="pwaApp.clearDebugConsole()" style="background:#ef4444;color:white;border:none;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;">Limpar</button>
                         <button onclick="pwaApp.toggleDebugConsole()" style="background:#475569;color:white;border:none;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;">Fechar</button>
                     </div>
@@ -129,6 +130,28 @@
         clear() {
             this.logs = [];
             this.render();
+        },
+        copy() {
+            const text = this.logs.map(l => `${l.time} [${l.type.toUpperCase()}] ${l.text}`).join('\n');
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(() => {
+                    const btn = document.querySelector('#pwaDebugHeader button');
+                    if (btn) { const orig = btn.textContent; btn.textContent = 'Copiado!'; setTimeout(() => btn.textContent = orig, 1500); }
+                }).catch(() => this._fallbackCopy(text));
+            } else {
+                this._fallbackCopy(text);
+            }
+        },
+        _fallbackCopy(text) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.cssText = 'position:fixed;left:-9999px;';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            const btn = document.querySelector('#pwaDebugHeader button');
+            if (btn) { const orig = btn.textContent; btn.textContent = 'Copiado!'; setTimeout(() => btn.textContent = orig, 1500); }
         }
     };
 
@@ -151,6 +174,7 @@
         // Debug console
         toggleDebugConsole: () => _mobileConsole.toggle(),
         clearDebugConsole: () => _mobileConsole.clear(),
+        copyDebugConsole: () => _mobileConsole.copy(),
         // Tela de atendimento pós-checkin
         abrirAtendimentoTela,
         voltarAtendimento,
@@ -350,7 +374,9 @@
 
             console.log('[PWA] Dados locais:', {
                 roteiro: roteiro.length,
-                clientes: clientes.length
+                clientes: clientes.length,
+                tiposDoc: tiposDoc.length,
+                tiposGasto: tiposGasto.length
             });
         } catch (e) {
             console.error('[PWA] Erro dados locais:', e);
@@ -1514,10 +1540,17 @@
 
         const container = document.getElementById('pwaRegistroRotaContent');
         if (typeof window.app !== 'undefined' && window.app.navigateTo) {
-            window.app.navigateTo('registro-rota', {}, { replaceHistory: true, pwaMode: true, pwaContainer: container });
+            try {
+                console.log('[PWA] Chamando app.navigateTo(registro-rota)...');
+                window.app.navigateTo('registro-rota', {}, { replaceHistory: true, pwaMode: true, pwaContainer: container });
+                console.log('[PWA] app.navigateTo(registro-rota) OK');
+            } catch (e) {
+                console.error('[PWA] Erro ao chamar navigateTo(registro-rota):', e.message, e.stack);
+                container.innerHTML = `<div class="pwa-empty-state"><div class="pwa-empty-text">Erro: ${escapeHtml(e.message)}</div></div>`;
+            }
         } else {
-            console.warn('[PWA] window.app não disponível');
-            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Módulo carregando...</div></div>';
+            console.error('[PWA] window.app não disponível. typeof app:', typeof window.app, 'navigateTo:', typeof window.app?.navigateTo);
+            container.innerHTML = '<div class="pwa-empty-state"><div class="pwa-empty-text">Módulo carregando... tente novamente</div></div>';
         }
     }
 
