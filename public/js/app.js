@@ -19870,11 +19870,17 @@ class App {
                             </div>
                         </div>
                         <div class="pesquisa-acoes">
-                            <button class="btn btn-secondary btn-sm" onclick="window.app.editarPesquisa(${p.pes_id})">Editar</button>
+                            ${(p.total_respostas || 0) > 0
+                                ? `<button class="btn btn-secondary btn-sm" disabled title="Pesquisa com ${p.total_respostas} resposta(s) — edição bloqueada" style="opacity:0.5;cursor:not-allowed;">Editar</button>`
+                                : `<button class="btn btn-secondary btn-sm" onclick="window.app.editarPesquisa(${p.pes_id})">Editar</button>`
+                            }
                             <button class="btn btn-${p.pes_ativa ? 'warning' : 'success'} btn-sm" onclick="window.app.togglePesquisaAtiva(${p.pes_id}, ${p.pes_ativa})">
                                 ${p.pes_ativa ? 'Desativar' : 'Ativar'}
                             </button>
-                            <button class="btn btn-danger btn-sm" onclick="window.app.excluirPesquisa(${p.pes_id})">Excluir</button>
+                            ${(p.total_respostas || 0) > 0
+                                ? `<button class="btn btn-danger btn-sm" disabled title="Pesquisa com ${p.total_respostas} resposta(s) — exclusão bloqueada" style="opacity:0.5;cursor:not-allowed;">Excluir</button>`
+                                : `<button class="btn btn-danger btn-sm" onclick="window.app.excluirPesquisa(${p.pes_id})">Excluir</button>`
+                            }
                         </div>
                     </div>
                 `;
