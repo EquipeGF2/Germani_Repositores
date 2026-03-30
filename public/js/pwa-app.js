@@ -1492,6 +1492,11 @@
     // ==================== PÁGINA: CONSULTAS ====================
 
     function renderConsultas() {
+        // Offline: mostrar apenas Visitas e Documentos (as demais não funcionam offline)
+        const consultasVisiveis = navigator.onLine
+            ? CONSULTAS
+            : CONSULTAS.filter(c => ['consulta-visitas', 'consulta-documentos'].includes(c.id));
+
         pwaContent.innerHTML = `
             <div class="pwa-page pwa-fullscreen-page">
                 <div class="pwa-page-header-bar">
@@ -1499,7 +1504,8 @@
                     <span class="pwa-page-header-title">Consultas</span>
                 </div>
                 <div class="pwa-page-body">
-                ${CONSULTAS.map(c => `
+                ${!navigator.onLine ? '<div style="background:#fef3c7;padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:12px;color:#92400e;text-align:center;">Modo offline — algumas consultas estão disponíveis apenas online</div>' : ''}
+                ${consultasVisiveis.map(c => `
                     <div class="pwa-consulta-item" onclick="pwaApp.navigate('${c.id}')">
                         <span class="pwa-consulta-icon">${c.icon}</span>
                         <span class="pwa-consulta-label">${c.label}</span>
