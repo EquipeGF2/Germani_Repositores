@@ -21415,8 +21415,7 @@ class App {
                 clienteId,
                 dataRef,
                 totalPesquisas: pesquisas.length,
-                respondidas: [...respondidas],
-                ignorarRespondidas
+                respondidas: [...respondidas]
             });
 
             // Filtrar pesquisas pendentes em uma única passagem
@@ -23981,8 +23980,8 @@ class App {
             );
 
             if (response?.ok && response.data) {
-                // Salvar no cache local
-                if (typeof offlineDB !== 'undefined') {
+                // Salvar no cache local SOMENTE se tem espaços (não sobrescrever dados do sync)
+                if (response.data.temEspacos && typeof offlineDB !== 'undefined') {
                     offlineDB.salvarEspacosCliente(clienteId, response.data).catch(() => {});
                 }
                 return response.data;
@@ -23996,13 +23995,13 @@ class App {
 
     async _atualizarEspacosCache(repositorId, clienteId) {
         const cliNorm = String(clienteId).trim().replace(/\.0$/, '');
-        const dados = await this._buscarEspacosDoServidor(repositorId, cliNorm);
-        if (dados.temEspacos && typeof offlineDB !== 'undefined') {
-            await offlineDB.salvarEspacosCliente(cliNorm, dados);
-            return;
-        }
-        // Fallback: buscar diretamente os espaços cadastrados do cliente
         try {
+            const dados = await this._buscarEspacosDoServidor(repositorId, cliNorm);
+            if (dados.temEspacos && typeof offlineDB !== 'undefined') {
+                await offlineDB.salvarEspacosCliente(cliNorm, dados);
+                return;
+            }
+            // Se pendentes não retornou dados, buscar espaços cadastrados diretamente
             const respDireto = await fetchJson(`${API_BASE_URL}/api/espacos/clientes/${encodeURIComponent(cliNorm)}`);
             if (respDireto?.ok && respDireto.data?.length > 0 && typeof offlineDB !== 'undefined') {
                 await offlineDB.salvarEspacosCliente(cliNorm, {
@@ -24015,7 +24014,11 @@ class App {
                     }))
                 });
             }
-        } catch (_) {}
+            // NÃO sobrescrever cache se nenhum endpoint retornou dados
+            // (preserva dados do sync que podem já estar no IndexedDB)
+        } catch (err) {
+            console.warn('[Espaços] Erro ao atualizar cache:', err.message);
+        }
     }
 
     async verificarEAbrirRegistroEspacos(repId, clienteId, clienteNome, dataVisita) {
@@ -24053,7 +24056,7 @@ class App {
                 } catch (cacheErr) { console.warn('[Espaços] Erro ao ler cache:', cacheErr.message); }
             }
 
-            // 2. Se não tem cache, buscar do servidor (com timeout curto)
+            // 2. Se não tem cache, buscar do servidor ou tentar IndexedDB
             if (!espacosParaRegistrar) {
                 if (navigator.onLine) {
                     const espacosStatus = await this.verificarEspacosPendentes(repId, clienteId);
@@ -24076,7 +24079,7 @@ class App {
                         } catch (_) {}
                     }
                 } else {
-                    this.showNotification('Sem dados de espaços disponíveis offline.', 'warning');
+                    this.showNotification('Sem dados de espaços disponíveis offline. Sincronize o app quando estiver online.', 'warning');
                     return;
                 }
             }
