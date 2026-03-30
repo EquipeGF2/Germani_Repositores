@@ -16723,13 +16723,45 @@ class App {
                             }
                         }
 
-                        const checkinResp = await fetchJson(`${backendUrl}/api/registro-rota/visitas`, {
-                            method: 'POST',
-                            headers: authHeaders,
-                            body: checkinForm
-                        });
-                        rvId = checkinResp?.rv_id || checkinResp?.sessao_id;
-                        console.log(`[SYNC] Checkin offline enviado, rv_id: ${rvId}`);
+                        try {
+                            const checkinResp = await fetchJson(`${backendUrl}/api/registro-rota/visitas`, {
+                                method: 'POST',
+                                headers: authHeaders,
+                                body: checkinForm
+                            });
+                            rvId = checkinResp?.rv_id || checkinResp?.sessao_id;
+                            console.log(`[SYNC] Checkin offline enviado, rv_id: ${rvId}`);
+                        } catch (checkinErr) {
+                            // 409 = checkin já existe no servidor (ex: checkin online + checkout offline)
+                            // Extrair rv_id da resposta e continuar com atividades/campanha/checkout
+                            if (checkinErr.status === 409) {
+                                console.log(`[SYNC] Checkin já existe (409), tentando extrair rv_id...`);
+                                try {
+                                    const errData = checkinErr.body || {};
+                                    rvId = errData.rv_id || errData.sessao_id || null;
+                                } catch (_) {}
+                                // Fallback: buscar atendimento aberto via API
+                                if (!rvId) {
+                                    try {
+                                        const repId = data.repId;
+                                        const sessaoResp = await fetchJson(`${backendUrl}/api/registro-rota/atendimento-aberto?repositor_id=${repId}`, {
+                                            headers: authHeaders
+                                        });
+                                        if (sessaoResp?.existe && sessaoResp?.rv_id) {
+                                            rvId = sessaoResp.rv_id;
+                                        }
+                                    } catch (_) {}
+                                }
+                                if (rvId) {
+                                    console.log(`[SYNC] Checkin 409 recuperado, rv_id: ${rvId} — continuando sync`);
+                                } else {
+                                    console.error(`[SYNC] Checkin 409 mas não conseguiu obter rv_id — pulando cliente ${clienteId}`);
+                                    continue;
+                                }
+                            } else {
+                                throw checkinErr;
+                            }
+                        }
                     }
 
                     // 2. Enviar atividades (se existirem)
