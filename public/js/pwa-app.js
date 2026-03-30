@@ -666,7 +666,19 @@
                     syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/tipos-gasto`, { headers }).then(r => r.json()).catch(e => { console.warn('[PWA] Erro sync tipos-gasto:', e.message); return { ok: false }; })
                 ]);
                 try { if (tiposDocRes.ok) { await offlineDB.salvarTiposDocumento(tiposDocRes.tipos || []); console.log(`[PWA Sync] Tipos documento: ${tiposDocRes.tipos?.length || 0} itens`); } } catch (e) { console.error('[PWA] Erro save tipos-doc:', e.message); }
-                try { if (tiposGastoRes.ok) { await offlineDB.salvarTiposGasto(tiposGastoRes.tipos || []); cachedData.tiposGasto = tiposGastoRes.tipos || []; console.log(`[PWA Sync] Tipos gasto (rubricas): ${tiposGastoRes.tipos?.length || 0} itens`); } } catch (e) { console.error('[PWA] Erro save tipos-gasto:', e.message); }
+                try {
+                    if (tiposGastoRes.ok) {
+                        const tipos = tiposGastoRes.tipos || [];
+                        console.log(`[PWA Sync] Rubricas recebidas da API: ${tipos.length} itens`, tipos.length > 0 ? tipos[0] : 'VAZIO');
+                        await offlineDB.salvarTiposGasto(tipos);
+                        cachedData.tiposGasto = tipos;
+                        // Verificar se salvou corretamente
+                        const verificar = await offlineDB.getTiposGasto().catch(() => []);
+                        console.log(`[PWA Sync] Rubricas verificação IndexedDB: ${verificar.length} itens`);
+                    } else {
+                        console.warn('[PWA Sync] Rubricas API retornou ok=false:', JSON.stringify(tiposGastoRes).substring(0, 200));
+                    }
+                } catch (e) { console.error('[PWA] Erro save tipos-gasto:', e.message); }
             } catch (e) {
                 console.warn('[PWA] Erro parcial no passo 2:', e);
             }
