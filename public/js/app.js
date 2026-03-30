@@ -16588,6 +16588,8 @@ class App {
 
             console.log(`[SYNC] Sincronizando ${pending.length} despesa(s) offline...`);
             const remaining = [];
+            const syncToken = localStorage.getItem('auth_token');
+            const syncAuth = syncToken ? { 'Authorization': `Bearer ${syncToken}` } : {};
 
             for (const despesa of pending) {
                 try {
@@ -16606,6 +16608,7 @@ class App {
 
                     await fetchJson(`${API_BASE_URL}/api/documentos/upload-multiplo`, {
                         method: 'POST',
+                        headers: syncAuth,
                         body: formData
                     });
                     console.log('[SYNC] Despesa sincronizada:', despesa.id);
@@ -16650,6 +16653,7 @@ class App {
 
                     await fetchJson(`${API_BASE_URL}/api/documentos/upload-multiplo`, {
                         method: 'POST',
+                        headers: syncAuth,
                         body: formData
                     });
                     console.log('[SYNC] Documento sincronizado:', doc.id);
@@ -16682,6 +16686,10 @@ class App {
 
             console.log(`[SYNC] Sincronizando ${pendingCheckouts.length} checkout(s) offline...`);
             let synced = 0;
+
+            // Auth token para todas as chamadas
+            const token = localStorage.getItem('auth_token');
+            const authHeaders = token ? { 'Authorization': `Bearer ${token}` } : {};
 
             for (const entry of pendingCheckouts) {
                 const data = entry.value || entry;
@@ -16717,6 +16725,7 @@ class App {
 
                         const checkinResp = await fetchJson(`${backendUrl}/api/registro-rota/visitas`, {
                             method: 'POST',
+                            headers: authHeaders,
                             body: checkinForm
                         });
                         rvId = checkinResp?.rv_id || checkinResp?.sessao_id;
@@ -16728,7 +16737,7 @@ class App {
                         try {
                             await fetch(`${backendUrl}/api/registro-rota/sessoes/${rvId}/servicos`, {
                                 method: 'PATCH',
-                                headers: { 'Content-Type': 'application/json' },
+                                headers: { 'Content-Type': 'application/json', ...authHeaders },
                                 body: JSON.stringify(data.atividadesLocal.payload)
                             });
                             console.log(`[SYNC] Atividades offline enviadas para rv_id: ${rvId}`);
@@ -16763,6 +16772,7 @@ class App {
                             }
                             await fetchJson(`${backendUrl}/api/registro-rota/visitas`, {
                                 method: 'POST',
+                                headers: authHeaders,
                                 body: campanhaForm
                             });
                             console.log(`[SYNC] Campanha offline enviada (${data.campanhaFotos.length} fotos)`);
@@ -16794,6 +16804,7 @@ class App {
 
                     await fetchJson(`${backendUrl}/api/registro-rota/visitas`, {
                         method: 'POST',
+                        headers: authHeaders,
                         body: checkoutForm
                     });
                     console.log(`[SYNC] Checkout offline enviado para cliente ${clienteId}`);
@@ -23806,16 +23817,21 @@ class App {
             if (typeof offlineDB !== 'undefined') {
                 try {
                     const cached = await offlineDB.getEspacosCliente(cliNorm);
+                    console.log(`[Espaços] Cache para cliente ${cliNorm}:`, cached ? 'encontrado' : 'vazio', cached);
                     if (cached?.espacosPendentes?.length > 0) {
                         espacosParaRegistrar = cached.espacosPendentes;
+                    } else if (cached?.temEspacos && cached?.espacos?.length > 0) {
+                        // Dados do sync: formato { temEspacos: true, espacos: [...] }
+                        espacosParaRegistrar = cached.espacos.map(e => ({
+                            tipo_espaco_id: e.tipo_espaco_id || e.ces_tipo_espaco_id,
+                            tipo_nome: e.tipo_nome || e.tipo_espaco_nome,
+                            quantidade_esperada: e.quantidade_esperada || e.ces_quantidade || 1,
+                            ces_quantidade: e.ces_quantidade || e.quantidade_esperada || 1
+                        }));
                     } else if (cached?.temEspacos) {
-                        // Tem espaços mas todos registrados - permitir re-registro
-                        // Buscar lista completa do cache
+                        // Tem espaços mas formato diferente - tentar arrays internos
                         const cachedAll = await offlineDB.getEspacosCliente(cliNorm);
-                        if (cachedAll?.espacosPendentes?.length > 0) {
-                            espacosParaRegistrar = cachedAll.espacosPendentes;
-                        } else if (cachedAll?.espacosRegistrados?.length > 0) {
-                            // Todos registrados - usar os registrados como base
+                        if (cachedAll?.espacosRegistrados?.length > 0) {
                             espacosParaRegistrar = cachedAll.espacosRegistrados.map(e => ({
                                 tipo_espaco_id: e.tipo_espaco_id || e.reg_tipo_espaco_id,
                                 tipo_nome: e.tipo_nome || e.tipo_espaco_nome,
@@ -23824,7 +23840,7 @@ class App {
                             }));
                         }
                     }
-                } catch (_) {}
+                } catch (cacheErr) { console.warn('[Espaços] Erro ao ler cache:', cacheErr.message); }
             }
 
             // 2. Se não tem cache, buscar do servidor (com timeout curto)
