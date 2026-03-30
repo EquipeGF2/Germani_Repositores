@@ -13340,7 +13340,7 @@ class App {
      * Verifica pesquisas pendentes após check-in para um cliente específico
      * Chamado imediatamente após o check-in para popular o mapa de pesquisas
      */
-    async verificarPesquisasAposCheckin(repId, clienteId, dataVisita, novaVisita = false) {
+    async verificarPesquisasAposCheckin(repId, clienteId, dataVisita) {
         const normalizeClienteId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
         const clienteIdNorm = normalizeClienteId(clienteId);
 
@@ -13351,8 +13351,7 @@ class App {
             }
 
             // Buscar TODAS as pesquisas pendentes (obrigatórias e não obrigatórias)
-            // Para nova visita, ignorar respostas anteriores do dia para reexibir pesquisas
-            const pesquisasPendentes = await this.buscarPesquisasPendentes(repId, clienteIdNorm, dataVisita, false, novaVisita);
+            const pesquisasPendentes = await this.buscarPesquisasPendentes(repId, clienteIdNorm, dataVisita, false);
 
             if (pesquisasPendentes && pesquisasPendentes.length > 0) {
                 this.registroRotaState.pesquisasPendentesMap.set(clienteIdNorm, pesquisasPendentes);
@@ -14391,10 +14390,10 @@ class App {
                 });
 
                 // Verificar pesquisas pendentes após checkin para habilitar botão de pesquisa
-                this.verificarPesquisasAposCheckin(repId, clienteId, dataVisita, novaVisitaFlag);
+                this.verificarPesquisasAposCheckin(repId, clienteId, dataVisita);
 
-                // Pré-carregar espaços do cliente para uso offline
-                if (navigator.onLine) {
+                // Pré-carregar espaços do cliente para uso offline (apenas clientes com espaço registrado)
+                if (this.registroRotaState.clientesComEspaco?.has(String(clienteId).trim().replace(/\.0$/, ''))) {
                     this._atualizarEspacosCache(repId, clienteId).catch(e => console.warn('[Espaços] Erro ao pré-carregar:', e.message));
                 }
             }
@@ -21309,7 +21308,7 @@ class App {
      * Busca TODAS as pesquisas pendentes (obrigatórias e não obrigatórias)
      * @param {boolean} apenasObrigatorias - Se true, retorna apenas obrigatórias
      */
-    async buscarPesquisasPendentes(repId, clienteId, dataVisita, apenasObrigatorias = false, ignorarRespondidas = false) {
+    async buscarPesquisasPendentes(repId, clienteId, dataVisita, apenasObrigatorias = false) {
         try {
             const hoje = new Date().toISOString().split('T')[0];
             // IMPORTANTE: Sempre usar data de HOJE para verificar respostas
@@ -21320,17 +21319,11 @@ class App {
             let pesquisas, respondidas;
 
             // Tentar buscar do banco (Turso) — funciona apenas online
-            let usouOffline = false;
             try {
-                if (ignorarRespondidas) {
-                    pesquisas = await db.getPesquisasPendentesRepositor(repId, clienteId);
-                    respondidas = new Set();
-                } else {
-                    [pesquisas, respondidas] = await Promise.all([
-                        db.getPesquisasPendentesRepositor(repId, clienteId),
-                        db.getPesquisasRespondidas(repId, clienteId, dataRef)
-                    ]);
-                }
+                [pesquisas, respondidas] = await Promise.all([
+                    db.getPesquisasPendentesRepositor(repId, clienteId),
+                    db.getPesquisasRespondidas(repId, clienteId, dataRef)
+                ]);
             } catch (dbErr) {
                 console.warn('[Pesquisa] Erro ao buscar do Turso (offline?), tentando IndexedDB:', dbErr.message);
                 pesquisas = null;
@@ -21343,7 +21336,6 @@ class App {
                         const pesquisasSync = await offlineDB.getPesquisasCliente(clienteNorm);
                         if (pesquisasSync && pesquisasSync.length > 0) {
                             pesquisas = pesquisasSync;
-                            usouOffline = true;
                             console.log(`[Pesquisa] Usando ${pesquisas.length} pesquisa(s) do cache offline`);
                         }
                     }
@@ -21355,20 +21347,18 @@ class App {
             if (!respondidas) respondidas = new Set();
 
             // Considerar pesquisas salvas na fila local (cache-first, ainda não sincronizadas)
-            if (!ignorarRespondidas) {
-                try {
-                    if (typeof offlineDB !== 'undefined') {
-                        const filaPendente = await offlineDB.getAll('filaPesquisas');
-                        filaPendente.forEach(item => {
-                            if (item.syncStatus !== 'error'
-                                && String(item.clienteCodigo).trim().replace(/\.0$/, '') === clienteNorm
-                                && String(item.repId) === String(repId)) {
-                                respondidas.add(item.pesId);
-                            }
-                        });
-                    }
-                } catch (_) {}
-            }
+            try {
+                if (typeof offlineDB !== 'undefined') {
+                    const filaPendente = await offlineDB.getAll('filaPesquisas');
+                    filaPendente.forEach(item => {
+                        if (item.syncStatus !== 'error'
+                            && String(item.clienteCodigo).trim().replace(/\.0$/, '') === clienteNorm
+                            && String(item.repId) === String(repId)) {
+                            respondidas.add(item.pesId);
+                        }
+                    });
+                }
+            } catch (_) {}
 
             console.log('📋 Verificando pesquisas pendentes:', {
                 repId,
