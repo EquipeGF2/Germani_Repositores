@@ -12907,6 +12907,12 @@ class App {
         if (btnSalvar) btnSalvar.disabled = true;
         if (btnPermitirCamera) btnPermitirCamera.style.display = 'none';
 
+        // Garantir event handlers nos botões (essencial quando modal é criado dinamicamente)
+        if (btnCapturar) btnCapturar.onclick = () => this.capturarFoto();
+        if (btnNova) btnNova.onclick = () => this.novaFoto();
+        if (btnSalvar) btnSalvar.onclick = () => this.salvarVisita();
+        if (btnPermitirCamera) btnPermitirCamera.onclick = () => this.ativarCamera();
+
         const modal = document.getElementById('modalCapturarVisita');
         if (!modal) {
             console.error('[abrirModalCaptura] Modal #modalCapturarVisita não encontrado no DOM');
