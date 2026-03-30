@@ -16688,6 +16688,20 @@ class App {
                 }
             }
 
+            // Tier 1.5: localStorage fallback (backup extra quando IndexedDB perde dados)
+            if (rubricas.length === 0) {
+                try {
+                    const lsCached = localStorage.getItem('tipos_gasto_cache');
+                    if (lsCached) {
+                        const parsed = JSON.parse(lsCached);
+                        if (parsed?.length > 0) {
+                            console.log(`[Rubricas] Tier1.5 localStorage: ${parsed.length} itens`);
+                            rubricas = parsed.map(mapRubrica).filter(r => r.gst_ativo !== false);
+                        }
+                    }
+                } catch (_) {}
+            }
+
             // Tier 2: Cache em memória do PWA (funciona offline se sync populou cachedData)
             if (rubricas.length === 0 && window.pwaApp?.getRubricasCache) {
                 try {
@@ -16736,6 +16750,11 @@ class App {
             }
 
             console.log(`[Rubricas] Final: ${rubricas.length} rubricas ativas carregadas`);
+
+            // Salvar em localStorage como backup extra (garante disponibilidade offline)
+            if (rubricas.length > 0) {
+                try { localStorage.setItem('tipos_gasto_cache', JSON.stringify(rubricas)); } catch (_) {}
+            }
 
             if (rubricas.length === 0) {
                 container.innerHTML = '<p style="color: #6b7280; text-align: center; padding: 20px;">Nenhuma rubrica cadastrada. Sincronize os dados primeiro.</p>';
