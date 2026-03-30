@@ -4170,15 +4170,23 @@ class TursoDatabase {
             await this.ensureConnected();
             const { titulo, descricao, obrigatorio, fotoObrigatoria, dataInicio, dataFim, ativa, campos, repositores, grupos, clientes, cidades } = dados;
 
-            await this.mainClient.execute({
-                sql: `
-                    UPDATE cc_pesquisas
-                    SET pes_titulo = ?, pes_descricao = ?, pes_obrigatorio = ?, pes_foto_obrigatoria = ?,
-                        pes_data_inicio = ?, pes_data_fim = ?, pes_ativa = ?, pes_atualizado_em = datetime('now')
-                    WHERE pes_id = ?
-                `,
-                args: [titulo, descricao || null, obrigatorio ? 1 : 0, fotoObrigatoria ? 1 : 0, dataInicio || null, dataFim || null, ativa ? 1 : 0, pesId]
-            });
+            // Se só veio 'ativa', fazer UPDATE parcial (toggle ativa/inativa)
+            if (titulo === undefined && descricao === undefined && obrigatorio === undefined) {
+                await this.mainClient.execute({
+                    sql: `UPDATE cc_pesquisas SET pes_ativa = ?, pes_atualizado_em = datetime('now') WHERE pes_id = ?`,
+                    args: [ativa ? 1 : 0, pesId]
+                });
+            } else {
+                await this.mainClient.execute({
+                    sql: `
+                        UPDATE cc_pesquisas
+                        SET pes_titulo = ?, pes_descricao = ?, pes_obrigatorio = ?, pes_foto_obrigatoria = ?,
+                            pes_data_inicio = ?, pes_data_fim = ?, pes_ativa = ?, pes_atualizado_em = datetime('now')
+                        WHERE pes_id = ?
+                    `,
+                    args: [titulo, descricao || null, obrigatorio ? 1 : 0, fotoObrigatoria ? 1 : 0, dataInicio || null, dataFim || null, ativa ? 1 : 0, pesId]
+                });
+            }
 
             // Atualizar campos - remove e recria
             if (campos !== undefined) {
