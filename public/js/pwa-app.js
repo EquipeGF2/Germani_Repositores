@@ -52,6 +52,86 @@
 
     // ==================== INIT ====================
 
+    // ==================== CONSOLE VISUAL MOBILE ====================
+    const _mobileConsole = {
+        logs: [],
+        maxLogs: 150,
+        visible: false,
+        el: null,
+        _originalConsole: {
+            log: console.log.bind(console),
+            warn: console.warn.bind(console),
+            error: console.error.bind(console),
+            info: console.info.bind(console)
+        },
+        init() {
+            // Criar container fixo
+            const el = document.createElement('div');
+            el.id = 'pwaDebugConsole';
+            el.innerHTML = `
+                <div id="pwaDebugHeader" style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#1e293b;border-bottom:1px solid #334155;cursor:pointer;">
+                    <span style="font-weight:700;font-size:12px;color:#38bdf8;">Console Debug</span>
+                    <div style="display:flex;gap:8px;">
+                        <button onclick="pwaApp.clearDebugConsole()" style="background:#ef4444;color:white;border:none;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;">Limpar</button>
+                        <button onclick="pwaApp.toggleDebugConsole()" style="background:#475569;color:white;border:none;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;">Fechar</button>
+                    </div>
+                </div>
+                <div id="pwaDebugBody" style="flex:1;overflow-y:auto;padding:4px 8px;font-family:monospace;font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-all;"></div>
+            `;
+            el.style.cssText = 'display:none;position:fixed;bottom:60px;left:0;right:0;height:45vh;background:#0f172a;color:#e2e8f0;z-index:99999;flex-direction:column;border-top:2px solid #38bdf8;';
+            document.body.appendChild(el);
+            this.el = el;
+
+            // Interceptar console.log/warn/error
+            const self = this;
+            ['log', 'warn', 'error', 'info'].forEach(method => {
+                console[method] = function(...args) {
+                    self._originalConsole[method](...args);
+                    self.addLog(method, args);
+                };
+            });
+
+            // Capturar erros globais
+            window.addEventListener('error', (e) => {
+                self.addLog('error', [`[UNCAUGHT] ${e.message} (${e.filename}:${e.lineno})`]);
+            });
+            window.addEventListener('unhandledrejection', (e) => {
+                self.addLog('error', [`[PROMISE] ${e.reason?.message || e.reason}`]);
+            });
+        },
+        addLog(type, args) {
+            const time = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const text = args.map(a => {
+                if (typeof a === 'object') {
+                    try { return JSON.stringify(a, null, 0).substring(0, 300); } catch { return String(a); }
+                }
+                return String(a);
+            }).join(' ');
+            const colors = { log: '#e2e8f0', warn: '#fbbf24', error: '#f87171', info: '#38bdf8' };
+            this.logs.push({ time, type, text, color: colors[type] || '#e2e8f0' });
+            if (this.logs.length > this.maxLogs) this.logs.shift();
+            this.render();
+        },
+        render() {
+            if (!this.visible) return;
+            const body = document.getElementById('pwaDebugBody');
+            if (!body) return;
+            body.innerHTML = this.logs.map(l =>
+                `<div style="color:${l.color};border-bottom:1px solid #1e293b;padding:2px 0;"><span style="color:#64748b;">${l.time}</span> <span style="color:${l.color};font-weight:${l.type === 'error' ? '700' : '400'}">[${l.type.toUpperCase()}]</span> ${l.text.replace(/</g, '&lt;')}</div>`
+            ).join('');
+            body.scrollTop = body.scrollHeight;
+        },
+        toggle() {
+            this.visible = !this.visible;
+            if (this.el) this.el.style.display = this.visible ? 'flex' : 'none';
+            if (this.visible) this.render();
+        },
+        clear() {
+            this.logs = [];
+            this.render();
+        }
+    };
+
     window.pwaApp = {
         init,
         navigate,
@@ -68,6 +148,9 @@
         abrirAtividadesInline,
         fecharAtividadesInline,
         sincronizarHome,
+        // Debug console
+        toggleDebugConsole: () => _mobileConsole.toggle(),
+        clearDebugConsole: () => _mobileConsole.clear(),
         // Tela de atendimento pós-checkin
         abrirAtendimentoTela,
         voltarAtendimento,
@@ -96,6 +179,7 @@
         }
 
         document.body.classList.add('pwa-mode');
+        _mobileConsole.init();
         setupTabs();
         updateHeader();
         setupConnectivity();
@@ -666,7 +750,19 @@
                     syncService.fetchWithTimeout(`${API_BASE_URL}/api/sync/tipos-gasto`, { headers }).then(r => r.json()).catch(e => { console.warn('[PWA] Erro sync tipos-gasto:', e.message); return { ok: false }; })
                 ]);
                 try { if (tiposDocRes.ok) { await offlineDB.salvarTiposDocumento(tiposDocRes.tipos || []); console.log(`[PWA Sync] Tipos documento: ${tiposDocRes.tipos?.length || 0} itens`); } } catch (e) { console.error('[PWA] Erro save tipos-doc:', e.message); }
-                try { if (tiposGastoRes.ok) { await offlineDB.salvarTiposGasto(tiposGastoRes.tipos || []); cachedData.tiposGasto = tiposGastoRes.tipos || []; console.log(`[PWA Sync] Tipos gasto (rubricas): ${tiposGastoRes.tipos?.length || 0} itens`); } } catch (e) { console.error('[PWA] Erro save tipos-gasto:', e.message); }
+                try {
+                    if (tiposGastoRes.ok) {
+                        const tipos = tiposGastoRes.tipos || [];
+                        console.log(`[PWA Sync] Rubricas recebidas da API: ${tipos.length} itens`, tipos.length > 0 ? tipos[0] : 'VAZIO');
+                        await offlineDB.salvarTiposGasto(tipos);
+                        cachedData.tiposGasto = tipos;
+                        // Verificar se salvou corretamente
+                        const verificar = await offlineDB.getTiposGasto().catch(() => []);
+                        console.log(`[PWA Sync] Rubricas verificação IndexedDB: ${verificar.length} itens`);
+                    } else {
+                        console.warn('[PWA Sync] Rubricas API retornou ok=false:', JSON.stringify(tiposGastoRes).substring(0, 200));
+                    }
+                } catch (e) { console.error('[PWA] Erro save tipos-gasto:', e.message); }
             } catch (e) {
                 console.warn('[PWA] Erro parcial no passo 2:', e);
             }
@@ -1491,11 +1587,33 @@
 
     // ==================== PÁGINA: CONSULTAS ====================
 
-    function renderConsultas() {
-        // Offline: mostrar apenas Visitas e Documentos (as demais não funcionam offline)
-        const consultasVisiveis = navigator.onLine
-            ? CONSULTAS
-            : CONSULTAS.filter(c => ['consulta-visitas', 'consulta-documentos'].includes(c.id));
+    async function renderConsultas() {
+        let consultasVisiveis;
+        if (navigator.onLine) {
+            // Online: todas as consultas disponíveis
+            consultasVisiveis = CONSULTAS;
+        } else {
+            // Offline: visitas sempre, demais apenas se houver registros offline pendentes
+            consultasVisiveis = [CONSULTAS.find(c => c.id === 'consulta-visitas')];
+            try {
+                const pendingDocs = typeof offlineDB !== 'undefined' ? await offlineDB.getPendingDocumentos().catch(() => []) : [];
+                if (pendingDocs && pendingDocs.length > 0) {
+                    consultasVisiveis.push(CONSULTAS.find(c => c.id === 'consulta-documentos'));
+                }
+                // Campanhas: verificar se há fotos de campanha em checkouts pendentes
+                const allMeta = typeof offlineDB !== 'undefined' ? await offlineDB.getAll('syncMeta').catch(() => []) : [];
+                const hasCampanha = (allMeta || []).some(item => item.key && item.key.startsWith('pendingCheckout_') && item.value?.campanhaFotos?.length > 0);
+                if (hasCampanha) {
+                    consultasVisiveis.push(CONSULTAS.find(c => c.id === 'consulta-campanha'));
+                }
+                // Despesas: verificar pendentes
+                const pendingDesp = typeof offlineDB !== 'undefined' ? await offlineDB.getPendingDespesas().catch(() => []) : [];
+                if (pendingDesp && pendingDesp.length > 0) {
+                    consultasVisiveis.push(CONSULTAS.find(c => c.id === 'consulta-despesas'));
+                }
+            } catch (e) { console.warn('[PWA] Erro ao verificar pendentes para consultas:', e.message); }
+            consultasVisiveis = consultasVisiveis.filter(Boolean);
+        }
 
         pwaContent.innerHTML = `
             <div class="pwa-page pwa-fullscreen-page">
@@ -1504,7 +1622,7 @@
                     <span class="pwa-page-header-title">Consultas</span>
                 </div>
                 <div class="pwa-page-body">
-                ${!navigator.onLine ? '<div style="background:#fef3c7;padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:12px;color:#92400e;text-align:center;">Modo offline — algumas consultas estão disponíveis apenas online</div>' : ''}
+                ${!navigator.onLine ? '<div style="background:#fef3c7;padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:12px;color:#92400e;text-align:center;">Modo offline — exibindo registros offline pendentes</div>' : ''}
                 ${consultasVisiveis.map(c => `
                     <div class="pwa-consulta-item" onclick="pwaApp.navigate('${c.id}')">
                         <span class="pwa-consulta-icon">${c.icon}</span>
@@ -1512,6 +1630,7 @@
                         <span class="pwa-consulta-arrow">&#8250;</span>
                     </div>
                 `).join('')}
+                ${!navigator.onLine && consultasVisiveis.length <= 1 ? '<div style="padding:20px;text-align:center;font-size:13px;color:#9ca3af;">Nenhum registro offline pendente para exibir</div>' : ''}
                 </div>
             </div>
         `;
@@ -1599,6 +1718,8 @@
 
             switch (consultaId) {
                 case 'consulta-visitas': {
+                    // Offline: cache 15 dias + registros offline pendentes
+                    // Online: cache + fetch com filtro de data
                     dados = await offlineDB.getSessoesRecentes();
                     // Merge pending sessions
                     const pendingSessions = await offlineDB.getPendingSessions();
@@ -1618,9 +1739,26 @@
                     break;
                 }
                 case 'consulta-campanha': {
-                    dados = await offlineDB.getCampanhas();
-                    cachedData._campanhas = dados;
-                    renderCampanhasInline(dados, container, hojeStr, semanaStr);
+                    if (navigator.onLine) {
+                        // Online: buscar da API com filtros
+                        dados = await offlineDB.getCampanhas();
+                        cachedData._campanhas = dados;
+                        renderCampanhasInline(dados, container, hojeStr, semanaStr);
+                    } else {
+                        // Offline: mostrar apenas registros pendentes de campanha
+                        const allMeta = await offlineDB.getAll('syncMeta').catch(() => []);
+                        const pendingCheckouts = (allMeta || []).filter(item => item.key && item.key.startsWith('pendingCheckout_') && item.value?.campanhaFotos?.length > 0);
+                        dados = pendingCheckouts.map(item => ({
+                            id: `pending_${item.key}`,
+                            cliente_nome: item.value?.clienteNome || 'N/D',
+                            cliente_id: item.value?.clienteId || '',
+                            data_planejada: item.value?.dataVisita || item.value?.timestamp || '',
+                            _pendente: true,
+                            fotos_count: item.value?.campanhaFotos?.length || 0
+                        }));
+                        cachedData._campanhas = dados;
+                        renderCampanhasInline(dados, container, hojeStr, semanaStr);
+                    }
                     break;
                 }
                 case 'consulta-roteiro': {
@@ -1633,8 +1771,13 @@
                     break;
                 }
                 case 'consulta-documentos': {
-                    dados = await offlineDB.getDocumentosCache();
-                    // Merge pending documents
+                    if (navigator.onLine) {
+                        // Online: cache do servidor + pendentes
+                        dados = await offlineDB.getDocumentosCache();
+                    } else {
+                        // Offline: apenas documentos pendentes
+                        dados = [];
+                    }
                     const pendingDocs = await offlineDB.getPendingDocumentos();
                     const pendingDocsMapped = pendingDocs.map(d => ({
                         doc_id: d.id || `pending_${d.createdAt}`,
@@ -1652,8 +1795,13 @@
                     break;
                 }
                 case 'consulta-despesas': {
-                    dados = await offlineDB.getDespesas();
-                    // Merge pending expenses
+                    if (navigator.onLine) {
+                        // Online: cache do servidor + pendentes
+                        dados = await offlineDB.getDespesas();
+                    } else {
+                        // Offline: apenas despesas pendentes
+                        dados = [];
+                    }
                     const pendingDesp = await offlineDB.getPendingDespesas();
                     for (const desp of pendingDesp) {
                         if (desp.rubricas && Array.isArray(desp.rubricas)) {
@@ -2431,7 +2579,9 @@
             cliente_id: clienteId,
             cliente_nome: clienteNome,
             data_visita: dataVisita,
+            data_hora: new Date().toISOString(),
             motivo: motivo,
+            descricao: motivo,
             registrado_em: new Date().toISOString()
         };
 
@@ -3248,6 +3398,15 @@
                     <div class="pwa-menu-item danger" id="pwaMenuSair">
                         <span class="pwa-menu-icon">&#10005;</span>
                         <span class="pwa-menu-label">Sair</span>
+                    </div>
+                </div>
+
+                <div class="pwa-section-title">Desenvolvimento</div>
+                <div class="pwa-menu-group">
+                    <div class="pwa-menu-item" onclick="pwaApp.toggleDebugConsole()">
+                        <span class="pwa-menu-icon">&#128187;</span>
+                        <span class="pwa-menu-label">Console Debug</span>
+                        <span class="pwa-menu-value">Ver logs</span>
                     </div>
                 </div>
 

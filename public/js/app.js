@@ -14123,17 +14123,41 @@ class App {
             if (isPWA && tipoRegistro === 'checkout' && !navigator.onLine) {
                 try {
                     if (window.offlineDB) {
+                        // Converter Blobs para base64 antes de salvar no IndexedDB (mais confiável)
+                        const blobToBase64 = (blob) => {
+                            if (!blob) return Promise.resolve(null);
+                            return new Promise((resolve) => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => resolve(reader.result);
+                                reader.onerror = () => resolve(null);
+                                reader.readAsDataURL(blob);
+                            });
+                        };
+                        const checkinFotoB64 = this.registroRotaState._checkinLocal?.fotoBlob
+                            ? await blobToBase64(this.registroRotaState._checkinLocal.fotoBlob)
+                            : null;
+                        const checkoutFotoB64 = fotosNovas[0]?.blob
+                            ? await blobToBase64(fotosNovas[0].blob)
+                            : null;
+                        // Converter fotos de campanha
+                        const campanhaFotosB64 = [];
+                        for (const foto of (this.registroRotaState._campanhaFotosLocal || [])) {
+                            const fotoBlob = foto.blob || foto;
+                            const b64 = fotoBlob ? await blobToBase64(fotoBlob) : null;
+                            if (b64) campanhaFotosB64.push({ b64, clienteId: foto.clienteId, clienteNome: foto.clienteNome });
+                        }
+
                         await window.offlineDB.setSyncMeta(`pendingCheckout_${clienteId}`, {
                             repId, clienteId, clienteNome, dataVisita,
                             gpsCoords: { ...gpsCoords },
                             enderecoResolvido,
                             timestamp: new Date().toISOString(),
                             checkinLocal: this.registroRotaState._checkinLocal
-                                ? { ...this.registroRotaState._checkinLocal, fotoBlob: this.registroRotaState._checkinLocal.fotoBlob }
+                                ? { ...this.registroRotaState._checkinLocal, fotoBlob: checkinFotoB64 }
                                 : null,
                             atividadesLocal: this.registroRotaState._atividadesLocal || null,
-                            campanhaFotos: this.registroRotaState._campanhaFotosLocal || null,
-                            checkoutFotoBlob: fotosNovas[0]?.blob || null
+                            campanhaFotos: campanhaFotosB64.length > 0 ? campanhaFotosB64 : null,
+                            checkoutFotoBlob: checkoutFotoB64
                         });
                     }
                 } catch (e) {
@@ -16501,6 +16525,31 @@ class App {
     /**
      * Sincronizar despesas de viagem salvas offline quando a conexão retornar
      */
+    _base64ToBlob(dataUrl, defaultType = 'image/jpeg') {
+        try {
+            if (!dataUrl) return null;
+            let base64, mimeType;
+            const match = dataUrl.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9\-.+]+);base64,(.+)$/);
+            if (match) {
+                mimeType = match[1];
+                base64 = match[2];
+            } else {
+                // Já é base64 puro (sem prefixo data:)
+                mimeType = defaultType;
+                base64 = dataUrl;
+            }
+            const binaryString = atob(base64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return new Blob([bytes], { type: mimeType });
+        } catch (e) {
+            console.error('[SYNC] Erro ao converter base64 para Blob:', e.message);
+            return null;
+        }
+    }
+
     async syncDespesasPendentes() {
         if (!navigator.onLine) return;
         if (typeof window.offlineDB === 'undefined') return;
@@ -16521,9 +16570,10 @@ class App {
 
                     // Converter base64 de volta para File
                     for (const foto of (despesa.fotos || [])) {
-                        const res = await fetch(foto.b64);
-                        const blob = await res.blob();
-                        formData.append('arquivos', new File([blob], foto.name || 'foto.jpg', { type: foto.type || 'image/jpeg' }));
+                        const blob = this._base64ToBlob(foto.b64, foto.type || 'image/jpeg');
+                        if (blob) {
+                            formData.append('arquivos', new File([blob], foto.name || 'foto.jpg', { type: foto.type || 'image/jpeg' }));
+                        }
                     }
 
                     await fetchJson(`${API_BASE_URL}/api/documentos/upload-multiplo`, {
@@ -16564,9 +16614,10 @@ class App {
                     if (doc.observacao) formData.append('observacao', doc.observacao);
 
                     for (const foto of (doc.fotos || [])) {
-                        const res = await fetch(foto.b64);
-                        const blob = await res.blob();
-                        formData.append('arquivos', new File([blob], foto.name || 'foto.jpg', { type: foto.type || 'image/jpeg' }));
+                        const blob = this._base64ToBlob(foto.b64, foto.type || 'image/jpeg');
+                        if (blob) {
+                            formData.append('arquivos', new File([blob], foto.name || 'foto.jpg', { type: foto.type || 'image/jpeg' }));
+                        }
                     }
 
                     await fetchJson(`${API_BASE_URL}/api/documentos/upload-multiplo`, {
@@ -16626,9 +16677,14 @@ class App {
                         checkinForm.append('cliente_endereco', checkin.enderecoRoteiro || '');
                         if (checkin.dataVisita || data.dataVisita) checkinForm.append('data_planejada', checkin.dataVisita || data.dataVisita);
                         if (checkin.novaVisita) checkinForm.append('allow_nova_visita', 'true');
-                        // Foto do checkin
+                        // Foto do checkin (pode ser Blob ou base64)
                         if (checkin.fotoBlob) {
-                            checkinForm.append('fotos', checkin.fotoBlob);
+                            if (typeof checkin.fotoBlob === 'string') {
+                                const blob = this._base64ToBlob(checkin.fotoBlob);
+                                if (blob) checkinForm.append('fotos', new File([blob], 'checkin.jpg', { type: 'image/jpeg' }));
+                            } else {
+                                checkinForm.append('fotos', checkin.fotoBlob);
+                            }
                         }
 
                         const checkinResp = await fetchJson(`${backendUrl}/api/registro-rota/visitas`, {
@@ -16667,8 +16723,14 @@ class App {
                             if (data.dataVisita) campanhaForm.append('data_planejada', data.dataVisita);
                             campanhaForm.append('rv_id', rvId);
                             for (const foto of data.campanhaFotos) {
-                                if (foto.blob || foto) {
-                                    campanhaForm.append('fotos', foto.blob || foto);
+                                const fotoData = foto.b64 || foto.blob || foto;
+                                if (fotoData) {
+                                    if (typeof fotoData === 'string') {
+                                        const blob = this._base64ToBlob(fotoData);
+                                        if (blob) campanhaForm.append('fotos', new File([blob], 'campanha.jpg', { type: 'image/jpeg' }));
+                                    } else {
+                                        campanhaForm.append('fotos', fotoData);
+                                    }
                                 }
                             }
                             await fetchJson(`${backendUrl}/api/registro-rota/visitas`, {
@@ -16692,9 +16754,14 @@ class App {
                     checkoutForm.append('cliente_nome', data.clienteNome || '');
                     if (data.dataVisita) checkoutForm.append('data_planejada', data.dataVisita);
                     if (rvId) checkoutForm.append('rv_id', rvId);
-                    // Foto do checkout
+                    // Foto do checkout (pode ser Blob ou base64)
                     if (data.checkoutFotoBlob) {
-                        checkoutForm.append('fotos', data.checkoutFotoBlob);
+                        if (typeof data.checkoutFotoBlob === 'string') {
+                            const blob = this._base64ToBlob(data.checkoutFotoBlob);
+                            if (blob) checkoutForm.append('fotos', new File([blob], 'checkout.jpg', { type: 'image/jpeg' }));
+                        } else {
+                            checkoutForm.append('fotos', data.checkoutFotoBlob);
+                        }
                     }
 
                     await fetchJson(`${backendUrl}/api/registro-rota/visitas`, {
