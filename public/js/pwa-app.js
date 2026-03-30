@@ -1621,29 +1621,49 @@
     // ==================== PÁGINA: CONSULTAS ====================
 
     async function renderConsultas() {
+        // Mostrar loading imediato enquanto verifica pendentes
+        pwaContent.innerHTML = `
+            <div class="pwa-page pwa-fullscreen-page">
+                <div class="pwa-page-header-bar">
+                    <button class="pwa-back-btn" onclick="pwaApp.voltarHome()">&#8592;</button>
+                    <span class="pwa-page-header-title">Consultas</span>
+                </div>
+                <div class="pwa-page-body">
+                    <div class="pwa-loading-inline"><div class="pwa-spinner-small"></div><span>Carregando...</span></div>
+                </div>
+            </div>`;
+
         let consultasVisiveis;
         if (navigator.onLine) {
             // Online: todas as consultas disponíveis
             consultasVisiveis = CONSULTAS;
         } else {
-            // Offline: visitas sempre, demais apenas se houver registros offline pendentes
+            // Offline: visitas sempre visível (cache 15 dias + pendentes)
             consultasVisiveis = [CONSULTAS.find(c => c.id === 'consulta-visitas')];
             try {
-                const pendingDocs = typeof offlineDB !== 'undefined' ? await offlineDB.getPendingDocumentos().catch(() => []) : [];
-                if (pendingDocs && pendingDocs.length > 0) {
-                    consultasVisiveis.push(CONSULTAS.find(c => c.id === 'consulta-documentos'));
-                }
-                // Campanhas: verificar se há fotos de campanha em checkouts pendentes
+                // Checkouts pendentes (contém campanha + visitas)
                 const allMeta = typeof offlineDB !== 'undefined' ? await offlineDB.getAll('syncMeta').catch(() => []) : [];
+                const hasCheckouts = (allMeta || []).some(item => item.key && item.key.startsWith('pendingCheckout_'));
+
+                // Se há checkouts pendentes, mostrar visitas (já mostrada) e verificar campanha
                 const hasCampanha = (allMeta || []).some(item => item.key && item.key.startsWith('pendingCheckout_') && item.value?.campanhaFotos?.length > 0);
                 if (hasCampanha) {
                     consultasVisiveis.push(CONSULTAS.find(c => c.id === 'consulta-campanha'));
                 }
-                // Despesas: verificar pendentes
+
+                // Documentos pendentes
+                const pendingDocs = typeof offlineDB !== 'undefined' ? await offlineDB.getPendingDocumentos().catch(() => []) : [];
+                if (pendingDocs && pendingDocs.length > 0) {
+                    consultasVisiveis.push(CONSULTAS.find(c => c.id === 'consulta-documentos'));
+                }
+
+                // Despesas pendentes
                 const pendingDesp = typeof offlineDB !== 'undefined' ? await offlineDB.getPendingDespesas().catch(() => []) : [];
                 if (pendingDesp && pendingDesp.length > 0) {
                     consultasVisiveis.push(CONSULTAS.find(c => c.id === 'consulta-despesas'));
                 }
+
+                console.log(`[PWA] Consultas offline: checkouts=${hasCheckouts}, campanha=${hasCampanha}, docs=${pendingDocs?.length || 0}, desp=${pendingDesp?.length || 0}`);
             } catch (e) { console.warn('[PWA] Erro ao verificar pendentes para consultas:', e.message); }
             consultasVisiveis = consultasVisiveis.filter(Boolean);
         }
