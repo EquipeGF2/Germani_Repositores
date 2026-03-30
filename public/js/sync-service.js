@@ -685,6 +685,47 @@ class SyncService {
         }
       }
 
+      // Enviar cancelamentos pendentes (salvos offline)
+      try {
+        const allMeta = await offlineDB.getAll('syncMeta');
+        const cancelsPendentes = allMeta.filter(m => m.key?.startsWith('pendingCancel_'));
+        for (const cancelMeta of cancelsPendentes) {
+          const cancelData = cancelMeta.value;
+          if (!cancelData?.rvId || !cancelData?.repId) {
+            await offlineDB.delete('syncMeta', cancelMeta.key);
+            continue;
+          }
+          try {
+            const cancelResp = await this.fetchWithTimeout(
+              `${this.apiBaseUrl}/api/registro-rota/cancelar-atendimento`,
+              {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  rv_id: cancelData.rvId,
+                  repositor_id: cancelData.repId,
+                  motivo: cancelData.motivo || ''
+                })
+              }
+            );
+            if (cancelResp.ok || cancelResp.status === 404 || cancelResp.status === 409) {
+              // Sucesso ou sessão já não existe — remover da fila
+              const cancelResult = await cancelResp.json().catch(() => ({}));
+              console.log(`[SyncService] Cancelamento sincronizado: cliente ${cancelData.clienteId} (status ${cancelResp.status})`, cancelResult);
+              await offlineDB.delete('syncMeta', cancelMeta.key);
+              totalEnviados++;
+            } else {
+              const errBody = await cancelResp.text().catch(() => '');
+              console.error(`[SyncService] Erro ao cancelar (${cancelResp.status}):`, errBody);
+              totalErros++;
+            }
+          } catch (cancelErr) {
+            console.error(`[SyncService] Erro de rede ao sincronizar cancelamento:`, cancelErr.message);
+            totalErros++;
+          }
+        }
+      } catch (e) { console.error('[SyncService] Erro ao processar cancelamentos:', e.message); }
+
       // Limpar itens sincronizados imediatamente + antigos
       await offlineDB.limparSincronizadosImediatamente();
       await offlineDB.limparSincronizados();
