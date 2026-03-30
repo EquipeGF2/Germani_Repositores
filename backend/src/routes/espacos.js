@@ -75,11 +75,13 @@ router.delete('/tipos/:id', async (req, res) => {
 // GET /api/espacos/clientes - Listar clientes com espaço
 router.get('/clientes', async (req, res) => {
   try {
-    const { cidade, cliente_id, tipo_espaco_id } = req.query;
+    const { cidade, cliente_id, tipo_espaco_id, repositor_id, ativo } = req.query;
     const clientes = await tursoService.listarClientesEspacos({
       cidade,
       clienteId: cliente_id,
-      tipoEspacoId: tipo_espaco_id ? parseInt(tipo_espaco_id) : null
+      tipoEspacoId: tipo_espaco_id ? parseInt(tipo_espaco_id) : null,
+      repositorId: repositor_id ? parseInt(repositor_id) : null,
+      ativo: ativo || '1'
     });
     res.json({ ok: true, data: clientes });
   } catch (error) {
@@ -131,6 +133,18 @@ router.delete('/clientes/:id', async (req, res) => {
   } catch (error) {
     console.error('Erro ao remover espaço do cliente:', error);
     res.status(500).json({ ok: false, message: 'Erro ao remover espaço do cliente' });
+  }
+});
+
+// POST /api/espacos/clientes/:id/reativar - Reativar espaço do cliente
+router.post('/clientes/:id/reativar', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await tursoService.reativarClienteEspaco(parseInt(id));
+    res.json({ ok: true, message: 'Espaço reativado com sucesso' });
+  } catch (error) {
+    console.error('Erro ao reativar espaço do cliente:', error);
+    res.status(500).json({ ok: false, message: 'Erro ao reativar espaço do cliente' });
   }
 });
 

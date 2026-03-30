@@ -2509,9 +2509,19 @@ class TursoService {
       SELECT ces.*, te.esp_nome as tipo_nome
       FROM cc_clientes_espacos ces
       JOIN cc_tipos_espaco te ON te.esp_id = ces.ces_tipo_espaco_id
-      WHERE ces.ces_ativo = 1
+      WHERE 1=1
     `;
     const args = [];
+
+    // Filtro ativo/inativo (default: apenas ativos)
+    if (filtros.ativo === 'todos') {
+      // sem filtro de ativo
+    } else if (filtros.ativo === '0') {
+      sql += ' AND ces.ces_ativo = 0';
+    } else {
+      // default: apenas ativos
+      sql += ' AND ces.ces_ativo = 1';
+    }
 
     if (filtros.cidade) {
       sql += ' AND ces.ces_cidade = ?';
@@ -2524,6 +2534,15 @@ class TursoService {
     if (filtros.tipoEspacoId) {
       sql += ' AND ces.ces_tipo_espaco_id = ?';
       args.push(filtros.tipoEspacoId);
+    }
+    if (filtros.repositorId) {
+      sql += ` AND ces.ces_cliente_id IN (
+        SELECT DISTINCT rc.rot_cliente_codigo
+        FROM rot_roteiro_cliente rc
+        JOIN rot_roteiro_cidade rcid ON rcid.rot_cid_id = rc.rot_cid_id
+        WHERE rcid.rot_repositor_id = ?
+      )`;
+      args.push(filtros.repositorId);
     }
 
     sql += ' ORDER BY ces.ces_cidade, ces.ces_cliente_id';
@@ -2616,6 +2635,10 @@ class TursoService {
 
   async removerClienteEspaco(id) {
     await this.execute('UPDATE cc_clientes_espacos SET ces_ativo = 0, ces_atualizado_em = datetime(\'now\') WHERE ces_id = ?', [id]);
+  }
+
+  async reativarClienteEspaco(id) {
+    await this.execute('UPDATE cc_clientes_espacos SET ces_ativo = 1, ces_atualizado_em = datetime(\'now\') WHERE ces_id = ?', [id]);
   }
 
   async atualizarQuantidadeEspaco(id, quantidade) {
@@ -4609,6 +4632,33 @@ class TursoService {
             }
           }
         }
+      }
+
+      // Buscar campos de todas as pesquisas para uso offline
+      const pesquisaIds = pesquisas.map(p => p.pes_id);
+      const camposPorPesquisa = {};
+      if (pesquisaIds.length > 0) {
+        const phCampos = pesquisaIds.map(() => '?').join(',');
+        const camposResult = await this.execute(
+          `SELECT * FROM cc_pesquisa_campos WHERE pca_pes_id IN (${phCampos}) ORDER BY pca_pes_id, pca_ordem`,
+          pesquisaIds
+        );
+        for (const campo of (camposResult?.rows || [])) {
+          if (!camposPorPesquisa[campo.pca_pes_id]) camposPorPesquisa[campo.pca_pes_id] = [];
+          camposPorPesquisa[campo.pca_pes_id].push(campo);
+        }
+      }
+
+      // Enriquecer pesquisas nos clientesPesquisa com campos e metadados completos
+      const pesquisasMap = new Map(pesquisas.map(p => [p.pes_id, p]));
+      for (const cliId of Object.keys(clientesPesquisa)) {
+        clientesPesquisa[cliId] = clientesPesquisa[cliId].map(p => ({
+          ...p,
+          pes_obrigatorio: pesquisasMap.get(p.pes_id)?.pes_obrigatorio || 0,
+          pes_foto_obrigatoria: pesquisasMap.get(p.pes_id)?.pes_foto_obrigatoria || 0,
+          pes_tipo: pesquisasMap.get(p.pes_id)?.pes_tipo || null,
+          campos: camposPorPesquisa[p.pes_id] || []
+        }));
       }
 
       // Buscar respostas já dadas hoje
