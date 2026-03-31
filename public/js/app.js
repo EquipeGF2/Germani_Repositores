@@ -24823,10 +24823,10 @@ class App {
         }
 
         try {
-            // Salvar todas as fotos no IndexedDB de uma vez
+            // Salvar apenas fotos NOVAS no IndexedDB (excluir já registrados anteriormente)
             for (const idx of registrosRealizados) {
                 const esp = espacosPendentes[idx];
-                if (!esp.fotoFile) continue;
+                if (!esp.fotoFile || esp._jaRegistrado) continue;
 
                 const tipoEspacoId = esp.tipo_espaco_id || esp.ces_tipo_espaco_id;
                 const obsInput = document.getElementById(`obsEspaco${idx}`);
@@ -24846,10 +24846,17 @@ class App {
                 await offlineDB.adicionarEspacoFila(dadosFila);
             }
 
+            // Contar apenas registros NOVOS (com foto nesta sessão, excluindo _jaRegistrado)
+            const novosRegistros = registrosRealizados.filter(idx => {
+                const esp = espacosPendentes[idx];
+                return esp.fotoFile && !esp._jaRegistrado;
+            });
+            let totalRegistradosAcumulado = novosRegistros.length;
+
             // Persistir registro de conclusão para sobreviver restart/mudança de conectividade
             if (typeof offlineDB !== 'undefined') {
                 try {
-                    const tiposRegistrados = registrosRealizados.map(idx => {
+                    const tiposRegistrados = novosRegistros.map(idx => {
                         const esp = espacosPendentes[idx];
                         return {
                             tipoEspacoId: esp.tipo_espaco_id || esp.ces_tipo_espaco_id,
@@ -24866,13 +24873,13 @@ class App {
                         if (anterior?.tiposRegistrados) registrosAnteriores = anterior.tiposRegistrados;
                     } catch (_) {}
                     const todosTiposRegistrados = [...registrosAnteriores, ...tiposRegistrados];
-                    const registradosCount = todosTiposRegistrados.length;
+                    totalRegistradosAcumulado = todosTiposRegistrados.length;
                     const totalEsperado = espacosPendentes.length;
                     await offlineDB.setSyncMeta(`pendingEspacosRegistrados_${cliNormEsp}`, {
                         tiposRegistrados: todosTiposRegistrados,
-                        registradosCount,
+                        registradosCount: totalRegistradosAcumulado,
                         totalEsperado,
-                        completo: registradosCount >= totalEsperado,
+                        completo: totalRegistradosAcumulado >= totalEsperado,
                         dataRegistro: dataVisita,
                         timestamp: new Date().toISOString()
                     });
@@ -24883,9 +24890,9 @@ class App {
             this.fecharModalRegistroEspacos(true);
 
             // Informar que espaços foram salvos
-            const pendentes = espacosPendentes.length - registrosRealizados.length;
+            const pendentes = espacosPendentes.length - totalRegistradosAcumulado;
             const msgPendente = pendentes > 0 ? ` (${pendentes} pendente${pendentes > 1 ? 's' : ''})` : '';
-            this.showNotification(`${registrosRealizados.length} espaço(s) salvo(s)!${msgPendente} Serão enviados automaticamente.`, 'success');
+            this.showNotification(`${novosRegistros.length} espaço(s) salvo(s)!${msgPendente} Serão enviados automaticamente.`, 'success');
         } catch (error) {
             console.error('Erro ao salvar espaços:', error);
             if (btnFinalizar) {
