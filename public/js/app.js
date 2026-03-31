@@ -24384,17 +24384,6 @@ class App {
                             quantidade_esperada: e.quantidade_esperada || e.ces_quantidade || 1,
                             ces_quantidade: e.ces_quantidade || e.quantidade_esperada || 1
                         }));
-                    } else if (cached?.temEspacos) {
-                        // Tem espaços mas formato diferente - tentar arrays internos
-                        const cachedAll = await offlineDB.getEspacosCliente(cliNorm);
-                        if (cachedAll?.espacosRegistrados?.length > 0) {
-                            espacosParaRegistrar = cachedAll.espacosRegistrados.map(e => ({
-                                tipo_espaco_id: e.tipo_espaco_id || e.reg_tipo_espaco_id,
-                                tipo_nome: e.tipo_nome || e.tipo_espaco_nome || e.esp_nome || '',
-                                quantidade_esperada: e.quantidade_esperada || e.reg_quantidade_esperada || 1,
-                                ces_quantidade: e.quantidade_esperada || e.reg_quantidade_esperada || 1
-                            }));
-                        }
                     }
                 } catch (cacheErr) { console.warn('[Espaços] Erro ao ler cache:', cacheErr.message); }
                 // Salvar no localStorage como backup (caso IndexedDB perca dados)
