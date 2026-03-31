@@ -14018,7 +14018,7 @@ class App {
                 } else {
                     canvas.style.display = 'none';
                 }
-            }, 'image/jpeg', 0.6);
+            }, 'image/jpeg', 0.92);
         } catch (error) {
             console.error('Erro ao capturar foto:', error);
             this.showNotification('Erro ao capturar foto: ' + error.message, 'error');
@@ -14151,9 +14151,8 @@ class App {
                 y += lineH;
             }
 
-            // Otimização: reduzir qualidade JPEG para 0.65 (carregamento mais rápido em mobile)
             const stampedBlob = await new Promise((resolve) => {
-                canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.65);
+                canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.92);
             });
 
             return stampedBlob || blob;
@@ -24763,7 +24762,7 @@ class App {
             this.fecharCameraEspaco();
             this.showNotification('Foto capturada com sucesso!', 'success');
 
-        }, 'image/jpeg', 0.6);
+        }, 'image/jpeg', 0.92);
     }
 
     fecharCameraEspaco() {
