@@ -11918,10 +11918,12 @@ class App {
                     if (this.registroRotaState._campanhaFotosLocal && this.registroRotaState._campanhaFotosLocal[0]?.clienteId === clienteIdNorm) {
                         this.registroRotaState._campanhaFotosLocal = null;
                     }
-                    // Remover pendingCheckout se existir
+                    // Remover pendentes do syncMeta
                     try {
                         if (typeof offlineDB !== 'undefined') {
                             await offlineDB.delete('syncMeta', `pendingCheckout_${clienteIdNorm}`);
+                            await offlineDB.delete('syncMeta', `pendingCampanhaFotos_${clienteIdNorm}`);
+                            await offlineDB.delete('syncMeta', `pendingAtividades_${clienteIdNorm}`);
                         }
                     } catch (_) {}
                     this.showNotification('Atendimento local cancelado.', 'success');
@@ -12954,8 +12956,35 @@ class App {
         // PWA: Restaurar fotos de campanha já salvas (mesmo atendimento)
         if (tipoPadrao === 'campanha' && window.authManager?.isPWA) {
             const normId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
-            const fotosPreExistentes = (this.registroRotaState._campanhaFotosLocal || [])
+            let fotosPreExistentes = (this.registroRotaState._campanhaFotosLocal || [])
                 .filter(f => normId(f.clienteId) === clienteIdNorm);
+
+            // Fallback: restaurar fotos do IndexedDB se _campanhaFotosLocal estava vazio (apos restart)
+            if (fotosPreExistentes.length === 0 && window.offlineDB) {
+                try {
+                    const cached = await window.offlineDB.getSyncMeta(`pendingCampanhaFotos_${clienteIdNorm}`);
+                    if (cached?.fotos?.length > 0) {
+                        if (!this.registroRotaState._campanhaFotosLocal) {
+                            this.registroRotaState._campanhaFotosLocal = [];
+                        }
+                        for (const f of cached.fotos) {
+                            if (f.base64) {
+                                const resp = await fetch(f.base64);
+                                const blob = await resp.blob();
+                                this.registroRotaState._campanhaFotosLocal.push({
+                                    blob, clienteId: f.clienteId, clienteNome: f.clienteNome,
+                                    gpsCoords: f.gpsCoords, enderecoResolvido: f.enderecoResolvido,
+                                    dataVisita: f.dataVisita, timestamp: f.timestamp
+                                });
+                            }
+                        }
+                        fotosPreExistentes = this.registroRotaState._campanhaFotosLocal
+                            .filter(f => normId(f.clienteId) === clienteIdNorm);
+                        console.log('[PWA] Fotos campanha restauradas do IndexedDB:', fotosPreExistentes.length);
+                    }
+                } catch (_) {}
+            }
+
             if (fotosPreExistentes.length > 0) {
                 for (const fotoLocal of fotosPreExistentes) {
                     const url = URL.createObjectURL(fotoLocal.blob);
@@ -14374,6 +14403,39 @@ class App {
                     });
                 }
 
+                // Persistir fotos no IndexedDB para sobreviver restart do app
+                if (window.offlineDB) {
+                    try {
+                        const _blobToB64 = (blob) => {
+                            if (!blob) return Promise.resolve(null);
+                            return new Promise((resolve) => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => resolve(reader.result);
+                                reader.onerror = () => resolve(null);
+                                reader.readAsDataURL(blob);
+                            });
+                        };
+                        const fotosParaSalvar = [];
+                        for (const f of this.registroRotaState._campanhaFotosLocal) {
+                            const b64 = await _blobToB64(f.blob);
+                            if (b64) fotosParaSalvar.push({
+                                base64: b64,
+                                clienteId: f.clienteId,
+                                clienteNome: f.clienteNome,
+                                gpsCoords: f.gpsCoords,
+                                enderecoResolvido: f.enderecoResolvido,
+                                dataVisita: f.dataVisita,
+                                timestamp: f.timestamp
+                            });
+                        }
+                        await window.offlineDB.setSyncMeta(`pendingCampanhaFotos_${clienteId}`, {
+                            fotos: fotosParaSalvar,
+                            timestamp: new Date().toISOString()
+                        });
+                        console.log(`[PWA] ${fotosParaSalvar.length} fotos de campanha persistidas no IndexedDB`);
+                    } catch (e) { console.warn('[Campanha] Erro ao persistir fotos:', e); }
+                }
+
                 const atuais = Number(statusCliente?.atividades_count || 0);
                 const novas = Math.max(1, arquivos.length);
                 this.atualizarStatusClienteLocal(clienteId, {
@@ -14474,9 +14536,10 @@ class App {
                 }
                 this.registroRotaState._atividadesLocal = null;
                 this.registroRotaState._campanhaFotosLocal = null;
-                // Limpar atividades pendentes do syncMeta (já incluídas no checkout)
+                // Limpar atividades e campanha pendentes do syncMeta (já incluídas no checkout)
                 if (window.offlineDB) {
                     window.offlineDB.delete('syncMeta', `pendingAtividades_${clienteId}`).catch(() => {});
+                    window.offlineDB.delete('syncMeta', `pendingCampanhaFotos_${clienteId}`).catch(() => {});
                 }
 
                 this.showNotification('Offline — checkout salvo! Será enviado ao conectar à internet.', 'success');
@@ -14576,6 +14639,7 @@ class App {
                             }
                         }
                         this.registroRotaState._campanhaFotosLocal = null;
+                        if (window.offlineDB) window.offlineDB.delete('syncMeta', `pendingCampanhaFotos_${clienteId}`).catch(() => {});
                     }
 
                     // Limpar checkin local
@@ -14724,6 +14788,10 @@ class App {
                     }
                     if (this.registroRotaState._campanhaFotosLocal && this.registroRotaState._campanhaFotosLocal[0]?.clienteId === clienteIdNorm_) {
                         this.registroRotaState._campanhaFotosLocal = null;
+                    }
+                    if (window.offlineDB) {
+                        window.offlineDB.delete('syncMeta', `pendingCampanhaFotos_${clienteIdNorm_}`).catch(() => {});
+                        window.offlineDB.delete('syncMeta', `pendingAtividades_${clienteIdNorm_}`).catch(() => {});
                     }
                     this._sessaoCache = {};
                     await this.fecharModalCaptura();

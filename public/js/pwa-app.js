@@ -429,6 +429,55 @@
                 }
             } catch (_) {}
 
+            // Restaurar atividades e fotos de campanha pendentes do IndexedDB
+            try {
+                const allMeta = await offlineDB.getAll('syncMeta').catch(() => []);
+
+                // Atividades pendentes
+                const atvPending = (allMeta || []).find(m => m.key && m.key.startsWith('pendingAtividades_'));
+                if (atvPending?.value) {
+                    if (!window.app) window.app = {};
+                    if (!window.app.registroRotaState) window.app.registroRotaState = {};
+                    if (!window.app.registroRotaState._atividadesLocal) {
+                        window.app.registroRotaState._atividadesLocal = {
+                            sessaoId: atvPending.value.sessaoId,
+                            clienteId: atvPending.value.clienteId,
+                            repId: atvPending.value.repId,
+                            payload: atvPending.value.payload
+                        };
+                        console.log('[PWA] Atividades restauradas na inicializacao:', atvPending.value.clienteId);
+                    }
+                }
+
+                // Fotos de campanha pendentes
+                const campanhaEntry = (allMeta || []).find(m => m.key && m.key.startsWith('pendingCampanhaFotos_'));
+                if (campanhaEntry?.value?.fotos?.length > 0) {
+                    if (!window.app) window.app = {};
+                    if (!window.app.registroRotaState) window.app.registroRotaState = {};
+                    if (!window.app.registroRotaState._campanhaFotosLocal || window.app.registroRotaState._campanhaFotosLocal.length === 0) {
+                        window.app.registroRotaState._campanhaFotosLocal = [];
+                        for (const f of campanhaEntry.value.fotos) {
+                            if (f.base64) {
+                                try {
+                                    const resp = await fetch(f.base64);
+                                    const blob = await resp.blob();
+                                    window.app.registroRotaState._campanhaFotosLocal.push({
+                                        blob,
+                                        clienteId: f.clienteId,
+                                        clienteNome: f.clienteNome,
+                                        gpsCoords: f.gpsCoords,
+                                        enderecoResolvido: f.enderecoResolvido,
+                                        dataVisita: f.dataVisita,
+                                        timestamp: f.timestamp
+                                    });
+                                } catch (_) {}
+                            }
+                        }
+                        console.log('[PWA] Fotos campanha restauradas:', window.app.registroRotaState._campanhaFotosLocal.length);
+                    }
+                }
+            } catch (_) {}
+
         } catch (e) {
             console.error('[PWA] Erro dados locais:', e);
         }
@@ -3212,7 +3261,7 @@
         }
     }
 
-    function _atualizarEstadoBtnCheckout() {
+    async function _atualizarEstadoBtnCheckout() {
         const btn = document.getElementById('pwaAtendimentoBtnCheckout');
         if (!btn || !currentAtendimentoContext) return;
         const normId = (v) => String(v ?? '').trim().replace(/\.0$/, '');
@@ -3222,7 +3271,21 @@
         const atividadesCount = Number(statusCliente?.atividades_count || 0);
         const temAtividadesLocal = state?._atividadesLocal?.clienteId === cliNorm;
         const temCampanhaLocal = (state?._campanhaFotosLocal || []).some(f => normId(f.clienteId) === cliNorm);
-        const liberado = atividadesCount > 0 || temAtividadesLocal || temCampanhaLocal;
+        let liberado = atividadesCount > 0 || temAtividadesLocal || temCampanhaLocal;
+
+        // Fallback: verificar IndexedDB se fontes em memoria nao tem dados
+        if (!liberado && typeof offlineDB !== 'undefined') {
+            try {
+                const [atvMeta, campMeta] = await Promise.all([
+                    offlineDB.getSyncMeta(`pendingAtividades_${cliNorm}`).catch(() => null),
+                    offlineDB.getSyncMeta(`pendingCampanhaFotos_${cliNorm}`).catch(() => null)
+                ]);
+                if (atvMeta?.payload || campMeta?.fotos?.length > 0) {
+                    liberado = true;
+                }
+            } catch (_) {}
+        }
+
         btn.disabled = !liberado;
         if (liberado) {
             btn.classList.remove('pwa-checkout-bloqueado');
