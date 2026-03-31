@@ -1146,13 +1146,17 @@
             if (typeof syncService !== 'undefined') {
                 showSyncIndicator(true);
                 await syncService.sincronizarAgora();
+
+                // Enviar checkouts/despesas/documentos pendentes via app.js
+                if (typeof window.app !== 'undefined') {
+                    if (typeof window.app.syncCheckoutsPendentes === 'function') await window.app.syncCheckoutsPendentes().catch(e => console.warn('[PWA] Erro sync checkouts:', e));
+                    if (typeof window.app.syncDespesasPendentes === 'function') await window.app.syncDespesasPendentes().catch(e => console.warn('[PWA] Erro sync despesas:', e));
+                    if (typeof window.app.syncDocumentosPendentes === 'function') await window.app.syncDocumentosPendentes().catch(e => console.warn('[PWA] Erro sync documentos:', e));
+                }
+
                 await loadLocalData();
                 localStorage.setItem('pwa_ultimo_sync_dia', getHojeBR());
                 localStorage.setItem('ultimo_sync', new Date().toISOString());
-                // Sincronizar despesas de viagem salvas offline
-                if (typeof app !== 'undefined' && typeof app.syncDespesasPendentes === 'function') {
-                    await app.syncDespesasPendentes().catch(e => console.warn('[PWA] Erro sync despesas:', e));
-                }
                 showSyncIndicator(false);
                 showToast('Sincronizado com sucesso');
                 // Atualizar contagem de pendentes após sync
@@ -1270,6 +1274,14 @@
                 try {
                     showSyncIndicator(true);
                     await syncService.sincronizarAgora();
+
+                    // Enviar checkouts/despesas/documentos pendentes via app.js
+                    if (typeof window.app !== 'undefined') {
+                        if (typeof window.app.syncCheckoutsPendentes === 'function') await window.app.syncCheckoutsPendentes().catch(() => {});
+                        if (typeof window.app.syncDespesasPendentes === 'function') await window.app.syncDespesasPendentes().catch(() => {});
+                        if (typeof window.app.syncDocumentosPendentes === 'function') await window.app.syncDocumentosPendentes().catch(() => {});
+                    }
+
                     await loadLocalData();
                     showSyncIndicator(false);
                     showToast('Sincronizado com sucesso');
