@@ -11924,6 +11924,7 @@ class App {
                             await offlineDB.delete('syncMeta', `pendingCheckout_${clienteIdNorm}`);
                             await offlineDB.delete('syncMeta', `pendingCampanhaFotos_${clienteIdNorm}`);
                             await offlineDB.delete('syncMeta', `pendingAtividades_${clienteIdNorm}`);
+                            await offlineDB.delete('syncMeta', `pendingEspacosRegistrados_${clienteIdNorm}`);
                         }
                     } catch (_) {}
                     this.showNotification('Atendimento local cancelado.', 'success');
@@ -14536,10 +14537,11 @@ class App {
                 }
                 this.registroRotaState._atividadesLocal = null;
                 this.registroRotaState._campanhaFotosLocal = null;
-                // Limpar atividades e campanha pendentes do syncMeta (já incluídas no checkout)
+                // Limpar atividades, campanha e espacos pendentes do syncMeta (já incluídas no checkout)
                 if (window.offlineDB) {
                     window.offlineDB.delete('syncMeta', `pendingAtividades_${clienteId}`).catch(() => {});
                     window.offlineDB.delete('syncMeta', `pendingCampanhaFotos_${clienteId}`).catch(() => {});
+                    window.offlineDB.delete('syncMeta', `pendingEspacosRegistrados_${clienteId}`).catch(() => {});
                 }
 
                 this.showNotification('Offline — checkout salvo! Será enviado ao conectar à internet.', 'success');
@@ -14641,6 +14643,8 @@ class App {
                         this.registroRotaState._campanhaFotosLocal = null;
                         if (window.offlineDB) window.offlineDB.delete('syncMeta', `pendingCampanhaFotos_${clienteId}`).catch(() => {});
                     }
+                    // Limpar espaços registrados
+                    if (window.offlineDB) window.offlineDB.delete('syncMeta', `pendingEspacosRegistrados_${clienteId}`).catch(() => {});
 
                     // Limpar checkin local
                     this.registroRotaState._checkinLocal = null;
@@ -14792,6 +14796,7 @@ class App {
                     if (window.offlineDB) {
                         window.offlineDB.delete('syncMeta', `pendingCampanhaFotos_${clienteIdNorm_}`).catch(() => {});
                         window.offlineDB.delete('syncMeta', `pendingAtividades_${clienteIdNorm_}`).catch(() => {});
+                        window.offlineDB.delete('syncMeta', `pendingEspacosRegistrados_${clienteIdNorm_}`).catch(() => {});
                     }
                     this._sessaoCache = {};
                     await this.fecharModalCaptura();
@@ -24506,6 +24511,21 @@ class App {
                 }
             });
             registrosRealizados = [];
+
+            // Verificar se espaços já foram registrados nesta visita (persistido no IndexedDB)
+            if (typeof offlineDB !== 'undefined') {
+                try {
+                    const jaRegistrados = await offlineDB.getSyncMeta(`pendingEspacosRegistrados_${cliNorm}`);
+                    if (jaRegistrados?.total > 0) {
+                        // Marcar todos os espaços como já registrados
+                        for (let i = 0; i < espacosExpandidos.length; i++) {
+                            espacosExpandidos[i]._jaRegistrado = true;
+                            registrosRealizados.push(i);
+                        }
+                        console.log(`[Espaços] ${jaRegistrados.total} espaços já registrados para ${cliNorm}`);
+                    }
+                } catch (_) {}
+            }
         }
 
         // Armazenar estado
@@ -24544,8 +24564,9 @@ class App {
                         ${espacosExpandidos.map((esp, idx) => {
                             const jaRegistrado = registrosRealizados.includes(idx);
                             const temFoto = !!esp.fotoFile;
-                            const badgeClass = jaRegistrado ? 'badge badge-success' : 'badge badge-warning';
-                            const badgeText = jaRegistrado ? '✅ Foto registrada' : 'Foto pendente';
+                            const jaConcluido = !!esp._jaRegistrado;
+                            const badgeClass = (jaRegistrado || jaConcluido) ? 'badge badge-success' : 'badge badge-warning';
+                            const badgeText = jaConcluido ? '✅ Já registrado' : (jaRegistrado ? '✅ Foto registrada' : 'Foto pendente');
                             const btnFotoText = temFoto ? '📷 Trocar Foto' : 'Tirar Foto';
                             const obsValue = esp._observacao || '';
                             return `
@@ -24569,9 +24590,10 @@ class App {
                                 </div>
 
                                 <div style="display: flex; gap: 8px;">
+                                    ${jaConcluido ? `<span style="color:#059669;font-size:13px;">Enviado na fila de sincronização</span>` : `
                                     <button class="btn btn-secondary btn-sm" id="btnFoto${idx}" onclick="window.app.abrirCameraEspaco(${idx})">
                                         ${btnFotoText}
-                                    </button>
+                                    </button>`}
                                 </div>
                             </div>
                         `}).join('')}
@@ -24814,6 +24836,27 @@ class App {
                 };
 
                 await offlineDB.adicionarEspacoFila(dadosFila);
+            }
+
+            // Persistir registro de conclusão para sobreviver restart/mudança de conectividade
+            if (typeof offlineDB !== 'undefined') {
+                try {
+                    const tiposRegistrados = registrosRealizados.map(idx => {
+                        const esp = espacosPendentes[idx];
+                        return {
+                            tipoEspacoId: esp.tipo_espaco_id || esp.ces_tipo_espaco_id,
+                            tipoNome: esp.tipo_nome || esp.tipo_espaco_nome,
+                            unidade: esp.unidade,
+                            totalUnidades: esp.totalUnidades
+                        };
+                    });
+                    await offlineDB.setSyncMeta(`pendingEspacosRegistrados_${String(clienteId).trim().replace(/\.0$/, '')}`, {
+                        tiposRegistrados,
+                        total: registrosRealizados.length,
+                        dataRegistro: dataVisita,
+                        timestamp: new Date().toISOString()
+                    });
+                } catch (_) {}
             }
 
             // Fechar modal e limpar estado (registros concluídos)
