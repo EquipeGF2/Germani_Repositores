@@ -339,9 +339,11 @@ class SyncService {
       } catch (e) { console.error('[SyncService] Erro ao salvar tipos documento:', e.message); }
 
       try {
-        if (tiposGastoRes.ok) {
-          await offlineDB.salvarTiposGasto(tiposGastoRes.tipos || []);
-          console.log(`[SyncService] Tipos gasto: ${tiposGastoRes.tipos?.length || 0} itens`);
+        if (tiposGastoRes.ok && tiposGastoRes.tipos?.length > 0) {
+          await offlineDB.salvarTiposGasto(tiposGastoRes.tipos);
+          // Backup em localStorage para fallback offline
+          try { localStorage.setItem('tipos_gasto_cache', JSON.stringify(tiposGastoRes.tipos)); } catch (_) {}
+          console.log(`[SyncService] Tipos gasto: ${tiposGastoRes.tipos.length} itens (IndexedDB + localStorage)`);
         }
       } catch (e) { console.error('[SyncService] Erro ao salvar tipos gasto:', e.message); }
 
@@ -660,19 +662,43 @@ class SyncService {
             }
           }
 
-          // Salvar resposta no Turso via db
+          // Salvar resposta via API backend (mais confiável que Turso direto)
           const fotoUrlFinal = fotosUrls.length > 1
             ? JSON.stringify(fotosUrls)
             : (fotosUrls[0] || null);
 
-          await db.salvarRespostaPesquisa({
-            pesId: pesquisa.pesId,
-            repId: pesquisa.repId,
-            clienteCodigo: pesquisa.clienteCodigo,
-            visitaId: null,
-            respostas: pesquisa.respostas,
-            fotoUrl: fotoUrlFinal
-          });
+          try {
+            const salvarResp = await this.fetchWithTimeout(
+              `${this.apiBaseUrl}/api/pesquisa/salvar-resposta`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                  pesId: pesquisa.pesId,
+                  repId: pesquisa.repId,
+                  clienteCodigo: pesquisa.clienteCodigo,
+                  visitaId: null,
+                  respostas: pesquisa.respostas,
+                  fotoUrl: fotoUrlFinal
+                })
+              }
+            );
+            const salvarResult = await salvarResp.json();
+            if (!salvarResult.success) {
+              throw new Error(salvarResult.message || 'Erro ao salvar resposta');
+            }
+          } catch (apiErr) {
+            // Fallback: tentar Turso direto se API falhar
+            console.warn(`[SyncService] API falhou, tentando Turso direto:`, apiErr.message);
+            await db.salvarRespostaPesquisa({
+              pesId: pesquisa.pesId,
+              repId: pesquisa.repId,
+              clienteCodigo: pesquisa.clienteCodigo,
+              visitaId: null,
+              respostas: pesquisa.respostas,
+              fotoUrl: fotoUrlFinal
+            });
+          }
 
           await offlineDB.marcarEnviado('filaPesquisas', pesquisa.localId, { fotosUrls });
           totalEnviados++;

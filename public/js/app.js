@@ -11083,9 +11083,21 @@ class App {
                             const hoje = new Date().toISOString().slice(0, 10);
                             const metaDia = meta.timestamp ? meta.timestamp.slice(0, 10) : '';
                             if (String(meta.repId) === String(repId) && metaDia === hoje) {
-                                // Restaurar sem o blob (indicador de checkin pendente sem foto)
+                                // Restaurar com GPS e endereço (agora incluídos no meta)
                                 this.registroRotaState._checkinLocal = { ...meta, fotoBlob: null, _restoredFromCache: true };
-                                console.log('[PWA] Checkin local restaurado do cache:', meta.clienteId);
+                                console.log('[PWA] Checkin local restaurado do cache:', meta.clienteId,
+                                    'GPS:', !!meta.gpsCoords, 'Endereço:', !!meta.enderecoRoteiro);
+
+                                // Tentar restaurar foto do checkin do IndexedDB
+                                if (window.offlineDB) {
+                                    try {
+                                        const fotoMeta = await window.offlineDB.getSyncMeta('pendingCheckinFoto');
+                                        if (fotoMeta?.fotoBase64 && String(fotoMeta.clienteId) === String(meta.clienteId)) {
+                                            this.registroRotaState._checkinLocal.fotoBase64 = fotoMeta.fotoBase64;
+                                            console.log('[PWA] Foto do checkin restaurada do IndexedDB');
+                                        }
+                                    } catch (_) {}
+                                }
                             } else {
                                 localStorage.removeItem('PWA_CHECKIN_LOCAL_META');
                             }
@@ -14305,9 +14317,26 @@ class App {
                 try {
                     localStorage.setItem('PWA_CHECKIN_LOCAL_META', JSON.stringify({
                         localId, repId, clienteId, clienteNome, dataVisita,
-                        novaVisita: novaVisitaFlag, timestamp: dataRegistro
+                        novaVisita: novaVisitaFlag, timestamp: dataRegistro,
+                        // Incluir GPS e endereço para sync correto após restart
+                        gpsCoords: { ...gpsCoords },
+                        enderecoResolvido,
+                        enderecoRoteiro: this.registroRotaState.clienteAtual?.clienteEndereco || ''
                     }));
                 } catch (_) {};
+
+                // Persistir foto do checkin em IndexedDB como base64 (sobrevive a restart)
+                if (window.offlineDB && arquivos[0]) {
+                    try {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                            window.offlineDB.setSyncMeta('pendingCheckinFoto', {
+                                clienteId, repId, fotoBase64: reader.result
+                            }).catch(() => {});
+                        };
+                        reader.readAsDataURL(arquivos[0]);
+                    } catch (_) {}
+                }
 
                 // Atualizar estado local imediatamente
                 this.atualizarStatusClienteLocal(clienteId, {
@@ -14390,9 +14419,14 @@ class App {
                                 reader.readAsDataURL(blob);
                             });
                         };
-                        const checkinFotoB64 = this.registroRotaState._checkinLocal?.fotoBlob
-                            ? await blobToBase64(this.registroRotaState._checkinLocal.fotoBlob)
-                            : null;
+                        // Foto do checkin: converter blob se existe, senão usar base64 já restaurado do IndexedDB
+                        let checkinFotoB64 = null;
+                        if (this.registroRotaState._checkinLocal?.fotoBlob) {
+                            checkinFotoB64 = await blobToBase64(this.registroRotaState._checkinLocal.fotoBlob);
+                        } else if (this.registroRotaState._checkinLocal?.fotoBase64) {
+                            checkinFotoB64 = this.registroRotaState._checkinLocal.fotoBase64;
+                            console.log('[SYNC] Usando foto do checkin restaurada do IndexedDB');
+                        }
                         const checkoutFotoB64 = fotosNovas[0]?.blob
                             ? await blobToBase64(fotosNovas[0].blob)
                             : null;
@@ -14434,6 +14468,10 @@ class App {
                 // Limpar state local offline
                 this.registroRotaState._checkinLocal = null;
                 try { localStorage.removeItem('PWA_CHECKIN_LOCAL_META'); } catch (_) {}
+                // Limpar foto do checkin do IndexedDB
+                if (window.offlineDB) {
+                    window.offlineDB.delete('syncMeta', 'pendingCheckinFoto').catch(() => {});
+                }
                 this.registroRotaState._atividadesLocal = null;
                 this.registroRotaState._campanhaFotosLocal = null;
                 // Limpar atividades pendentes do syncMeta (já incluídas no checkout)
@@ -16990,21 +17028,23 @@ class App {
                         const checkinForm = new FormData();
                         checkinForm.append('rep_id', checkin.repId || data.repId);
                         checkinForm.append('cliente_id', checkin.clienteId || clienteId);
-                        checkinForm.append('latitude', Number(checkin.gpsCoords?.latitude || checkin.latitude || 0));
-                        checkinForm.append('longitude', Number(checkin.gpsCoords?.longitude || checkin.longitude || 0));
-                        checkinForm.append('endereco_resolvido', checkin.enderecoResolvido || '');
+                        // GPS: usar do checkin, fallback para dados do checkout
+                        checkinForm.append('latitude', Number(checkin.gpsCoords?.latitude || checkin.gpsCoords?.lat || data.gpsCoords?.latitude || 0));
+                        checkinForm.append('longitude', Number(checkin.gpsCoords?.longitude || checkin.gpsCoords?.lng || data.gpsCoords?.longitude || 0));
+                        checkinForm.append('endereco_resolvido', checkin.enderecoResolvido || data.enderecoResolvido || 'Endereço não disponível');
                         checkinForm.append('tipo', 'checkin');
                         checkinForm.append('cliente_nome', checkin.clienteNome || data.clienteNome || '');
-                        checkinForm.append('cliente_endereco', checkin.enderecoRoteiro || '');
+                        checkinForm.append('cliente_endereco', checkin.enderecoRoteiro || data.enderecoRoteiro || 'Endereço não disponível');
                         if (checkin.dataVisita || data.dataVisita) checkinForm.append('data_planejada', checkin.dataVisita || data.dataVisita);
                         if (checkin.novaVisita) checkinForm.append('allow_nova_visita', 'true');
-                        // Foto do checkin (pode ser Blob ou base64)
-                        if (checkin.fotoBlob) {
-                            if (typeof checkin.fotoBlob === 'string') {
-                                const blob = this._base64ToBlob(checkin.fotoBlob);
+                        // Foto do checkin: blob, base64 do pendingCheckout, ou base64 restaurado
+                        const fotoCheckin = checkin.fotoBlob || checkin.fotoBase64;
+                        if (fotoCheckin) {
+                            if (typeof fotoCheckin === 'string') {
+                                const blob = this._base64ToBlob(fotoCheckin);
                                 if (blob) checkinForm.append('fotos', new File([blob], 'checkin.jpg', { type: 'image/jpeg' }));
                             } else {
-                                checkinForm.append('fotos', checkin.fotoBlob);
+                                checkinForm.append('fotos', fotoCheckin);
                             }
                         }
 
