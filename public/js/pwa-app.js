@@ -1459,11 +1459,13 @@
                     <span class="pwa-action-arrow">&#8250;</span>
                 </button>
 
+                ${navigator.onLine ? `
                 <button class="pwa-action-btn" onclick="pwaApp.navigate('pwa-consultas')">
                     <span class="pwa-action-icon">&#128270;</span>
                     <span class="pwa-action-text">Consultas</span>
                     <span class="pwa-action-arrow">&#8250;</span>
                 </button>
+                ` : ''}
 
                 <button class="pwa-action-btn" onclick="pwaApp.navigate('pwa-mais')">
                     <span class="pwa-action-icon">&#8635;</span>
