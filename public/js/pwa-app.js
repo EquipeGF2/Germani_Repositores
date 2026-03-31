@@ -3300,6 +3300,16 @@
             } catch (_) {}
         }
 
+        // Bloquear checkout se espaços pendentes incompletos
+        if (liberado && typeof offlineDB !== 'undefined') {
+            try {
+                const espacosMeta = await offlineDB.getSyncMeta(`pendingEspacosRegistrados_${cliNorm}`).catch(() => null);
+                if (espacosMeta && espacosMeta.completo === false) {
+                    liberado = false;
+                }
+            } catch (_) {}
+        }
+
         btn.disabled = !liberado;
         if (liberado) {
             btn.classList.remove('pwa-checkout-bloqueado');

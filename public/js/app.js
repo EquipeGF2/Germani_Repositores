@@ -24361,8 +24361,15 @@ class App {
         try {
             const cliNorm = String(clienteId).trim().replace(/\.0$/, '');
 
-            // 1. Tentar cache local (instantâneo) - abre modal imediatamente
+            // 1. Se online, atualizar cache do servidor ANTES de abrir (garante dados frescos)
             let espacosParaRegistrar = null;
+            if (navigator.onLine) {
+                try {
+                    await this._atualizarEspacosCache(repId, cliNorm);
+                } catch (_) {}
+            }
+
+            // 2. Carregar do cache local (IndexedDB)
             if (typeof offlineDB !== 'undefined') {
                 try {
                     const cached = await offlineDB.getEspacosCliente(cliNorm);
@@ -24373,7 +24380,7 @@ class App {
                         // Dados do sync: formato { temEspacos: true, espacos: [...] }
                         espacosParaRegistrar = cached.espacos.map(e => ({
                             tipo_espaco_id: e.tipo_espaco_id || e.ces_tipo_espaco_id,
-                            tipo_nome: e.tipo_nome || e.tipo_espaco_nome,
+                            tipo_nome: e.tipo_nome || e.tipo_espaco_nome || e.esp_nome || '',
                             quantidade_esperada: e.quantidade_esperada || e.ces_quantidade || 1,
                             ces_quantidade: e.ces_quantidade || e.quantidade_esperada || 1
                         }));
@@ -24383,7 +24390,7 @@ class App {
                         if (cachedAll?.espacosRegistrados?.length > 0) {
                             espacosParaRegistrar = cachedAll.espacosRegistrados.map(e => ({
                                 tipo_espaco_id: e.tipo_espaco_id || e.reg_tipo_espaco_id,
-                                tipo_nome: e.tipo_nome || e.tipo_espaco_nome,
+                                tipo_nome: e.tipo_nome || e.tipo_espaco_nome || e.esp_nome || '',
                                 quantidade_esperada: e.quantidade_esperada || e.reg_quantidade_esperada || 1,
                                 ces_quantidade: e.quantidade_esperada || e.reg_quantidade_esperada || 1
                             }));
@@ -24468,11 +24475,6 @@ class App {
 
             // 4. Abrir modal imediatamente
             this.abrirModalRegistroEspacos(repId, clienteId, clienteNome, dataVisita, espacosParaRegistrar, gpsCoords);
-
-            // 5. Atualizar cache do servidor em background (não bloqueia)
-            if (navigator.onLine) {
-                this._atualizarEspacosCache(repId, cliNorm).catch(() => {});
-            }
         } catch (error) {
             console.error('Erro ao verificar espaços:', error);
             this.showNotification('Erro ao verificar espaços do cliente.', 'error');
@@ -24515,13 +24517,20 @@ class App {
             if (typeof offlineDB !== 'undefined') {
                 try {
                     const jaRegistrados = await offlineDB.getSyncMeta(`pendingEspacosRegistrados_${cliNorm}`);
-                    if (jaRegistrados?.total > 0) {
-                        // Marcar todos os espaços como já registrados
+                    if (jaRegistrados?.tiposRegistrados?.length > 0) {
+                        // Marcar apenas os espaços correspondentes como já registrados (por tipo e unidade)
                         for (let i = 0; i < espacosExpandidos.length; i++) {
-                            espacosExpandidos[i]._jaRegistrado = true;
-                            registrosRealizados.push(i);
+                            const esp = espacosExpandidos[i];
+                            const tipoId = esp.tipo_espaco_id || esp.ces_tipo_espaco_id;
+                            const match = jaRegistrados.tiposRegistrados.find(t =>
+                                String(t.tipoEspacoId) === String(tipoId) && t.unidade === esp.unidade
+                            );
+                            if (match) {
+                                espacosExpandidos[i]._jaRegistrado = true;
+                                registrosRealizados.push(i);
+                            }
                         }
-                        console.log(`[Espaços] ${jaRegistrados.total} espaços já registrados para ${cliNorm}`);
+                        console.log(`[Espaços] ${registrosRealizados.length}/${espacosExpandidos.length} espaços já registrados para ${cliNorm}`);
                     }
                 } catch (_) {}
             }
@@ -24572,7 +24581,7 @@ class App {
                             <div class="espaco-pendente-item" data-idx="${idx}" id="espacoItem${idx}" style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 10px;">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                     <div>
-                                        <strong>${esp.tipo_nome || esp.tipo_espaco_nome || 'Espaço'}</strong>
+                                        <strong>${esp.tipo_nome || esp.tipo_espaco_nome || esp.esp_nome || 'Espaço'}</strong>
                                         ${esp.totalUnidades > 1 ? `<span style="color: #6b7280;"> (${esp.unidade}/${esp.totalUnidades})</span>` : ''}
                                     </div>
                                     <span class="${badgeClass}" id="statusEspaco${idx}">${badgeText}</span>
@@ -24600,7 +24609,7 @@ class App {
                 </div>
                 <div class="modal-footer" style="padding-top: 15px; border-top: 1px solid #e5e7eb; display: flex; justify-content: flex-end; gap: 10px;">
                     <button type="button" class="btn btn-secondary" onclick="window.app.fecharModalRegistroEspacos()">Cancelar</button>
-                    <button type="button" class="btn btn-primary" id="btnFinalizarEspacos" onclick="window.app.finalizarRegistroEspacos()" ${registrosRealizados.length >= espacosExpandidos.length ? '' : 'disabled'}>
+                    <button type="button" class="btn btn-primary" id="btnFinalizarEspacos" onclick="window.app.finalizarRegistroEspacos()" ${registrosRealizados.length > 0 ? '' : 'disabled'}>
                         Salvar (${registrosRealizados.length}/${espacosExpandidos.length})
                     </button>
                 </div>
@@ -24795,15 +24804,15 @@ class App {
         const registrados = this.espacosRegistroState.registrosRealizados.length;
 
         btn.textContent = `Salvar (${registrados}/${total})`;
-        btn.disabled = registrados < total;
+        btn.disabled = registrados === 0;
     }
 
     async finalizarRegistroEspacos() {
         const { espacosPendentes, registrosRealizados, repId, clienteId, dataVisita, gpsCoords } = this.espacosRegistroState;
 
-        // Verificar se todos foram registrados (foto capturada)
-        if (registrosRealizados.length < espacosPendentes.length) {
-            this.showNotification('Registre todos os espaços pendentes antes de continuar', 'warning');
+        // Verificar se tem pelo menos 1 registro
+        if (registrosRealizados.length === 0) {
+            this.showNotification('Registre pelo menos um espaço antes de salvar', 'warning');
             return;
         }
 
@@ -24849,9 +24858,21 @@ class App {
                             totalUnidades: esp.totalUnidades
                         };
                     });
-                    await offlineDB.setSyncMeta(`pendingEspacosRegistrados_${String(clienteId).trim().replace(/\.0$/, '')}`, {
-                        tiposRegistrados,
-                        total: registrosRealizados.length,
+                    // Mesclar com registros anteriores (salvamento parcial)
+                    const cliNormEsp = String(clienteId).trim().replace(/\.0$/, '');
+                    let registrosAnteriores = [];
+                    try {
+                        const anterior = await offlineDB.getSyncMeta(`pendingEspacosRegistrados_${cliNormEsp}`);
+                        if (anterior?.tiposRegistrados) registrosAnteriores = anterior.tiposRegistrados;
+                    } catch (_) {}
+                    const todosTiposRegistrados = [...registrosAnteriores, ...tiposRegistrados];
+                    const registradosCount = todosTiposRegistrados.length;
+                    const totalEsperado = espacosPendentes.length;
+                    await offlineDB.setSyncMeta(`pendingEspacosRegistrados_${cliNormEsp}`, {
+                        tiposRegistrados: todosTiposRegistrados,
+                        registradosCount,
+                        totalEsperado,
+                        completo: registradosCount >= totalEsperado,
                         dataRegistro: dataVisita,
                         timestamp: new Date().toISOString()
                     });
@@ -24862,7 +24883,9 @@ class App {
             this.fecharModalRegistroEspacos(true);
 
             // Informar que espaços foram salvos
-            this.showNotification(`${registrosRealizados.length} espaço(s) salvo(s) com sucesso! Serão enviados automaticamente.`, 'success');
+            const pendentes = espacosPendentes.length - registrosRealizados.length;
+            const msgPendente = pendentes > 0 ? ` (${pendentes} pendente${pendentes > 1 ? 's' : ''})` : '';
+            this.showNotification(`${registrosRealizados.length} espaço(s) salvo(s)!${msgPendente} Serão enviados automaticamente.`, 'success');
         } catch (error) {
             console.error('Erro ao salvar espaços:', error);
             if (btnFinalizar) {
