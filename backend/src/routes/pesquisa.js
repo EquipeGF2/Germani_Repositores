@@ -113,4 +113,58 @@ router.post('/upload-foto', upload.single('arquivo'), async (req, res) => {
   }
 });
 
+/**
+ * POST /salvar-resposta
+ * Salvar resposta de pesquisa via API (alternativa ao Turso direto do browser)
+ */
+router.post('/salvar-resposta', async (req, res) => {
+  try {
+    const { pesId, repId, clienteCodigo, visitaId, respostas, fotoUrl } = req.body;
+
+    if (!pesId || !repId || !clienteCodigo) {
+      return res.status(400).json({
+        success: false,
+        message: 'pesId, repId e clienteCodigo são obrigatórios'
+      });
+    }
+
+    const clienteCodigoNorm = String(clienteCodigo).trim().replace(/\.0$/, '');
+    const agora = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const dataHoje = `${agora.getFullYear()}-${pad(agora.getMonth() + 1)}-${pad(agora.getDate())}`;
+    const timestampLocal = `${agora.getFullYear()}-${pad(agora.getMonth() + 1)}-${pad(agora.getDate())} ${pad(agora.getHours())}:${pad(agora.getMinutes())}:${pad(agora.getSeconds())}`;
+
+    // Verificar se já existe
+    const existente = await tursoService.execute(
+      `SELECT res_id FROM cc_pesquisa_respostas WHERE res_pes_id = ? AND res_rep_id = ? AND res_cliente_codigo = ? AND res_data = ?`,
+      [pesId, repId, clienteCodigoNorm, dataHoje]
+    );
+
+    let result;
+    if (existente.rows.length > 0) {
+      const resId = existente.rows[0].res_id;
+      await tursoService.execute(
+        `UPDATE cc_pesquisa_respostas SET res_respostas = ?, res_foto_url = ?, res_visita_id = ? WHERE res_id = ?`,
+        [JSON.stringify(respostas), fotoUrl || null, visitaId || null, resId]
+      );
+      result = { id: resId, updated: true };
+    } else {
+      const insertResult = await tursoService.execute(
+        `INSERT INTO cc_pesquisa_respostas (res_pes_id, res_rep_id, res_cliente_codigo, res_visita_id, res_data, res_respostas, res_foto_url, res_criado_em) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [pesId, repId, clienteCodigoNorm, visitaId || null, dataHoje, JSON.stringify(respostas), fotoUrl || null, timestampLocal]
+      );
+      result = { id: sanitizeForJson(insertResult.lastInsertRowid), inserted: true };
+    }
+
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('❌ Erro ao salvar resposta de pesquisa:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao salvar resposta',
+      error: error.message
+    });
+  }
+});
+
 export default router;
