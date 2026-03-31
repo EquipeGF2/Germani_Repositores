@@ -392,6 +392,43 @@
                 tiposDoc: tiposDoc.length,
                 tiposGasto: tiposGasto.length
             });
+
+            // Restaurar contexto de atendimento em andamento (para aviso na home)
+            try {
+                const metaStr = localStorage.getItem('PWA_CHECKIN_LOCAL_META');
+                if (metaStr && !currentAtendimentoContext) {
+                    const meta = JSON.parse(metaStr);
+                    const hoje = new Date().toISOString().slice(0, 10);
+                    const metaDia = meta.timestamp ? meta.timestamp.slice(0, 10) : '';
+                    if (metaDia === hoje) {
+                        currentAtendimentoContext = {
+                            repId: meta.repId,
+                            clienteId: meta.clienteId,
+                            clienteNome: meta.clienteNome,
+                            endereco: meta.enderecoRoteiro || '',
+                            dataVisita: hoje,
+                            enderecoCadastro: meta.enderecoResolvido || ''
+                        };
+                        // Pre-carregar clientesComEspaco para o botao espacos
+                        if (meta.repId) {
+                            try {
+                                const cachedEsp = localStorage.getItem(`espacos_clientes_${meta.repId}`);
+                                if (cachedEsp) {
+                                    if (!window.app) window.app = {};
+                                    if (!window.app.registroRotaState) window.app.registroRotaState = {};
+                                    if (!window.app.registroRotaState.clientesComEspaco?.size) {
+                                        window.app.registroRotaState.clientesComEspaco = new Set(JSON.parse(cachedEsp));
+                                    }
+                                }
+                            } catch (_) {}
+                        }
+                        console.log('[PWA] Atendimento restaurado na inicializacao:', meta.clienteId);
+                    } else {
+                        localStorage.removeItem('PWA_CHECKIN_LOCAL_META');
+                    }
+                }
+            } catch (_) {}
+
         } catch (e) {
             console.error('[PWA] Erro dados locais:', e);
         }
@@ -1787,16 +1824,14 @@
                     break;
                 }
                 case 'consulta-campanha': {
-                    if (navigator.onLine) {
-                        // Online: buscar da API com filtros
-                        dados = await offlineDB.getCampanhas();
-                        cachedData._campanhas = dados;
-                        renderCampanhasInline(dados, container, hojeStr, semanaStr);
-                    } else {
-                        // Offline: mostrar apenas registros pendentes de campanha
+                    // Sempre carregar do IndexedDB (preenchido pela sync diaria)
+                    dados = await offlineDB.getCampanhas().catch(() => []);
+
+                    // Adicionar registros pendentes de campanha (ainda nao sincronizados)
+                    try {
                         const allMeta = await offlineDB.getAll('syncMeta').catch(() => []);
                         const pendingCheckouts = (allMeta || []).filter(item => item.key && item.key.startsWith('pendingCheckout_') && item.value?.campanhaFotos?.length > 0);
-                        dados = pendingCheckouts.map(item => ({
+                        const pendingMapped = pendingCheckouts.map(item => ({
                             id: `pending_${item.key}`,
                             cliente_nome: item.value?.clienteNome || 'N/D',
                             cliente_id: item.value?.clienteId || '',
@@ -1804,9 +1839,11 @@
                             _pendente: true,
                             fotos_count: item.value?.campanhaFotos?.length || 0
                         }));
-                        cachedData._campanhas = dados;
-                        renderCampanhasInline(dados, container, hojeStr, semanaStr);
-                    }
+                        dados = [...dados, ...pendingMapped];
+                    } catch (_) {}
+
+                    cachedData._campanhas = dados;
+                    renderCampanhasInline(dados, container, hojeStr, semanaStr);
                     break;
                 }
                 case 'consulta-roteiro': {
@@ -1819,13 +1856,8 @@
                     break;
                 }
                 case 'consulta-documentos': {
-                    if (navigator.onLine) {
-                        // Online: cache do servidor + pendentes
-                        dados = await offlineDB.getDocumentosCache();
-                    } else {
-                        // Offline: apenas documentos pendentes
-                        dados = [];
-                    }
+                    // Sempre carregar do IndexedDB (preenchido pela sync diaria)
+                    dados = await offlineDB.getDocumentosCache().catch(() => []);
                     const pendingDocs = await offlineDB.getPendingDocumentos();
                     const pendingDocsMapped = pendingDocs.map(d => ({
                         doc_id: d.id || `pending_${d.createdAt}`,
@@ -1843,13 +1875,8 @@
                     break;
                 }
                 case 'consulta-despesas': {
-                    if (navigator.onLine) {
-                        // Online: cache do servidor + pendentes
-                        dados = await offlineDB.getDespesas();
-                    } else {
-                        // Offline: apenas despesas pendentes
-                        dados = [];
-                    }
+                    // Sempre carregar do IndexedDB (preenchido pela sync diaria)
+                    dados = await offlineDB.getDespesas().catch(() => []);
                     const pendingDesp = await offlineDB.getPendingDespesas();
                     for (const desp of pendingDesp) {
                         if (desp.rubricas && Array.isArray(desp.rubricas)) {
