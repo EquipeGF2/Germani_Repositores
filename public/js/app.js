@@ -24456,8 +24456,43 @@ class App {
             }
 
             if (!espacosParaRegistrar || espacosParaRegistrar.length === 0) {
-                this.showNotification('Este cliente não possui espaços cadastrados.', 'warning');
-                return;
+                // Se não tem espaços para registrar mas tem registros locais, carregar da lista completa
+                // para mostrar os espaços já registrados (ex: registrou online, agora está offline)
+                if (typeof offlineDB !== 'undefined') {
+                    try {
+                        const jaRegistrados = await offlineDB.getSyncMeta(`pendingEspacosRegistrados_${cliNorm}`);
+                        if (jaRegistrados?.tiposRegistrados?.length > 0) {
+                            // Reconstruir lista de espaços a partir dos registros feitos
+                            const tiposSeen = new Set();
+                            espacosParaRegistrar = jaRegistrados.tiposRegistrados
+                                .filter(t => {
+                                    const key = `${t.tipoEspacoId}_${t.unidade}`;
+                                    if (tiposSeen.has(key)) return false;
+                                    tiposSeen.add(key);
+                                    return true;
+                                })
+                                .map(t => ({
+                                    tipo_espaco_id: t.tipoEspacoId,
+                                    tipo_nome: t.tipoNome || '',
+                                    quantidade_esperada: t.totalUnidades || 1,
+                                    ces_quantidade: t.totalUnidades || 1,
+                                    _todosJaRegistrados: true
+                                }));
+                            // Deduplicar por tipo (manter 1 entry por tipo com a quantidade total)
+                            const porTipo = {};
+                            for (const e of espacosParaRegistrar) {
+                                if (!porTipo[e.tipo_espaco_id]) porTipo[e.tipo_espaco_id] = e;
+                            }
+                            espacosParaRegistrar = Object.values(porTipo);
+                            console.log(`[Espaços] Reconstruído ${espacosParaRegistrar.length} tipo(s) de espaço a partir dos registros locais`);
+                        }
+                    } catch (_) {}
+                }
+
+                if (!espacosParaRegistrar || espacosParaRegistrar.length === 0) {
+                    this.showNotification('Este cliente não possui espaços cadastrados.', 'warning');
+                    return;
+                }
             }
 
             // 3. Obter GPS sem bloquear (usa último conhecido ou busca com timeout curto)
