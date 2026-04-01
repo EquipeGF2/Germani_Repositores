@@ -14506,8 +14506,8 @@ class App {
                             enderecoResolvido,
                             enderecoRoteiro: this.registroRotaState.clienteAtual?.clienteEndereco || '',
                             timestamp: new Date().toISOString(),
-                            // Salvar rv_id do checkin online para sync posterior
-                            rvIdOnline: rvSessaoId || null,
+                            // Salvar rv_id do checkin online para sync posterior (excluir IDs locais)
+                            rvIdOnline: (rvSessaoId && !String(rvSessaoId).startsWith('LOCAL_')) ? rvSessaoId : null,
                             checkinLocal: this.registroRotaState._checkinLocal
                                 ? { ...this.registroRotaState._checkinLocal, fotoBlob: checkinFotoB64 }
                                 : null,
@@ -17093,6 +17093,8 @@ class App {
                 try {
                     // Se checkin foi feito online, já temos o rv_id
                     let rvId = data.rvIdOnline || null;
+                    // IDs locais (LOCAL_*) não existem no servidor - tratar como null
+                    if (rvId && String(rvId).startsWith('LOCAL_')) rvId = null;
 
                     // 1. Enviar checkin pendente (se existir)
                     if (data.checkinLocal) {
@@ -17259,7 +17261,21 @@ class App {
 
                 } catch (err) {
                     console.error(`[SYNC] Erro ao sincronizar checkout cliente ${clienteId}:`, err.message);
-                    // Manter na fila para próxima tentativa
+                    // 404 = atendimento não encontrado - incrementar tentativas e remover após 3
+                    if (err.status === 404) {
+                        try {
+                            const retryCount = (data._syncRetries || 0) + 1;
+                            if (retryCount >= 3) {
+                                console.warn(`[SYNC] Checkout cliente ${clienteId} removido após ${retryCount} tentativas (404)`);
+                                await window.offlineDB.delete('syncMeta', entry.key);
+                            } else {
+                                data._syncRetries = retryCount;
+                                await window.offlineDB.setSyncMeta(entry.key, data);
+                                console.warn(`[SYNC] Checkout cliente ${clienteId} tentativa ${retryCount}/3`);
+                            }
+                        } catch (_) {}
+                    }
+                    // Outros erros: manter na fila para próxima tentativa
                 }
             }
 
@@ -24440,8 +24456,43 @@ class App {
             }
 
             if (!espacosParaRegistrar || espacosParaRegistrar.length === 0) {
-                this.showNotification('Este cliente não possui espaços cadastrados.', 'warning');
-                return;
+                // Se não tem espaços para registrar mas tem registros locais, carregar da lista completa
+                // para mostrar os espaços já registrados (ex: registrou online, agora está offline)
+                if (typeof offlineDB !== 'undefined') {
+                    try {
+                        const jaRegistrados = await offlineDB.getSyncMeta(`pendingEspacosRegistrados_${cliNorm}`);
+                        if (jaRegistrados?.tiposRegistrados?.length > 0) {
+                            // Reconstruir lista de espaços a partir dos registros feitos
+                            const tiposSeen = new Set();
+                            espacosParaRegistrar = jaRegistrados.tiposRegistrados
+                                .filter(t => {
+                                    const key = `${t.tipoEspacoId}_${t.unidade}`;
+                                    if (tiposSeen.has(key)) return false;
+                                    tiposSeen.add(key);
+                                    return true;
+                                })
+                                .map(t => ({
+                                    tipo_espaco_id: t.tipoEspacoId,
+                                    tipo_nome: t.tipoNome || '',
+                                    quantidade_esperada: t.totalUnidades || 1,
+                                    ces_quantidade: t.totalUnidades || 1,
+                                    _todosJaRegistrados: true
+                                }));
+                            // Deduplicar por tipo (manter 1 entry por tipo com a quantidade total)
+                            const porTipo = {};
+                            for (const e of espacosParaRegistrar) {
+                                if (!porTipo[e.tipo_espaco_id]) porTipo[e.tipo_espaco_id] = e;
+                            }
+                            espacosParaRegistrar = Object.values(porTipo);
+                            console.log(`[Espaços] Reconstruído ${espacosParaRegistrar.length} tipo(s) de espaço a partir dos registros locais`);
+                        }
+                    } catch (_) {}
+                }
+
+                if (!espacosParaRegistrar || espacosParaRegistrar.length === 0) {
+                    this.showNotification('Este cliente não possui espaços cadastrados.', 'warning');
+                    return;
+                }
             }
 
             // 3. Obter GPS sem bloquear (usa último conhecido ou busca com timeout curto)

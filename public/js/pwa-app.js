@@ -3184,6 +3184,23 @@
             }
         }
 
+        // Fallback: verificar cache localStorage (preenchido pelo carregarPesquisasRoteiro)
+        try {
+            const dataHoje = dataVisita || new Date().toISOString().split('T')[0];
+            const repIdFinal = repId || getRepId();
+            if (repIdFinal) {
+                const cacheKey = `pesquisas_cache_${repIdFinal}_${dataHoje}`;
+                const cached = localStorage.getItem(cacheKey);
+                if (cached) {
+                    const parsed = JSON.parse(cached);
+                    if (parsed?.data?.[cliNorm]?.length > 0) {
+                        _mostrarBotaoPesquisa(true);
+                        return;
+                    }
+                }
+            }
+        } catch (_) {}
+
         // Sem dados em cache nem mapa - esconder botão (não fazer busca remota)
         _mostrarBotaoPesquisa(false);
     }
