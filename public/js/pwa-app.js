@@ -3176,6 +3176,10 @@
             const pendentes = mapa.get(cliNorm) || [];
             if (pendentes.length > 0) {
                 _mostrarBotaoPesquisa(true);
+                // Persistir no IndexedDB para uso offline futuro
+                if (typeof offlineDB !== 'undefined') {
+                    offlineDB.put('pesquisasClientes', { clienteId: cliNorm, pesquisas: pendentes }).catch(() => {});
+                }
                 return;
             }
             if (mapa.has(cliNorm)) {
@@ -3195,6 +3199,10 @@
                     const parsed = JSON.parse(cached);
                     if (parsed?.data?.[cliNorm]?.length > 0) {
                         _mostrarBotaoPesquisa(true);
+                        // Persistir no IndexedDB para uso offline futuro
+                        if (typeof offlineDB !== 'undefined') {
+                            offlineDB.put('pesquisasClientes', { clienteId: cliNorm, pesquisas: parsed.data[cliNorm] }).catch(() => {});
+                        }
                         return;
                     }
                 }
