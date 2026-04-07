@@ -24288,6 +24288,16 @@ class App {
     async verificarEspacosPendentes(repositorId, clienteId) {
         const cliNorm = String(clienteId).trim().replace(/\.0$/, '');
 
+        // Verificar se espaços já foram completados localmente (evita loop no checkout)
+        if (typeof offlineDB !== 'undefined') {
+            try {
+                const meta = await offlineDB.getSyncMeta(`pendingEspacosRegistrados_${cliNorm}`);
+                if (meta?.completo === true) {
+                    return { temEspacos: true, espacosPendentes: [], espacosRegistrados: [] };
+                }
+            } catch (_) {}
+        }
+
         // 1. Tentar cache local primeiro (instantâneo)
         try {
             if (typeof offlineDB !== 'undefined') {
